@@ -148,10 +148,10 @@ class OpenAIDecisionsBackend:
                 continue
             break
         if r.status_code != 200:
-            text = r.text[:300]
+            text = r.text
             if self._api_key:
                 text = text.replace(self._api_key, "[redacted]")
-            raise BackendError(f"HTTP {r.status_code} from OpenAI decisions: {text}")
+            raise BackendError(f"HTTP {r.status_code} from OpenAI decisions: {text[:300]}")
         try:
             data = r.json()
         except ValueError as e:

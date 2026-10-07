@@ -77,11 +77,17 @@ class Handler(BaseHTTPRequestHandler):
         error response before the client reads it (seen as WinError 10053 / ECONNRESET).
         """
         self.close_connection = True
-        try:
-            length = int(self.headers.get("Content-Length", ""))
-        except ValueError:
-            length = None
-        budget = DRAIN_LIMIT_BYTES if length is None or length < 0 else min(length, DRAIN_LIMIT_BYTES)
+        if self.headers.get("Transfer-Encoding"):
+            length = DRAIN_LIMIT_BYTES
+        else:
+            # RFC 9112 6.3: no Content-Length and no Transfer-Encoding means no body.
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+            except ValueError:
+                return  # unframeable; just close
+            if length <= 0:
+                return
+        budget = min(length, DRAIN_LIMIT_BYTES)
         try:
             self.connection.settimeout(DRAIN_TIMEOUT_S)
             while budget > 0:

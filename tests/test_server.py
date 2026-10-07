@@ -127,3 +127,14 @@ def test_make_server_refuses_unsafe_remote_binds():
         make_server(be, "0.0.0.0", 0)
     with pytest.raises(ValueError, match="requires --token"):
         make_server(be, "0.0.0.0", 0, insecure_allow_remote=True)
+
+def test_server_bodiless_early_errors_are_not_delayed_by_drain(server_factory):
+    """No Content-Length and no Transfer-Encoding means no body; the drain must not wait (review finding)."""
+    import time
+
+    _srv, base_url = server_factory(token="secret")
+    with httpx.Client(base_url=base_url, timeout=5) as client:
+        t0 = time.perf_counter()
+        assert client.delete("/x", headers=_headers()).status_code == 405
+        assert client.post("/nope", headers=_headers()).status_code == 404
+        assert time.perf_counter() - t0 < 1.5

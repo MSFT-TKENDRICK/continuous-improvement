@@ -289,3 +289,16 @@ def test_llamacpp_clone_preserves_settings():
     v = be.clone(code_seed=1)
     assert (v.top_k, v.min_valid_mass, v.choice_permutations, v.code_seed) == (7, 0.3, 3, 1)
     assert v.name == "llamacpp-logprob+perm3+codes1"
+
+def test_api_key_redacted_even_when_straddling_truncation(sample_questions):
+    from s1eval.backends.openai_decisions import OpenAIDecisionsBackend
+
+    key = "sk-" + "k" * 40
+    body = "x" * 290 + key
+    for be in (
+        OpenAIDecisionsBackend(api_key=key, max_retries=0, transport=httpx.MockTransport(lambda r: httpx.Response(400, text=body))),
+        SystemOneBackend("https://judge.invalid", "m", key, max_retries=0, transport=httpx.MockTransport(lambda r: httpx.Response(400, text=body))),
+    ):
+        with pytest.raises(BackendError) as ei:
+            be.decide({}, {"n": sample_questions["n"]})
+        assert "sk-kkkkkkk" not in str(ei.value)

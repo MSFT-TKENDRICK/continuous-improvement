@@ -69,10 +69,10 @@ class SystemOneBackend:
                 continue
             if r.status_code != 200:
                 # Never echo request bodies or auth headers; truncate server text.
-                text = r.text[:300]
+                text = r.text
                 for secret in self._secrets:
                     text = text.replace(secret, "[redacted]")
-                raise BackendError(f"HTTP {r.status_code} from {self.base_url}/v1/systemone: {text}")
+                raise BackendError(f"HTTP {r.status_code} from {self.base_url}/v1/systemone: {text[:300]}")
             try:
                 return r.json(), attempts
             except ValueError as e:
