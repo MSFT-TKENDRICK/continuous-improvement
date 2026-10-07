@@ -1,0 +1,14 @@
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+dist/
+build/
+*.egg-info/
+.env
+reports/*.tmp
+*.gguf
+
+# lockfile is generated against an internal package proxy; regenerate with 'uv lock'
+uv.lock
+tests/_scratch/
