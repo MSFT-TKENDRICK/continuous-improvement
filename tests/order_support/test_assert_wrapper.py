@@ -130,3 +130,70 @@ def test_cmd_run_installs_wrapper_before_assert(monkeypatch):
     path = cli.REPO_ROOT / "evals" / "assert" / "grounding" / "eval_config.yaml"
     assert cli.main(["run", str(path)]) == 0
     assert order == ["install", "assert"]
+
+
+@pytest.fixture
+def no_telemetry(monkeypatch):
+    monkeypatch.delenv(assert_wrapper.TELEMETRY_ENV, raising=False)
+    monkeypatch.setattr(assert_wrapper, "_telemetry", None)
+    calls: list[tuple[tuple, dict]] = []
+    from ci_lab import telemetry
+
+    monkeypatch.setattr(telemetry, "setup", lambda *a, **k: calls.append((a, k)) or "handle")
+    return calls
+
+
+def test_cmd_run_registers_judge_right_after_dotenv_and_skips_telemetry_by_default(monkeypatch, no_telemetry):
+    order: list[str] = []
+    monkeypatch.setattr(cli, "_load_dotenv", lambda: order.append("dotenv"))
+    monkeypatch.setattr(cli, "stage_replay_inference_set", lambda *a, **k: None)
+    for name in (cli.TIMEOUT_ENV, cli.TEST_SET_CONCURRENCY_ENV, cli.ASSERT_CONCURRENCY_ENV):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setattr(assert_wrapper, "register_judge", lambda: order.append("judge"))
+    monkeypatch.setattr(assert_wrapper, "install", lambda *a, **k: order.append("install"))
+    from assert_ai.cli import cli as assert_cli
+
+    monkeypatch.setattr(assert_cli, "main", lambda args, **_: order.append("assert"))
+    path = cli.REPO_ROOT / "evals" / "assert" / "grounding" / "eval_config.yaml"
+    assert cli.main(["run", str(path)]) == 0
+    assert order == ["dotenv", "judge", "install", "assert"]
+    assert no_telemetry == []
+
+
+def test_install_registers_the_s1_judge_provider_idempotently(clean_env, no_telemetry):
+    import litellm
+
+    from ci_lab.judge import provider
+
+    assert_wrapper.install([_fake_inference()])
+    handler = provider.register()
+    assert_wrapper.install([_fake_inference()])
+    assert [e["custom_handler"] for e in litellm.custom_provider_map if e["provider"] == "s1"] == [handler]
+    assert no_telemetry == []
+
+
+@pytest.mark.parametrize(("raw", "mode"), [("", None), ("off", None), ("0", None), ("auto", "auto"),
+                                           ("1", "auto"), ("ON", "on"), ("bogus", None)])
+def test_telemetry_mode(raw, mode):
+    assert assert_wrapper.telemetry_mode({assert_wrapper.TELEMETRY_ENV: raw}) == mode
+
+
+def test_setup_telemetry_is_opt_in_lazy_and_idempotent(monkeypatch, no_telemetry, tmp_path):
+    monkeypatch.setenv(assert_wrapper.TELEMETRY_ENV, "auto")
+    monkeypatch.setenv(assert_wrapper.RUN_DIR_ENV, str(tmp_path))
+    monkeypatch.setenv(assert_wrapper.PROFILE_ENV, "fake")
+    assert assert_wrapper.setup_telemetry() == "handle"
+    assert assert_wrapper.setup_telemetry() == "handle"
+    assert no_telemetry == [(("order-support",), {"profile": "fake", "run_dir": str(tmp_path), "aspire": "auto"})]
+
+
+def test_setup_telemetry_failure_only_warns(monkeypatch, no_telemetry, caplog):
+    from ci_lab import telemetry
+
+    def boom(*a, **k):
+        raise RuntimeError("non-SDK tracer provider")
+
+    monkeypatch.setattr(telemetry, "setup", boom)
+    monkeypatch.setenv(assert_wrapper.TELEMETRY_ENV, "on")
+    assert assert_wrapper.setup_telemetry() is None
+    assert "telemetry setup skipped" in caplog.text

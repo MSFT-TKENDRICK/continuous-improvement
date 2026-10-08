@@ -5,7 +5,9 @@ Parent side (RRSI/self-improve drivers): :func:`launch` / :func:`command` +
 context) plus the case-identity variables below.
 
 Child side: :func:`install` (called by ``order_support.cli.cmd_run`` before
-ASSERT starts) joins the parent's trace via ``obs.attach_from_env()`` and wraps
+ASSERT starts) sets up ``ci_lab.telemetry`` when ``$CI_TELEMETRY`` asks for it
+(M12), joins the parent's trace via ``obs.attach_from_env()``, registers the
+``s1`` judge provider (M11) and wraps
 every ASSERT case run in a ``ci.case`` span (design §12.3) carrying
 ``ci.case_id``, ``ci.trial``, ``ci.split`` and, when the experiment is known,
 ``agl.rollout_id`` (``contracts.RolloutKey``). Without a tracer provider the
@@ -15,6 +17,7 @@ spans are no-ops.
 from __future__ import annotations
 
 import functools
+import logging
 import os
 import subprocess
 import sys
@@ -37,9 +40,14 @@ EXPERIMENT_ENV = "CI_EXPERIMENT_ID"
 VARIANT_ENV = "CI_VARIANT"
 TRIAL_ENV = "CI_TRIAL"
 SPLIT_ENV = "CI_SPLIT"
+TELEMETRY_ENV = "CI_TELEMETRY"  # opt-in for ci_lab.telemetry.setup (M12): auto | on | off (default)
+RUN_DIR_ENV = "CI_RUN_DIR"
+PROFILE_ENV = "ORDER_AGENT_PROFILE"
 _CASE_RUNNERS = ("_run_prompt_test_case", "_run_scenario_test_case")
 _attach_token: object | None = None
 _installed = False
+_telemetry: Any = None
+log = logging.getLogger(__name__)
 
 
 def wrapper_env(*, experiment_id: str | None = None, variant: str | None = None, trial: int | None = None,
@@ -90,13 +98,63 @@ def _with_case_span(run: Any) -> Any:
     return wrapped
 
 
+def register_judge() -> None:
+    """M11: resolve ASSERT's ``s1/...`` judge models through ``ci_lab.judge.provider``.
+
+    Idempotent and offline: it only adds a LiteLLM custom-provider entry; backends connect lazily.
+    """
+    from ci_lab.judge.provider import register
+
+    register()
+
+
+def telemetry_mode(env: Mapping[str, str] | None = None) -> str | None:
+    """``$CI_TELEMETRY`` as a ``telemetry.setup`` ``aspire`` mode, or None (the default: no setup).
+
+    ``auto``/``1``/``true`` -> ``"auto"`` (export to a running ``ci-lab dashboard``, else JSONL
+    only), ``on`` -> ``"on"``; unset, empty, ``off``, ``0`` or ``false`` -> None.
+    """
+    raw = ((os.environ if env is None else env).get(TELEMETRY_ENV) or "").strip().lower()
+    if raw in ("", "0", "off", "false", "no"):
+        return None
+    if raw in ("1", "true", "yes", "auto"):
+        return "auto"
+    if raw == "on":
+        return "on"
+    log.warning("ignoring %s=%r (expected auto, on or off)", TELEMETRY_ENV, raw)
+    return None
+
+
+def setup_telemetry() -> Any | None:
+    """M12: ``ci_lab.telemetry.setup("order-support", ...)`` when ``$CI_TELEMETRY`` asks for it.
+
+    Never by default (tests and plain suite runs stay offline). Spans go to the Aspire dashboard
+    (``aspire`` mode) and, when ``$CI_RUN_DIR`` is set, to ``<run_dir>/telemetry/spans-<pid>.jsonl``.
+    An existing SDK tracer provider is reused; any setup failure only logs a warning.
+    """
+    global _telemetry
+    if _telemetry is not None:
+        return _telemetry
+    mode = telemetry_mode()
+    if mode is None:
+        return None
+    try:
+        from ci_lab import telemetry
+
+        _telemetry = telemetry.setup("order-support", profile=os.environ.get(PROFILE_ENV) or None,
+                                     run_dir=os.environ.get(RUN_DIR_ENV) or None, aspire=mode)
+    except Exception as exc:  # noqa: BLE001 - telemetry must never break an eval run
+        log.warning("order-support telemetry setup skipped (%s: %s)", type(exc).__name__, exc)
+    return _telemetry
+
+
 def install(modules: Sequence[Any] | None = None) -> None:
     """Child-side setup before ASSERT runs; idempotent."""
     global _attach_token, _installed
-    # HOOK(M12): ci_lab.telemetry.setup() goes here, before attaching, once it exists.
+    setup_telemetry()  # M12: before attaching, so the parent's context lands on our provider
     if _attach_token is None:
         _attach_token = obs.attach_from_env()
-    # HOOK(M11): ci_lab.judge.provider.register()  # S1 judge provider, before ASSERT runs
+    register_judge()  # M11: S1 judge provider, before ASSERT runs
     if modules is None:
         from assert_ai.stages import inference
 

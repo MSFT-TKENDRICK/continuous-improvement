@@ -211,6 +211,10 @@ def cmd_run(args: argparse.Namespace, passthrough: list[str]) -> int:
         print("inference_set.jsonl is stale; run 'order-support-evals replay build'", file=sys.stderr)
         return 2
     _load_dotenv()
+    from order_support import assert_wrapper
+
+    assert_wrapper.register_judge()  # M11: idempotent, no network
+    assert_wrapper.setup_telemetry()  # M12: only when $CI_TELEMETRY asks for it
     passthrough = with_artifacts_root(passthrough)
     timeout = resolve_model_timeout(args.model_timeout)
     if timeout is not None:
@@ -221,9 +225,7 @@ def cmd_run(args: argparse.Namespace, passthrough: list[str]) -> int:
     if test_set_concurrency is not None:
         set_test_set_concurrency(test_set_concurrency)
     stage_replay_inference_set(config, passthrough)
-    from order_support import assert_wrapper
-
-    assert_wrapper.install()  # join the parent trace; ci.case spans; M11 judge-provider hook
+    assert_wrapper.install()  # join the parent trace; ci.case spans (re-checks M11/M12, idempotent)
     from assert_ai.cli import cli
 
     try:
