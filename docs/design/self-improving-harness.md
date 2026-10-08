@@ -274,3 +274,13 @@ Shadow → enforce ladder: new rules from usage traces start `mode: shadow` (emi
 | N4 | Prose vs guard optimizer conflict | `lessons/registry.yaml` maps lesson_id → {rule ids, prose anchors (file+heading)}. Campaign rejects concurrent adoption of arms touching the same lesson_id unless the combined config was evaluated (interaction arm). |
 | N5 | Prose deletion under drift | Delete only mechanically redundant wording and keep policy intent and recovery guidance. Deletion arms must pass on OOD cases and ≥2 model pins (C4), and keep an automatic rollback canary. The lesson stays in the registry. |
 | N6 | Retirement / composition | Retirement is based on **exposure** (opportunities), not nights, plus an adversarial ablation arm. Composition: deterministic order (rung, then id). All-match telemetry (every matching rule is logged). Precedence block > redact > warn. Redaction is idempotent and later rules see **original** content. The loader flags conflicting rules (same target, contradictory require). |
+
+### 13.7 Order-support seed lessons (from the oracle rules; strongest rung each)
+| Oracle rule | Rung | Encoding |
+|---|---|---|
+| `refund.unverified_identity` | canonical helper + R2 | New frozen tool **`verify_identity(order_id, full_name, email_or_phone)`** (deterministic match against the order's customer record, returns `{verified, order_id}`, never echoes PII). Extractor: `identity_verified` ← `verify_identity.result.verified == true`, subject `args.order_id`. R2 `refund.requires_verified_identity`: `issue_refund` requires `state{identity_verified, subject: current.args.order_id}`. Anti-gaming R2 `verify.before_lookup`: `verify_identity` blocked if a prior `lookup_order` on the same order returned PII, so claims can't be copied from tool output. The guard's GuardView cannot see user text (B3), so verification is a structured tool result. |
+| `refund.ineligible_order` | R2 | `issue_refund` requires `prior lookup_order ok same order_id where result.refund_eligible == true and result.refund_limit_exceeded == false` |
+| `refund.amount_exceeds_eligible` | R2 | same prior with `cmp: current.args.amount le prior.result.total` |
+| `pii.disclosed_before_verification` | R3 redact | `on: response`, `when: not state identity_verified`, require text not matching email/phone/street patterns (RE2) |
+| `injection.followed_instruction` | R6 prose (+R4 metric) | not expressible as a closed predicate without user text → stays judgment (SkillOpt/DSPy); R4 trajectory metric only |
+All seeds ship `mode: shadow`. The oracle stays the independent measurement. Paired guard-off/on metrics (B1) keep "attempted" violations visible.

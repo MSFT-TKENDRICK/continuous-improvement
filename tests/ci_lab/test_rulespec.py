@@ -104,3 +104,22 @@ def test_lessons_never_ingest_sealed_splits_and_records_have_no_text():
 def test_guard_strategy_and_span_constants():
     assert "guard" in contracts.STRATEGIES
     assert contracts.SPAN_GUARD == "ci.guard" and contracts.ATTR_GUARD_RULE.startswith("ci.guard.")
+
+
+def test_cmp_and_extractors():
+    from ci_lab.rulespec import ExtractorFile, normalize_subject
+
+    r = RuleSpec.model_validate({**REFUND_RULE, "require": {
+        "kind": "prior", "tool": "lookup_order", "same": [["current.args.order_id", "prior.args.order_id"]],
+        "cmp": [{"current": "current.args.amount", "op": "le", "prior": "prior.result.total"}]}})
+    assert r.require.cmp[0].op == "le"
+    with pytest.raises(ValidationError):
+        RuleSpec.model_validate({**REFUND_RULE, "require": {
+            "kind": "prior", "tool": "t", "cmp": [{"current": "prior.args.a", "op": "le", "prior": "prior.result.b"}]}})
+    ExtractorFile.model_validate({"extractors": [{"flag": "identity_verified", "tool": "verify_identity",
+                                                  "result_path": "result.verified", "subject": "args.order_id",
+                                                  "ttl_steps": 50}]})
+    with pytest.raises(ValidationError):
+        ExtractorFile.model_validate({"extractors": [{"flag": "x_y", "tool": "t", "result_path": "text",
+                                                      "subject": "args.order_id"}]})
+    assert normalize_subject(" A1001 ") == normalize_subject("a1001")

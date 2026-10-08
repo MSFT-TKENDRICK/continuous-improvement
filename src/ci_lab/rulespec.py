@@ -91,6 +91,20 @@ class ArgPred(_M):
         return self
 
 
+class Cmp(_M):
+    """Typed cross-step comparison ``current <op> prior`` (e.g. amount le prior.result.total)."""
+
+    current: str
+    op: Literal["eq", "ne", "le", "lt", "ge", "gt"]
+    prior: str
+
+    @model_validator(mode="after")
+    def _paths(self) -> Cmp:
+        if not CURRENT_PATH_RE.match(self.current) or not PRIOR_PATH_RE.match(self.prior):
+            raise ValueError(f"bad cmp ({self.current} {self.op} {self.prior})")
+        return self
+
+
 class PriorPred(_M):
     """Exists an earlier tool_call step for ``tool`` with ``status`` satisfying ``where``."""
 
@@ -99,7 +113,8 @@ class PriorPred(_M):
     status: Literal["ok", "error", "any"] = "ok"
     where: Pred | None = None
     within: int | None = Field(default=None, ge=1)  # counts tool_call steps
-    same: list[tuple[str, str]] = Field(default_factory=list)  # (current_path, prior_path)
+    same: list[tuple[str, str]] = Field(default_factory=list)  # (current_path, prior_path) equality joins
+    cmp: list[Cmp] = Field(default_factory=list)  # typed comparisons against the same prior step
 
     @field_validator("same")
     @classmethod
@@ -266,6 +281,30 @@ class RuleFile(_M):
 
     schema_version: Literal[1] = 1
     rules: list[RuleSpec]
+
+
+class ExtractorSpec(_M):
+    """Frozen state-flag extractor (B5): a flag is set for ``subject`` only when a *successful*
+    structured result of ``tool`` has ``result_path == equals``. Never from text or telemetry.
+    Paths are relative to that call: ``args.<p>`` / ``result.<p>``. Extractor files are domain
+    config owned by frozen code (not arm surface)."""
+
+    flag: str = Field(pattern=r"^[a-z][a-z0-9_]{1,40}$")
+    tool: str
+    result_path: str = Field(pattern=rf"^result{_SEG}+$")
+    equals: Scalar = True
+    subject: str = Field(pattern=rf"^(?:args|result){_SEG}+$")
+    ttl_steps: int | None = Field(default=None, ge=1)  # tool_call steps until the flag expires
+
+
+class ExtractorFile(_M):
+    schema_version: Literal[1] = 1
+    extractors: list[ExtractorSpec]
+
+
+def normalize_subject(value: Any) -> str:
+    """Canonical subject key for flag binding (order ids, customer ids)."""
+    return str(value).strip().casefold()
 
 
 def canonical_json(obj: Any) -> str:
