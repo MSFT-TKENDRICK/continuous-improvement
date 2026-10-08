@@ -153,7 +153,11 @@ This module never calls `set_tracer_provider`. `ci_lab.telemetry.setup` (M12) ow
 
 agentlightning 1.0.2 has no tracer provider of its own. If an AGL component ever gets one, call `attach_telemetry(provider)` on it. It adds `ci_lab.telemetry.span_processors()` to that provider once per provider, and does nothing until M12 provides that function.
 
-`AglServer` starts its child process with `obs.child_env()`.
+`AglServer` is a long-lived service, so it removes `TRACEPARENT`/`TRACESTATE` from its child process's environment. `AglClient` sends `obs.carrier()` W3C headers on every request instead (design §12.5).
+
+Callers that send OpenAI requests through `proxy_base_url(...)` should also attach `obs.carrier()` headers to each request.
+
+When the scope reuses an existing `ci.case` span, it sets its attributes with `obs.annotate`. Span attributes are bounded scalars, and only the exception type is recorded.
 
 ## Limitations
 

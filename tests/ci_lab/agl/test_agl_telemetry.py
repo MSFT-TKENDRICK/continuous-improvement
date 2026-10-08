@@ -94,6 +94,30 @@ def test_noop_without_provider(tmp_path: Path) -> None:
     assert not s.span.is_recording()
 
 
+def test_client_sends_trace_context_per_request(spans: InMemorySpanExporter, fake_agl) -> None:  # type: ignore[no-untyped-def]
+    from ci_lab.agl.client import AglClient
+
+    with AglClient("http://agl.test", fake_agl.key, transport=fake_agl.transport()) as c:
+        c.create_rollout("ro-1", {})
+        assert "traceparent" not in fake_agl.requests[-1].headers
+        with obs.span(SPAN_CASE) as s:
+            c.post_event("ro-1", "0", "reward", {"value": 1.0})
+            trace_id, span_id = obs.current_ids() or ("", "")
+        tp = fake_agl.requests[-1].headers["traceparent"]
+        assert tp.split("-")[1:3] == [trace_id, span_id] and s.get_span_context().is_valid
+        c.get_events("ro-1")
+        assert "traceparent" not in fake_agl.requests[-1].headers
+
+
+def test_server_env_has_no_startup_traceparent(monkeypatch: pytest.MonkeyPatch) -> None:
+    from ci_lab.agl.server import KEY_ENV, AglServer
+
+    monkeypatch.setenv(obs.TRACEPARENT_ENV, "00-" + "1" * 32 + "-" + "2" * 16 + "-01")
+    monkeypatch.setenv("TRACESTATE", "x=y")
+    env = AglServer(key="k").child_env()
+    assert obs.TRACEPARENT_ENV not in env and "TRACESTATE" not in env and env[KEY_ENV] == "k"
+
+
 def test_attach_telemetry_seam() -> None:
     provider = TracerProvider()
     exporter = InMemorySpanExporter()

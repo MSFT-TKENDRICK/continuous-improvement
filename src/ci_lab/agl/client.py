@@ -15,6 +15,7 @@ from urllib.parse import quote
 
 import httpx
 
+from ci_lab import obs
 from ci_lab.contracts import RolloutKey
 
 log = logging.getLogger(__name__)
@@ -40,6 +41,12 @@ def _seg(value: str) -> str:
     return quote(str(value), safe="")
 
 
+def _inject_trace_context(request: httpx.Request) -> None:
+    """Per-request W3C trace context (design §12.5): long-lived servers get it per call."""
+    for k, v in obs.carrier().items():
+        request.headers[k] = v
+
+
 def _error(resp: httpx.Response, what: str) -> AglError:
     try:
         detail = resp.json().get("detail")
@@ -57,7 +64,7 @@ class AglClient:
         self.base_url = base_url.rstrip("/")
         headers = {"x-api-key": key} if key else {}
         self._http = httpx.Client(base_url=self.base_url, headers=headers, timeout=timeout,
-                                  transport=transport)
+                                  transport=transport, event_hooks={"request": [_inject_trace_context]})
 
     def __repr__(self) -> str:
         return f"AglClient({self.base_url!r})"

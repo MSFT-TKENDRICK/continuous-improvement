@@ -147,10 +147,17 @@ class AglServer:
                 raise
         raise last_error or AglServerError("agl-server failed to start")
 
-    def _launch(self) -> None:
-        env = obs.child_env()
+    def child_env(self) -> dict[str, str]:
+        """Server environment. Long-lived service: never inherits a startup ``TRACEPARENT``;
+        trace context travels per request via ``obs.carrier()`` headers sent by AglClient
+        (design §12.5)."""
+        env = {k: v for k, v in os.environ.items() if k not in (obs.TRACEPARENT_ENV, "TRACESTATE")}
         env[KEY_ENV] = self._key
         env.setdefault("PYTHONUNBUFFERED", "1")
+        return env
+
+    def _launch(self) -> None:
+        env = self.child_env()
         if self.log_path is not None:
             self.log_path.parent.mkdir(parents=True, exist_ok=True)
             self._log_fh = open(self.log_path, "ab")  # noqa: SIM115 - closed in stop()

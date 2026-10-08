@@ -134,9 +134,7 @@ class RolloutScope:
     def _open_span(self) -> None:
         current = trace.get_current_span()
         if current.is_recording() and getattr(current, "name", None) == SPAN_CASE:
-            for k, v in self.span_attributes().items():
-                if v is not None:
-                    current.set_attribute(k, v)
+            obs.annotate(self.span_attributes())
             self._spans.append(None)
             self.span = current
             return
