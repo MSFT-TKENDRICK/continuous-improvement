@@ -38,6 +38,7 @@ from ci_lab.contracts import (
     ATTR_PROFILE,
     ATTR_SPLIT,
     ATTR_STRATEGY,
+    ATTR_TARGET,
     SPAN_OPTIMIZER,
     SPAN_SLEEP_NIGHT,
     SPAN_STEP,
@@ -61,7 +62,6 @@ TASKS_REL = ORDER_SUPPORT.tasks_file
 STATE_FORMAT = "ci_lab.sleep.state.v1"
 STEPS = ("harvest", "consolidate", "assert_gate", "record", "bundle")
 HISTORY_KEEP = 60
-ATTR_TARGET = "sleep.target"  # not (yet) a contracts constant
 
 
 @dataclass

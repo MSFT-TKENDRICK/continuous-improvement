@@ -35,7 +35,10 @@ _ACTION = {"rollback": "roll_back"}
 
 def schema_dir() -> Path:
     env = os.environ.get("CI_OES_SCHEMA_DIR")
-    return Path(env) if env else Path(__file__).resolve().parents[3] / "schemas" / "oes"
+    if env:
+        return Path(env)
+    bundled = Path(__file__).resolve().parent / "schemas"  # wheel: hatch force-include
+    return bundled if bundled.is_dir() else Path(__file__).resolve().parents[3] / "schemas" / "oes"
 
 
 @cache

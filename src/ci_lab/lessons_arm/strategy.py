@@ -51,7 +51,7 @@ COMMIT_TRAILER = "Co-authored-by: Copilot App <223556219+Copilot@users.noreply.g
 FALLBACK_IDENTITY = ("ci-lab arm", "ci-lab-arm@localhost")
 CANDIDATES = Path("lessons") / "candidates.jsonl"
 CLAIMS_DIR = "lesson_claims"
-GUARD_COMPONENT = "config"  # contracts.COMPONENTS has no "guard" (see docs/lessons-arm.md)
+GUARD_COMPONENT = "guard"  # contracts.COMPONENTS (v2.4 integration)
 _RUNG_ORDER = {"R1": 0, "R2": 1, "R3": 2, "R4": 3, "R5": 4, "R6": 5}
 
 Committer = Callable[[Path, Sequence[str], str], str]

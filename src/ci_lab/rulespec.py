@@ -369,13 +369,15 @@ class GuardDecision(_M):
 
     rule_id: str
     rule_version: int
-    mode: Literal["shadow", "enforce"]
+    mode: Literal["off", "shadow", "enforce"]  # off: recorded only (paired guard-off arm, B1)
     action: Literal["warn", "block", "redact"]
     enforced: bool                 # mode == enforce and action applied
     step_index: int
     target: str
     attempt_digest: str            # sha256 of canonical pending step (pre-enforcement attempt)
     degraded: bool = False         # LKG fallback / warn-only degradation (N1)
+    case_id: str | None = None     # ASSERT case attribution for paired evals
+    trial: int | None = None
 
 
 def attempt_digest(step: TrajectoryStep) -> str:

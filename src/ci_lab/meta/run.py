@@ -27,8 +27,8 @@ from ci_lab.contracts import (
     ATTR_PURPOSE,
     ATTR_STRATEGY,
     ATTR_VARIANT,
-    COMPONENTS,
     SPAN_STEP,
+    TEXT_COMPONENTS,
     ArmContext,
     ChatClientFactory,
     CriticVerdict,
@@ -199,7 +199,7 @@ class ArmSurface:
                    tuple(domain.frozen_globs), max_file_bytes)
 
     def components(self, ctx: ArmContext) -> tuple[str, ...]:
-        focus = tuple(ctx.directive.component_focus) or tuple(c for c in COMPONENTS if c in self.component_globs)
+        focus = tuple(ctx.directive.component_focus) or tuple(c for c in TEXT_COMPONENTS if c in self.component_globs)
         unknown = [c for c in focus if c not in self.component_globs]
         if unknown:
             raise ValueError(f"unknown component(s) in directive: {', '.join(unknown)}")

@@ -33,7 +33,7 @@ Every new rule starts in `mode: shadow`. Rule text comes only from the trusted M
 4. It writes **only** `harness/guards/<lesson_id>.yaml`. A resolved-path check and a post-commit diff check both enforce this; `BUNDLE.lock` and extractor files are never touched.
 5. It loads the full bundle (with extractors) through `ci_lab.rules`.
 6. It runs the M16 replay filter (`ci_lab.lessons.replay.validate_ok`).
-7. It makes one commit per Edit, with the trailer, and returns `Edit(component="config", …)`.
+7. It makes one commit per Edit, with the trailer, and returns `Edit(component="guard", …)`.
 8. It writes `<run_dir>/optimizer/<arm>-guard.json`.
 
 ## Paired evaluation (B1/B4)
@@ -86,6 +86,6 @@ The lesson stays in the registry.
 
 ## Contract change requests
 
-- Add a dedicated `"guard"` entry to `contracts.COMPONENTS`. Guard edits are currently reported as `"config"`, which mixes them up with the per-component credit assignment for harness config.
-- Add attribution fields to `GuardDecision`: `case_id`/`trial` and opportunity records. Also add an `"off"` value to `mode`, since off-mode attempts are currently recorded as `shadow`.
+- Done (integration v2.4.1): `contracts.COMPONENTS` has a dedicated `"guard"` entry, so guard edits get their own credit assignment. Text strategies use `contracts.TEXT_COMPONENTS`, which excludes it.
+- Done (integration v2.4.1): `GuardDecision` has `case_id`/`trial` and `mode="off"`, which off-mode attempts now record. Opportunity records are wired in the order-support layer.
 - State-flag lessons depend on domain extractors, because the arm may not write extractor files.

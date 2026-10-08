@@ -143,9 +143,10 @@ class GuardRuntime:
     def is_side_effect(self, tool: str) -> bool:
         return self.policies.get(tool, self.default_side_effect)
 
-    def effective_mode(self, rule: Any) -> Literal["shadow", "enforce"]:
+    def effective_mode(self, rule: Any) -> Mode:
+        # "off" still records every match (paired guard-off arm, B1) but never enforces.
         if self.mode_override in ("off", "shadow"):
-            return "shadow"
+            return self.mode_override
         if self.mode_override == "enforce":
             return "enforce"
         return "enforce" if getattr(rule, "mode", "shadow") == "enforce" else "shadow"

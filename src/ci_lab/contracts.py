@@ -79,7 +79,7 @@ class ChatClientFactory(Protocol):
     """Builds a MAF chat client (``agent_framework.SupportsChatGetResponse``)."""
 
     def __call__(self, *, profile: Profile, model: str, purpose: Purpose,
-                 rollout: RolloutKey | None = None) -> Any: ...
+                 rollout: RolloutKey | None = None, **kw: Any) -> Any: ...
 
 
 class RolloutJournal(Protocol):
@@ -179,7 +179,10 @@ class Domain(Protocol):
 
 # ---------------------------------------------------------------- arms / RRSI
 
-COMPONENTS = ("prompt", "skill", "client_tool", "config", "memory", "context_mgmt")
+COMPONENTS = ("prompt", "skill", "client_tool", "config", "memory", "context_mgmt", "guard")
+# Components text strategies (agent/gepa/skillopt) may target; "guard" (harness/guards/**) is
+# written only by the guard strategy (v2.4 §13, frozen for text optimizers).
+TEXT_COMPONENTS = tuple(c for c in COMPONENTS if c != "guard")
 
 
 @dataclass(frozen=True)
@@ -223,6 +226,7 @@ class ArmContext:
     profile: Profile
     run_dir: Path
     budget_tokens: int | None = None
+    evolve_case_ids: tuple[str, ...] = ()  # optimizers may score only these (never heldout)
 
 
 class ArmStrategy(Protocol):
@@ -266,6 +270,7 @@ ATTR_NIGHT = "sleep.night"
 ATTR_SCORE = "ci.score"
 ATTR_DELTA_S = "rrsi.delta_s"
 ATTR_DELTA_C = "rrsi.delta_c"
+ATTR_TARGET = "sleep.target"
 
 # v2.4 §13 guards/lessons. One `ci.guard` span event per matching rule (all-match telemetry);
 # enforced blocks also set ATTR_GUARD_ACTION on the enclosing execute_tool / invoke_agent span.
@@ -305,6 +310,7 @@ class ArmResult:
     eval: EvalResult | None = None
     status: Literal["pending", "proposed", "rejected", "evaluated", "failed"] = "pending"
     strategy: str = "agent"
+    cost: Mapping[str, Any] | None = None  # optimizer cost report (tokens, metric calls)
 
 
 # ---------------------------------------------------------------- durability

@@ -7,7 +7,7 @@ import subprocess
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 
-from ci_lab.contracts import COMPONENTS, Edit
+from ci_lab.contracts import TEXT_COMPONENTS, Edit
 from ci_lab.tools.paths import PathRejected, components_for, matches_any, normalize_rel
 
 __all__ = ["CO_AUTHOR", "changed_paths", "edits_since", "git", "make_commit_tool", "parse_trailers"]
@@ -69,8 +69,8 @@ def make_commit_tool(worktree: Path | str, max_edits: int, *, component_globs: M
         component: one of prompt, skill, client_tool, config, memory, context_mgmt.
         hypothesis: one sentence: what failure this edit should fix and why.
         """
-        if component not in COMPONENTS:
-            return f"ERROR: unknown component {component!r}; expected one of {', '.join(COMPONENTS)}"
+        if component not in TEXT_COMPONENTS:
+            return f"ERROR: unknown component {component!r}; expected one of {', '.join(TEXT_COMPONENTS)}"
         if allowed_components is not None and component not in allowed_components:
             return f"ERROR: this arm may only edit {', '.join(allowed_components)}, not {component!r}"
         hyp = _one_line(hypothesis)

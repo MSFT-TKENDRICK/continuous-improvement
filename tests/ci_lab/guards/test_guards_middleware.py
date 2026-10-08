@@ -75,6 +75,7 @@ def test_off_still_records_attempts() -> None:
     run(agent)
     assert tools.count("issue_refund") == 1
     assert len(rt.decisions) == 3 and not any(d.enforced for d in rt.decisions)
+    assert all(d.mode == "off" for d in rt.decisions)
 
 
 def test_ci_guards_env_read_by_installer(monkeypatch: pytest.MonkeyPatch) -> None:

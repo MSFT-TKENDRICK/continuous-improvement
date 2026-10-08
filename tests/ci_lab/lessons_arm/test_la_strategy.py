@@ -69,7 +69,7 @@ def test_template_lessons_become_one_commit_per_edit(env):
                      cluster("refund.amount_exceeds_eligible", "c-amt", members=("a", "b", "c")),
                      cluster("refund.unverified_identity", "c-id"))
     edits = asyncio.run(GuardStrategy().propose(ctx(wt, base, run_dir, budget=2)))
-    assert len(edits) == 2 and all(isinstance(e, Edit) and e.component == "config" for e in edits)
+    assert len(edits) == 2 and all(isinstance(e, Edit) and e.component == "guard" for e in edits)
     assert edits[0].files == ("harness/guards/c-amt.yaml",)  # more members first (same rung)
     for e in edits:
         assert git(wt, "diff", "--name-only", f"{e.commit}~1", e.commit) == e.files[0]

@@ -10,7 +10,7 @@ from dataclasses import asdict, dataclass
 from typing import Any
 
 from ci_lab import obs
-from ci_lab.contracts import ATTR_EXPERIMENT, ATTR_PHASE, ATTR_ROUND, ATTR_STRATEGY, COMPONENTS, SPAN_STEP, ArmDirective
+from ci_lab.contracts import ATTR_EXPERIMENT, ATTR_PHASE, ATTR_ROUND, ATTR_STRATEGY, SPAN_STEP, TEXT_COMPONENTS, ArmDirective
 
 from .attribution import component_stats
 from .history import HistoryRecord, tried_components
@@ -35,7 +35,7 @@ def stall_flag(trajectory: Sequence[float], t: int, w: int, delta: float) -> boo
     return trajectory[t] - trajectory[t - w] <= delta
 
 
-def untried(records: Iterable[HistoryRecord], components: Sequence[str] = COMPONENTS) -> tuple[str, ...]:
+def untried(records: Iterable[HistoryRecord], components: Sequence[str] = TEXT_COMPONENTS) -> tuple[str, ...]:
     """U_t = K minus T_t, in vocabulary order."""
     seen = tried_components(records)
     return tuple(c for c in components if c not in seen)
@@ -54,7 +54,7 @@ def component_yield(records: Iterable[HistoryRecord], t: int, n_prune: int) -> d
 
 
 def prune_set(records: Iterable[HistoryRecord], t: int, n_prune: int,
-              components: Sequence[str] = COMPONENTS) -> tuple[str, ...]:
+              components: Sequence[str] = TEXT_COMPONENTS) -> tuple[str, ...]:
     """B_t = {l in T_t : g_t(l) <= 0} (Eq. 14), in vocabulary order."""
     g = component_yield(records, t, n_prune)
     order = {c: i for i, c in enumerate(components)}
@@ -128,7 +128,7 @@ def _exploit_order(records: Sequence[HistoryRecord], components: Sequence[str], 
 
 def plan_round(t: int, hp: Hyperparams, history: Sequence[HistoryRecord], trajectory: Sequence[float],
                delta: float, arms: Sequence[str] | None = None,
-               components: Sequence[str] = COMPONENTS, *, experiment_id: str | None = None) -> RoundSchedule:
+               components: Sequence[str] = TEXT_COMPONENTS, *, experiment_id: str | None = None) -> RoundSchedule:
     """Everything Algorithm 1 lines 2-7 compute for round t, plus per-arm directives with an
     allocated strategy. Only history from rounds < t is considered. Runs inside a
     ``ci.step`` span (phase ``plan``); the span is a no-op without a telemetry provider."""
@@ -168,7 +168,7 @@ def _plan(t: int, hp: Hyperparams, history: Sequence[HistoryRecord], trajectory:
 
 def directives(t: int, hp: Hyperparams, history: Sequence[HistoryRecord], trajectory: Sequence[float],
                delta: float, arms: Sequence[str] | None = None,
-               components: Sequence[str] = COMPONENTS, *, experiment_id: str | None = None
+               components: Sequence[str] = TEXT_COMPONENTS, *, experiment_id: str | None = None
                ) -> tuple[ArmDirective, ...]:
     """One contract ``ArmDirective`` per arm (strategy, component focus, budget, explore flag)."""
     return plan_round(t, hp, history, trajectory, delta, arms, components, experiment_id=experiment_id).arm_directives

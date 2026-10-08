@@ -8,7 +8,7 @@ from collections.abc import Mapping, Sequence
 from typing import Any
 
 from ci_lab.campaign.records import cases, critical_count, mean_score, tokens
-from ci_lab.contracts import COMPONENTS, ArmResult, EvalResult
+from ci_lab.contracts import TEXT_COMPONENTS, ArmResult, EvalResult
 
 DEFAULT_HYPER: dict[str, Any] = {
     "arms": 2,                # N arms per round
@@ -31,7 +31,7 @@ DEFAULT_HYPER: dict[str, Any] = {
 def schedule(round_no: int, hyper: Mapping[str, Any], history: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
     n = int(hyper.get("arms", 2))
     strategies = list(hyper.get("strategies") or ["agent"])
-    return [{"arm": f"v{i + 1}", "component": COMPONENTS[(round_no + i) % len(COMPONENTS)],
+    return [{"arm": f"v{i + 1}", "component": TEXT_COMPONENTS[(round_no + i) % len(TEXT_COMPONENTS)],
              "strategy": strategies[i % len(strategies)], "budget": int(hyper.get("budget", 1))}
             for i in range(n)]
 

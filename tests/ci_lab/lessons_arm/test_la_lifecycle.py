@@ -208,5 +208,5 @@ def test_retirement_is_exposure_based_and_ablation_commits(repo, tmp_path):
         {"kind": "opportunity", "n": 100000}, decision(busy, 1)])])
     assert [c.reason for c in rare] == ["rare"]
     edit = apply_ablation(cands[0], wt)
-    assert edit.files == (RULE_FILE,) and edit.component == "config" and not (wt / RULE_FILE).exists()
+    assert edit.files == (RULE_FILE,) and edit.component == "guard" and not (wt / RULE_FILE).exists()
     assert git(wt, "diff", "--name-only", f"{edit.commit}~1", edit.commit) == RULE_FILE
