@@ -38,7 +38,7 @@ def test_ranks_average_ties():
 
 def test_bootstrap_ci_is_seeded_and_brackets_point():
     pairs = [(i % 2 == 0, i % 3 == 0) for i in range(40)]
-    stat = lambda ps: sum(h == j for h, j in ps) / len(ps)  # noqa: E731
+    stat = lambda ps: sum(h == j for h, j in ps) / len(ps)
     a = A.bootstrap_ci(pairs, stat, n_boot=300, rng=__import__("random").Random(1))
     b = A.bootstrap_ci(pairs, stat, n_boot=300, rng=__import__("random").Random(1))
     assert a == b and a[0] <= stat(pairs) <= a[1]
@@ -129,7 +129,9 @@ def test_norm_value_and_label_validation(tmp_path):
 def test_run_audit_emits_evaluator_span(files, tmp_path, monkeypatch):
     from opentelemetry.sdk.trace import TracerProvider
     from opentelemetry.sdk.trace.export import SimpleSpanProcessor
-    from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+    from opentelemetry.sdk.trace.export.in_memory_span_exporter import (
+        InMemorySpanExporter,
+    )
 
     from ci_lab import obs
     from ci_lab.contracts import ATTR_PURPOSE, SPAN_EVALUATOR_EXPERIMENT

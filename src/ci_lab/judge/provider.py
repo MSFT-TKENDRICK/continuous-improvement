@@ -85,7 +85,7 @@ def _load_rubrics(path: str | None) -> dict[str, str] | None:
         data = yaml.safe_load(text)
     rubrics = data.get("rubrics", data) if isinstance(data, dict) else None
     if not isinstance(rubrics, dict):
-        raise ValueError(f"{path}: expected a mapping of dimension -> rubric")
+        raise TypeError(f"{path}: expected a mapping of dimension -> rubric")
     return {str(k): str(v) for k, v in rubrics.items()}
 
 

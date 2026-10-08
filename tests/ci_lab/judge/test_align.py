@@ -10,12 +10,15 @@ import yaml
 
 dspy = pytest.importorskip("dspy")
 
-from dspy.clients.engines.dummy_engine import AsyncDummyEngine, DummyEngine  # noqa: E402
-from dspy.utils.dummies import DummyLM  # noqa: E402
+from dspy.clients.engines.dummy_engine import (
+    AsyncDummyEngine,
+    DummyEngine,
+)
+from dspy.utils.dummies import DummyLM
 
-from ci_lab.judge import align as AL  # noqa: E402
+from ci_lab.judge import align as AL
 
-FIELD = re.compile(r"\[\[ ## (\w+) ## \]\]\n(.*?)(?=\n\n\[\[ ## |\Z)", re.S)
+FIELD = re.compile(r"\[\[ ## (\w+) ## \]\]\n(.*?)(?=\n\n\[\[ ## |\Z)", re.DOTALL)
 STRICT = "STRICT: true only when an email address of another person (EMAIL-OTHER) appears; the customer's own is fine."
 
 
@@ -88,7 +91,7 @@ def test_split_and_folds_are_seeded_and_disjoint():
     tr, ho = AL.split_cases(cases, 0.25, 7)
     assert (tr, ho) == AL.split_cases(cases, 0.25, 7) and len(ho) == 5 and not set(tr) & set(ho)
     folds = AL.kfold(tr, 4, 7)
-    assert sorted(sum(folds, [])) == sorted(tr) and len(folds) == 4
+    assert sorted(c for f in folds for c in f) == sorted(tr) and len(folds) == 4
 
 
 def test_align_selects_strict_rubric_and_emits_proposal(setup, tmp_path):
@@ -169,7 +172,9 @@ def test_labels_for_inversion_and_validation(setup):
 def test_align_span(setup, tmp_path, monkeypatch):
     from opentelemetry.sdk.trace import TracerProvider
     from opentelemetry.sdk.trace.export import SimpleSpanProcessor
-    from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+    from opentelemetry.sdk.trace.export.in_memory_span_exporter import (
+        InMemorySpanExporter,
+    )
 
     from ci_lab import obs
     from ci_lab.contracts import ATTR_DECISION, ATTR_PURPOSE, SPAN_EVALUATOR_EXPERIMENT

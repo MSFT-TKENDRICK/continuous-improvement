@@ -35,9 +35,10 @@ import math
 import random
 import re
 import subprocess
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Mapping, Sequence
+from typing import Any
 
 import yaml
 
@@ -281,7 +282,7 @@ class _Judge:
 def split_cases(cases: Sequence[str], heldout_fraction: float, seed: int) -> tuple[list[str], list[str]]:
     ordered = sorted(cases)
     random.Random(f"{seed}:split").shuffle(ordered)
-    n_hold = int(round(len(ordered) * heldout_fraction))
+    n_hold = round(len(ordered) * heldout_fraction)
     if heldout_fraction > 0 and len(ordered) >= 4:
         n_hold = max(1, n_hold)
     return sorted(ordered[n_hold:]), sorted(ordered[:n_hold])
@@ -428,7 +429,7 @@ def _evaluator_tree(config_path: Path) -> str:
                              timeout=10, check=True)
         sha = out.stdout.strip()
         if sha and not subprocess.run(["git", "-C", str(rel), "status", "--porcelain", "--", "."],
-                                      capture_output=True, text=True, timeout=10).stdout.strip():
+                                      capture_output=True, text=True, timeout=10, check=False).stdout.strip():
             return f"git-tree:{sha}"
     except (OSError, subprocess.SubprocessError):
         pass

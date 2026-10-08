@@ -26,7 +26,13 @@ from typing import Any, Protocol
 
 import httpx
 
-from ci_lab.judge.s1types import Answer, Question, WireError, questions_to_wire, render_text
+from ci_lab.judge.s1types import (
+    Answer,
+    Question,
+    WireError,
+    questions_to_wire,
+    render_text,
+)
 
 RETRY_STATUSES = {429, 500, 502, 503, 504, 529}
 DEFAULT_LLAMA_URL = "http://127.0.0.1:8081"

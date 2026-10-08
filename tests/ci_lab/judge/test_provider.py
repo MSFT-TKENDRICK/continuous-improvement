@@ -13,15 +13,15 @@ import yaml
 
 litellm = pytest.importorskip("litellm")
 
-from assert_ai.config import parse_judge_dimensions  # noqa: E402
-from assert_ai.core import judge as J  # noqa: E402
-from assert_ai.core import transcript as T  # noqa: E402
-from assert_ai.stages.judge import JUDGE_SYSTEM_PROMPT  # noqa: E402
+from assert_ai.config import parse_judge_dimensions
+from assert_ai.core import judge as J
+from assert_ai.core import transcript as T
+from assert_ai.stages.judge import JUDGE_SYSTEM_PROMPT
 
-from ci_lab.judge import assert_contract as AC  # noqa: E402
-from ci_lab.judge import backends as B  # noqa: E402
-from ci_lab.judge import provider as P  # noqa: E402
-from ci_lab.judge.s1types import Answer  # noqa: E402
+from ci_lab.judge import assert_contract as AC
+from ci_lab.judge import backends as B
+from ci_lab.judge import provider as P
+from ci_lab.judge.s1types import Answer
 
 ROOT = Path(__file__).resolve().parents[3]
 REPLAY = ROOT / "evals" / "assert" / "judge_replay"
@@ -95,7 +95,7 @@ def test_package_register_delegates(handler):
 
 
 def test_parse_request_reads_assert_contract():
-    c, tax = _contract()
+    c, _ = _contract()
     _, xml, _ = _case()
     req = AC.parse_request(_messages(c, xml), _params(c))
     specs = {d.name: d for d in req.dimensions}
@@ -141,7 +141,7 @@ def test_violated_nodes_drive_policy_violation_and_confidence(handler):
     assert verdict["dimensions"]["policy_violation"] is True
     assert verdict["node_judgments"] and all(n["violated"] for n in verdict["node_judgments"])
     assert {n["confidence"] for n in verdict["node_judgments"]} == {"high"}
-    norm, err = J.normalize_transcript_judge_verdict(
+    _, err = J.normalize_transcript_judge_verdict(
         verdict, transcript=tr, index_to_message_id=idx, score_keys=c["score_keys"], policy_raw=tax,
         not_applicable_score_keys=c["not_applicable_score_keys"], dimension_scales=c["dimension_scales"])
     assert err is None, err
@@ -275,8 +275,8 @@ def test_llamacpp_logprob_backend_through_provider(handler, monkeypatch):
     real = B.make_backend
     monkeypatch.setattr(P, "make_backend",
                         lambda kind, model, **kw: real(kind, model, **{**kw, "transport": _llama_transport(seen)}))
-    c, tax = _contract()
-    tr, xml, idx = _case()
+    c, _ = _contract()
+    _, xml, _ = _case()
     verdict, raw = _call("s1/llamacpp/qwen3.5-4b", c, xml)
     assert _ok(c, verdict), raw
     assert verdict["dimensions"]["pii_leak"] is False
@@ -290,7 +290,7 @@ def test_llamacpp_logprob_backend_through_provider(handler, monkeypatch):
 def test_live_llama_server():
     try:
         httpx.get("http://127.0.0.1:8081/health", timeout=2).raise_for_status()
-    except Exception:
+    except (httpx.HTTPError, OSError):
         pytest.skip("llama-server not running on :8081")
     P.unregister()
     h = P.register()

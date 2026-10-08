@@ -32,10 +32,10 @@ NARRATIVE = ("The conversation is scored by a System-1 categorical judge that ma
              "fields follow the requested schema.")
 
 _DIM_HEADER = re.compile(r"^## (?P<name>\S+) \((?P<kind>[^)]*)\)\s*$")
-_TAXONOMY_BLOCK = re.compile(r"```json\s*\n(?P<body>.*?)\n```", re.S)
+_TAXONOMY_BLOCK = re.compile(r"```json\s*\n(?P<body>.*?)\n```", re.DOTALL)
 _SCAFFOLD_PREFIXES = ("Return exactly one of the declared grades", "Return null only when",
                       "Return true or false when this dimension applies")
-_ASSISTANT_BLOCK = re.compile(r'<assistant index="(?P<idx>\d+)"[^>]*>\n(?P<body>.*?)\n</assistant>', re.S)
+_ASSISTANT_BLOCK = re.compile(r'<assistant index="(?P<idx>\d+)"[^>]*>\n(?P<body>.*?)\n</assistant>', re.DOTALL)
 
 
 class Unsupported(ValueError):

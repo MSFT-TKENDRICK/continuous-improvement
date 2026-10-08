@@ -17,9 +17,10 @@ import json
 import math
 import random
 from collections import Counter
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Iterable, Mapping, Sequence
+from typing import Any
 
 SCHEMA = "ci-lab.judge-audit/1"
 DEFAULT_FLOOR = 0.6
@@ -107,7 +108,7 @@ def weighted_kappa(pairs: Sequence[tuple[Value, Value]], order: Sequence[Value])
     idx = {v: i for i, v in enumerate(order)}
     hc = Counter(idx[h] for h, _ in pairs)
     jc = Counter(idx[j] for _, j in pairs)
-    w = lambda a, b: ((a - b) / (k - 1)) ** 2  # noqa: E731
+    w = lambda a, b: ((a - b) / (k - 1)) ** 2
     observed = sum(w(idx[h], idx[j]) for h, j in pairs) / n
     expected = sum(hc[a] * jc[b] * w(a, b) for a in hc for b in jc) / (n * n)
     if expected == 0:
@@ -176,8 +177,8 @@ def bootstrap_ci(pairs: Sequence[tuple[Value, Value]], stat: Callable[[Sequence[
     if len(vals) < max(10, n_boot // 10):
         return None
     vals.sort()
-    lo = vals[max(0, int(math.floor(alpha / 2 * len(vals))))]
-    hi = vals[min(len(vals) - 1, int(math.ceil((1 - alpha / 2) * len(vals))) - 1)]
+    lo = vals[max(0, math.floor(alpha / 2 * len(vals)))]
+    hi = vals[min(len(vals) - 1, math.ceil((1 - alpha / 2) * len(vals)) - 1)]
     return lo, hi
 
 
@@ -201,8 +202,8 @@ def load_labels(path: str | Path) -> dict[tuple[str, str], Value]:
 
 def write_labels(path: str | Path, labels: Mapping[tuple[str, str], Any]) -> None:
     with open(path, "w", encoding="utf-8") as f:
-        for (case, dim), label in sorted(labels.items(), key=lambda kv: (kv[0][0], kv[0][1])):
-            f.write(json.dumps({"case_id": case, "dimension": dim, "label": label}) + "\n")
+        f.writelines(json.dumps({"case_id": case, "dimension": dim, "label": label}) + "\n"
+                     for (case, dim), label in sorted(labels.items()))
 
 
 @dataclass
@@ -375,7 +376,11 @@ def run_audit(labels_path: str | Path, judge_paths: Sequence[str | Path], *, out
               experiment_id: str | None = None, **kwargs: Any) -> dict[str, Any]:
     """Load, audit, optionally write ``out`` (JSON) - inside a ``ci.evaluator`` span."""
     from ci_lab import obs
-    from ci_lab.contracts import ATTR_EXPERIMENT, ATTR_PURPOSE, SPAN_EVALUATOR_EXPERIMENT
+    from ci_lab.contracts import (
+        ATTR_EXPERIMENT,
+        ATTR_PURPOSE,
+        SPAN_EVALUATOR_EXPERIMENT,
+    )
 
     attrs = {ATTR_PURPOSE: "judge_audit"}
     if experiment_id:
