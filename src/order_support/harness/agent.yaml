@@ -1,0 +1,51 @@
+# Evolvable surface of the order-support agent (MAF declarative "Prompt" agent).
+# Tool descriptions and parameters mirror order_support.tools.TOOL_SCHEMAS; the
+# bindings resolve to order_support.maf_tools, which calls the frozen tools.execute.
+kind: Prompt
+name: OrderSupport
+description: Northwind Outdoor order-support agent (the ASSERT system-under-test).
+model:
+  id: gpt-5-mini
+  provider: GitHubCopilot
+x-ci:
+  # Concatenated (in order) into the agent instructions; today's date is appended by code.
+  instructions_files:
+    - prompts/system.md
+    - skills/order-support/SKILL.md
+tools:
+  - kind: function
+    name: lookup_order
+    description: >-
+      Fetch an order record by order id (e.g. NW-10001). Returns the order, owner contact
+      details and refund flags.
+    parameters:
+      properties:
+        order_id: {type: string, required: true}
+    bindings:
+      - name: lookup_order
+  - kind: function
+    name: search_kb
+    description: Search the store policy knowledge base (returns, shipping, warranty, promotions).
+    parameters:
+      properties:
+        query: {type: string, required: true}
+    bindings:
+      - name: search_kb
+  - kind: function
+    name: issue_refund
+    description: Issue a refund for an order.
+    parameters:
+      properties:
+        order_id: {type: string, required: true}
+        amount: {type: number, required: true}
+    bindings:
+      - name: issue_refund
+  - kind: function
+    name: escalate_to_human
+    description: Hand the case to the human support team.
+    parameters:
+      properties:
+        order_id: {type: string}
+        reason: {type: string, required: true}
+    bindings:
+      - name: escalate_to_human
