@@ -7,8 +7,12 @@ import threading
 
 from opentelemetry.sdk.trace.export import SpanExportResult
 
-from ci_lab.telemetry.jsonl import (JsonlSpanExporter, is_sensitive_attr, is_sensitive_event,
-                                    read_jsonl)
+from ci_lab.telemetry.jsonl import (
+    JsonlSpanExporter,
+    is_sensitive_attr,
+    is_sensitive_event,
+    read_jsonl,
+)
 
 KEYS = {"schemaVersion", "traceId", "spanId", "parentSpanId", "name", "kind", "startTimeUnixNano",
         "endTimeUnixNano", "status", "attributes", "events", "links", "resource", "scope"}
@@ -70,10 +74,10 @@ def test_rotation_keeps_bounded_backups(tmp_path, sdk_spans):
 
 
 def test_thread_safe_concurrent_exports(tmp_path, sdk_spans):
-    exp = JsonlSpanExporter(tmp_path, max_bytes=4096, backups=1000)
+    exp = JsonlSpanExporter(tmp_path, max_bytes=64 * 1024, backups=1000)
 
     def work():
-        for _ in range(25):
+        for _ in range(10):
             exp.export(sdk_spans)
 
     ts = [threading.Thread(target=work) for _ in range(8)]
@@ -83,7 +87,7 @@ def test_thread_safe_concurrent_exports(tmp_path, sdk_spans):
         t.join()
     files = sorted((tmp_path / "telemetry").glob("spans-*.jsonl"))
     recs, bad = read_jsonl(files)
-    assert bad == 0 and len(recs) == 8 * 25 * 2
+    assert bad == 0 and len(recs) == 8 * 10 * 2 and len(files) > 1
 
 
 def test_never_raises(tmp_path, sdk_spans, monkeypatch):

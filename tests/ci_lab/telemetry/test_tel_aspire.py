@@ -11,7 +11,6 @@ import sys
 import time
 import urllib.error
 import zipfile
-from pathlib import Path
 
 import pytest
 
@@ -182,7 +181,7 @@ def test_state_file_owner_only(tmp_path):
     assert aspire.read_state(p) == {"pid": 1, "api_key": "s3cret"}
     assert not list(p.parent.glob(".*.tmp"))
     if os.name == "nt":
-        out = subprocess.run(["icacls", str(p)], capture_output=True, text=True).stdout
+        out = subprocess.run(["icacls", str(p)], check=False, capture_output=True, text=True).stdout
         aces = [ln for ln in out.splitlines()[:-2] if ":" in ln.split(str(p))[-1]]
         assert "(I)" not in out, out  # inheritance removed
         assert len(aces) == 1 and os.environ["USERNAME"].lower() in out.lower(), out
@@ -240,7 +239,8 @@ def test_up_writes_state_and_hides_secrets(tmp_path, monkeypatch):
     st = json.loads(sp.read_text("utf-8"))
     assert res["running"] and not res["already_running"]
     assert not set(aspire.SECRET_FIELDS) & set(res)
-    assert all(len(st[f]) >= 40 for f in aspire.SECRET_FIELDS) and len(set(st[f] for f in aspire.SECRET_FIELDS)) == 3
+    assert all(len(st[f]) >= 40 for f in aspire.SECRET_FIELDS)
+    assert len({st[f] for f in aspire.SECRET_FIELDS}) == 3
     assert seen["env"]["Dashboard__Api__PrimaryApiKey"] == st["api_key"]
     assert seen["env"]["Dashboard__Otlp__PrimaryApiKey"] == st["otlp_key"]
     assert st["api_url"] == st["ui_url"] and st["ui_url"].startswith("http://127.0.0.1:")

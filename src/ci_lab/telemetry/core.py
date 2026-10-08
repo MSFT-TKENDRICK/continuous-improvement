@@ -19,7 +19,11 @@ from typing import Any, Literal
 
 from opentelemetry import trace
 from opentelemetry.sdk.trace import ReadableSpan, SpanProcessor, TracerProvider
-from opentelemetry.sdk.trace.export import BatchSpanProcessor, SpanExporter, SpanExportResult
+from opentelemetry.sdk.trace.export import (
+    BatchSpanProcessor,
+    SpanExporter,
+    SpanExportResult,
+)
 
 from ci_lab.contracts import ATTR_CAMPAIGN, ATTR_PROFILE
 from ci_lab.telemetry import aspire as _aspire
@@ -47,7 +51,7 @@ class _SafeExporter(SpanExporter):
             if not self.sensitive:
                 spans = [redact_span(s) for s in spans]
             return self.inner.export(spans)
-        except Exception:  # noqa: BLE001
+        except Exception:
             log.debug("telemetry exporter %s failed", self.label, exc_info=True)
             return SpanExportResult.FAILURE
 
@@ -64,7 +68,7 @@ class _SafeExporter(SpanExporter):
             self._down = True
         try:
             self.inner.shutdown()
-        except Exception:  # noqa: BLE001
+        except Exception:
             log.debug("telemetry exporter %s shutdown failed", self.label, exc_info=True)
 
 
@@ -118,7 +122,7 @@ class TelemetryHandle:
         for p in [*self.processors, *self._extra]:
             try:
                 p.shutdown()
-            except Exception:  # noqa: BLE001
+            except Exception:
                 log.debug("span processor shutdown failed", exc_info=True)
         for e in self.exporters:
             e.shutdown()
@@ -140,7 +144,7 @@ def current() -> TelemetryHandle | None:
 
 def git_ref(cwd: Path | str | None = None) -> str | None:
     try:
-        r = subprocess.run(["git", "rev-parse", "HEAD"], cwd=cwd, capture_output=True,
+        r = subprocess.run(["git", "rev-parse", "HEAD"], cwd=cwd, check=False, capture_output=True,
                            text=True, timeout=3)
     except (OSError, subprocess.SubprocessError):
         return None
@@ -187,13 +191,16 @@ def _resolve_aspire(mode: AspireMode) -> dict[str, Any] | None:
 
 
 def _install_provider(handle: TelemetryHandle, exporters: list[_SafeExporter]) -> None:
-    from agent_framework.observability import configure_otel_providers, enable_instrumentation
+    from agent_framework.observability import (
+        configure_otel_providers,
+        enable_instrumentation,
+    )
 
     tp = trace.get_tracer_provider()
     if not isinstance(tp, (TracerProvider, trace.ProxyTracerProvider)):
         # D4: someone installed a non-SDK provider first; we cannot attach processors and
         # OTel will not let us replace it, so spans would silently vanish.
-        raise RuntimeError(
+        raise RuntimeError(  # noqa: TRY004 - a setup-order failure, not a bad argument
             f"a non-SDK global TracerProvider ({type(tp).__name__}) is already installed; "
             "call ci_lab.telemetry.setup() first at process entry")
     if isinstance(tp, TracerProvider):

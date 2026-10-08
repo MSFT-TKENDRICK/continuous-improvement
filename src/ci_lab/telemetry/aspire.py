@@ -82,7 +82,7 @@ def _windows_native_arch() -> str | None:
 
 def _macos_is_arm() -> bool:
     try:
-        out = subprocess.run(["sysctl", "-n", "hw.optional.arm64"], capture_output=True,
+        out = subprocess.run(["sysctl", "-n", "hw.optional.arm64"], check=False, capture_output=True,
                              text=True, timeout=5).stdout.strip()
         return out == "1"
     except (OSError, subprocess.SubprocessError):
@@ -181,7 +181,7 @@ def package_url(base: str, rid: str, version: str) -> str:
 
 
 def _urlopen(url: str, timeout: float = 120):  # patched in tests
-    return urllib.request.urlopen(url, timeout=timeout)  # noqa: S310 - https feed URLs only
+    return urllib.request.urlopen(url, timeout=timeout)
 
 
 def download(url: str, dest: Path) -> str:
@@ -298,7 +298,7 @@ def restrict_permissions(p: Path) -> None:
     if os.name == "nt":
         user = os.environ.get("USERNAME") or getpass.getuser()
         r = subprocess.run(["icacls", str(p), "/inheritance:r", "/grant:r", f"{user}:F"],
-                           capture_output=True, text=True)
+                           check=False, capture_output=True, text=True)
         if r.returncode != 0:
             log.warning("icacls failed on %s (rc=%s)", p, r.returncode)
     else:
@@ -394,7 +394,7 @@ def process_image(pid: int) -> str | None:
     with contextlib.suppress(OSError):
         return os.readlink(f"/proc/{pid}/exe")
     try:
-        out = subprocess.run(["ps", "-p", str(pid), "-o", "comm="], capture_output=True,
+        out = subprocess.run(["ps", "-p", str(pid), "-o", "comm="], check=False, capture_output=True,
                              text=True, timeout=5).stdout.strip()
     except (OSError, subprocess.SubprocessError):
         return None
@@ -513,8 +513,8 @@ def _spawn(exe: Path, env: dict[str, str], log_path: Path) -> subprocess.Popen:
         log_path.touch()
         restrict_permissions(log_path)
     with open(log_path, "ab") as logf:
-        kw: dict[str, Any] = dict(stdin=subprocess.DEVNULL, stdout=logf, stderr=subprocess.STDOUT,
-                                  cwd=str(exe.parent), env=env, close_fds=True)
+        kw: dict[str, Any] = {"stdin": subprocess.DEVNULL, "stdout": logf, "stderr": subprocess.STDOUT,
+                              "cwd": str(exe.parent), "env": env, "close_fds": True}
         if os.name == "nt":
             flags = (subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
                      | subprocess.CREATE_NO_WINDOW)
@@ -558,7 +558,7 @@ def up(*, version: str | None = None, rid: str | None = None, trust_new: bool = 
         "otlp_url": f"http://127.0.0.1:{otlp_port}", "api_url": ui,
         "otlp_grpc_url": f"http://127.0.0.1:{grpc_port}" if grpc_port else None,
         "log": str(log_path),
-        "started": _dt.datetime.now(_dt.timezone.utc).isoformat(timespec="seconds"), **tokens,
+        "started": _dt.datetime.now(_dt.UTC).isoformat(timespec="seconds"), **tokens,
     }
     write_state(state, sp)
     deadline = time.monotonic() + wait

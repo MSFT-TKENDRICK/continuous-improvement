@@ -7,8 +7,8 @@ import datetime as _dt
 import hashlib
 import json
 import os
-import shutil
 import secrets
+import shutil
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -32,7 +32,7 @@ def imports_dir() -> Path:
 
 def _gh(args: list[str]) -> bytes:  # patched in tests
     try:
-        r = subprocess.run(["gh", *args], capture_output=True, timeout=600)
+        r = subprocess.run(["gh", *args], check=False, capture_output=True, timeout=600)
     except FileNotFoundError as exc:
         raise PullError("GitHub CLI 'gh' not found on PATH") from exc
     if r.returncode != 0:
@@ -88,7 +88,7 @@ def pull(run_id: str | int, *, repo: str | None = None, artifact: str = DEFAULT_
             "traces": len({r["traceId"] for r in records}),
             "services": sorted({str(r["resource"].get("service.name", "")) for r in records} - {""}),
             "artifact_created": art.get("created_at"),
-            "pulled": _dt.datetime.now(_dt.timezone.utc).isoformat(timespec="seconds"),
+            "pulled": _dt.datetime.now(_dt.UTC).isoformat(timespec="seconds"),
         }
         (tmp / MANIFEST).write_text(json.dumps(manifest, indent=2), encoding="utf-8")
         if dest.exists():

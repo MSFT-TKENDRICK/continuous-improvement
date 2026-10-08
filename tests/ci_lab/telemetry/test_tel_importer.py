@@ -7,7 +7,9 @@ import threading
 from pathlib import Path
 
 import pytest
-from opentelemetry.proto.collector.trace.v1.trace_service_pb2 import ExportTraceServiceRequest
+from opentelemetry.proto.collector.trace.v1.trace_service_pb2 import (
+    ExportTraceServiceRequest,
+)
 
 from ci_lab.telemetry import importer, record
 from ci_lab.telemetry.jsonl import read_jsonl
@@ -21,7 +23,7 @@ def otlp_server():
     status = {"code": 200}
 
     class H(http.server.BaseHTTPRequestHandler):
-        def do_POST(self):  # noqa: N802
+        def do_POST(self):
             body = self.rfile.read(int(self.headers["Content-Length"]))
             got.append((self.path, dict(self.headers), body))
             self.send_response(status["code"])

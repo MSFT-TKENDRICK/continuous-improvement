@@ -98,7 +98,7 @@ class JsonlSpanExporter(SpanExporter):
             try:
                 lines.append(json.dumps(from_readable_span(s if self.sensitive else redact_span(s)),
                                         separators=(",", ":"), ensure_ascii=False))
-            except Exception:  # noqa: BLE001 - a bad span must not break the batch
+            except Exception:
                 log.debug("jsonl: unserializable span dropped", exc_info=True)
         if not lines:
             return SpanExportResult.SUCCESS
@@ -116,7 +116,7 @@ class JsonlSpanExporter(SpanExporter):
                     f.write(data)
                     f.flush()
             return SpanExportResult.SUCCESS
-        except Exception:  # noqa: BLE001 - telemetry must never raise into the app
+        except Exception:
             log.debug("jsonl: export failed", exc_info=True)
             return SpanExportResult.FAILURE
 
