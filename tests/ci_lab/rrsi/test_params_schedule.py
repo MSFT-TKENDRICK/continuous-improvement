@@ -97,7 +97,7 @@ def test_untried_and_prune(mk):
         mk.rec(1, "v1", ["config"], 0.0),
         mk.rec(1, "v2", ["memory"], None),  # never measured -> not "tried"
     ]
-    assert S.untried(hist) == ("client_tool", "memory", "context_mgmt")
+    assert S.untried(hist) == ("client_tool", "memory", "context_mgmt", "agent", "loop", "workflow", "mcp")
     # t=2, n_prune=4: g(prompt)=0.05, g(skill)=-0.02, g(config)=0.0 -> B = {skill, config}
     assert S.prune_set(hist, 2, 4) == ("skill", "config")
     # t=6, n_prune=4: round-0 edits fall out of the window -> g = -inf -> pruned too

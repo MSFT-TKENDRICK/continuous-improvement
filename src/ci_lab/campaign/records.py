@@ -97,8 +97,11 @@ def eval_from_dict(data: Mapping[str, Any]) -> EvalResult:
         scores=[TaskScore(case_id=s["case_id"], trial=s["trial"], suite=s["suite"], score=s["score"],
                           violations=tuple(Violation(**v) for v in s.get("violations", ())),
                           tokens_in=s.get("tokens_in", 0), tokens_out=s.get("tokens_out", 0),
-                          served_model=s.get("served_model"))
+                          served_model=s.get("served_model"), wall_ms=float(s.get("wall_ms") or 0.0),
+                          llm_calls=int(s.get("llm_calls") or 0), tool_calls=int(s.get("tool_calls") or 0),
+                          subscores={str(k): float(v) for k, v in (s.get("subscores") or {}).items()})
                 for s in data.get("scores", ())],
+        surface={str(k): float(v) for k, v in (data.get("surface") or {}).items()},
     )
 
 
