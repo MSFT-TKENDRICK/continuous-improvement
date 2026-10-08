@@ -19,7 +19,7 @@ import asyncio
 import json
 import os
 from collections import defaultdict
-from collections.abc import Iterator, Mapping
+from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -158,15 +158,20 @@ def compute_metrics(pairs: Mapping[PairKey, tuple[_Run, _Run]], *, trials: int, 
         substitutions=subs)
 
 
-def harness_bundle_digest(harness_dir: Path) -> str:
-    """Digest of the guard rules under ``harness_dir`` (``harness/guards`` or ``guards``)."""
+def harness_bundle_digest(harness_dir: Path, *, guards_dir: str | None = None,
+                          extractors: Sequence[Path] = ()) -> str:
+    """Digest of the guard rules the agent loads from ``harness_dir``: ``<harness_dir>/<guards_dir>``
+    (the domain's ``<harness root>/guards`` in a repo-root worktree), else ``harness/guards`` or
+    ``guards``. ``extractors`` are the domain's frozen extractor files (plus any ``*extractor*.yaml``
+    beside the rules)."""
     from .bundle import load_rules, rule_files
 
-    for guards in (Path(harness_dir) / GUARDS_DIR, Path(harness_dir) / "guards"):
+    candidates = [d for d in (guards_dir, GUARDS_DIR, "guards") if d]
+    for guards in (Path(harness_dir) / d for d in dict.fromkeys(candidates)):
         if guards.is_dir():
             files = rule_files(guards)
             if files:
-                return load_rules(files, sorted(guards.glob("*extractor*.yaml"))).digest
+                return load_rules(files, [*extractors, *sorted(guards.glob("*extractor*.yaml"))]).digest
     return bundle_digest([])
 
 
@@ -221,8 +226,12 @@ async def paired_eval(domain: Domain, harness_dir: Path, split: str, k: int, *, 
             opportunities += on.opportunities
             for case, trial in off.scores:
                 pairs[(rep, case, trial)] = (off, on)
-    return compute_metrics(pairs, trials=trials * k, opportunities=opportunities,
-                           digest=digest or harness_bundle_digest(Path(harness_dir)))
+    if not digest:
+        from ci_lab.domain.layout import guard_extractors, guards_rel
+
+        digest = harness_bundle_digest(Path(harness_dir), guards_dir=guards_rel(domain),
+                                       extractors=guard_extractors(domain))
+    return compute_metrics(pairs, trials=trials * k, opportunities=opportunities, digest=digest)
 
 
 # ---------------------------------------------------------------- ship rule (B1, C5)

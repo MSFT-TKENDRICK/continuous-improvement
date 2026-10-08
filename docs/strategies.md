@@ -19,10 +19,12 @@ only the keyword arguments its constructor accepts.
   import fails, `get_strategy("guard")` raises `UnknownStrategy`. `available()` lists the
   names that resolve. `gepa` is the DSPy-based strategy (`ci_lab.optim`); there is no
   separate `dspy` name.
-- Text strategies treat `**/harness/guards/**` as frozen (§13 B2), so only the `guard`
-  strategy can write guard rule bundles. The campaign enforces this before evaluation with
-  `strategies.base.edit_scope_violations(strategy, files)` over both the declared edit files
-  and the arm's `base..HEAD` diff. `guard` may not write outside `harness/guards/`, and it
+- Text strategies treat `**/harness/guards/**` and the domain's guards dir as frozen (§13 B2),
+  so only the `guard` strategy can write guard rule bundles. The campaign enforces this before
+  evaluation with `strategies.base.edit_scope_violations(strategy, files, guards_dir)` over both
+  the declared edit files and the arm's `base..HEAD` diff, where `guards_dir` is
+  `ci_lab.domain.layout.guards_rel(domain)` (`<harness root>/guards`, e.g.
+  `src/order_support/harness/guards`). `guard` may not write outside that directory, and it
   may not write `BUNDLE.lock`.
 
 Importing the package does not import dspy, gepa or skillopt_sleep (C26).

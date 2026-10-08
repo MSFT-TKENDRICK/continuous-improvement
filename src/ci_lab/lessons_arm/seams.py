@@ -41,13 +41,16 @@ def _norm(path: str) -> str:
     return str(PurePosixPath(path.replace("\\", "/"))).lstrip("./")
 
 
-def lessons_touching(files: Iterable[str], registry: Sequence[LessonEntry]) -> set[str]:
-    """Lesson ids whose guard file or prose anchors (``path#heading``) are in ``files`` (N4)."""
+def lessons_touching(files: Iterable[str], registry: Sequence[LessonEntry], *,
+                     guards_dir: str = GUARDS_DIR) -> set[str]:
+    """Lesson ids whose guard file (``<guards_dir>/<id>.yaml``) or prose anchors (``path#heading``)
+    are in ``files`` (N4)."""
     out: set[str] = set()
     norm = {_norm(f) for f in files}
+    guards = _norm(guards_dir)
     for f in norm:
         p = PurePosixPath(f)
-        if str(p.parent) == GUARDS_DIR and p.suffix == ".yaml":
+        if str(p.parent) == guards and p.suffix == ".yaml":
             out.add(p.stem)
     for e in registry:
         if any(_norm(a.split("#", 1)[0]) in norm for a in e.prose_anchors):
@@ -74,7 +77,9 @@ def default_replay(trajectories: Any = None, *, dataset_texts: Sequence[str] = (
         nonlocal corpus
         if corpus is None:
             if isinstance(trajectories, (str, Path)):
-                from ci_lab.lessons.common import load_trajectories  # type: ignore[import-not-found]
+                from ci_lab.lessons.common import (
+                    load_trajectories,  # type: ignore[import-not-found]
+                )
 
                 corpus = list(load_trajectories(Path(trajectories)))
             else:

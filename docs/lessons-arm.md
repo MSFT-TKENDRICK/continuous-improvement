@@ -30,8 +30,8 @@ Every new rule starts in `mode: shadow`. Rule text comes only from the trusted M
 1. It reads `<run_dir>/lessons/candidates.jsonl` (searching up to 3 parent levels) and `ctx.failures`.
 2. It skips clusters that are untrusted and unlabeled. It also skips clusters already touched by another arm, using registry conflicts plus `lesson_claims/` (N4).
 3. It synthesizes at most `edit_budget` rules, trying templates first and the agent second.
-4. It writes **only** `harness/guards/<lesson_id>.yaml`. A resolved-path check and a post-commit diff check both enforce this; `BUNDLE.lock` and extractor files are never touched.
-5. It loads the full bundle (with extractors) through `ci_lab.rules`.
+4. It writes **only** `<harness root>/guards/<lesson_id>.yaml`: the directory the domain's agent loads (`src/order_support/harness/guards` in a repo-root campaign slot; `harness/guards` when no domain is given; see `ci_lab.domain.layout.guards_rel`). A resolved-path check and a post-commit diff check both enforce this; `BUNDLE.lock` and extractor files are never touched.
+5. It loads the full bundle (with the domain's frozen extractors, `Domain.guard_extractors`) through `ci_lab.rules`.
 6. It runs the M16 replay filter (`ci_lab.lessons.replay.validate_ok`).
 7. It makes one commit per Edit, with the trailer, and returns `Edit(component="guard", …)`.
 8. It writes `<run_dir>/optimizer/<arm>-guard.json`.

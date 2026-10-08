@@ -465,6 +465,13 @@ class OrderSupportDomain:
         self.judge_model = judge_model
         self._details: dict[tuple[str, str, str, int], tuple[CaseOutcome, tuple[Violation, ...]]] = {}
 
+    @property
+    def guard_extractors(self) -> tuple[Path, ...]:
+        """Frozen extractors the agent's guard bundle loads with (``order_support.guarding``)."""
+        from ci_lab.guards.domains.order_support import EXTRACTORS
+
+        return (Path(EXTRACTORS),)
+
     # -- cases / splits
 
     def cases(self) -> list[TestCase]:

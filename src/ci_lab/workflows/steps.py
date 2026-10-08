@@ -313,12 +313,14 @@ class ArmRun:
         return dict(cost) if isinstance(cost, Mapping) else None
 
     def edit_scope_violations(self, edits: Sequence[Mapping[str, Any]]) -> list[str]:
-        """B2/N5: declared edit files plus, for git worktrees, the actual ``base..HEAD`` diff."""
+        """B2/N5: declared edit files plus, for git worktrees, the actual ``base..HEAD`` diff.
+        Guard files are the domain's ``<harness root>/guards`` (and any ``harness/guards``)."""
+        from ci_lab.domain.layout import guards_rel
         from ci_lab.strategies.base import edit_scope_violations
 
         files = [f for e in edits for f in e.get("files", ())]
         files += _changed_files(self.worktree, self.base_commit)
-        return edit_scope_violations(self.strategy, files)
+        return edit_scope_violations(self.strategy, files, guards_dir=guards_rel(self.round.env.deps.domain))
 
     async def run_strategy(self, feedback: Sequence[str] = ()) -> list[Edit]:
         """Run the arm's :class:`~ci_lab.contracts.ArmStrategy` and record its edits

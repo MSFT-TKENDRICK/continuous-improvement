@@ -37,14 +37,24 @@ def is_guard_path(path: str) -> bool:
     return any(parts[i:i + 2] == _GUARD_PARTS for i in range(len(parts) - 2))
 
 
-def edit_scope_violations(strategy: str, files: Iterable[str]) -> list[str]:
+def _under(path: str, directory: str) -> bool:
+    parts = PurePosixPath(str(path).replace("\\", "/").removeprefix("./")).parts
+    root = PurePosixPath(str(directory).replace("\\", "/").strip("/")).parts
+    return len(parts) > len(root) and parts[:len(root)] == root
+
+
+def edit_scope_violations(strategy: str, files: Iterable[str], guards_dir: str | None = None) -> list[str]:
     """Files ``strategy`` may not write (v2.4 §13 B2/N5): text strategies never touch
-    ``harness/guards/**``; the guard strategy writes only rule files there (never ``BUNDLE.lock``)."""
+    ``harness/guards/**`` (any depth) nor ``guards_dir``; the guard strategy writes only rule files
+    under ``guards_dir`` — the domain's ``<harness root>/guards``
+    (:func:`ci_lab.domain.layout.guards_rel`), any ``harness/guards/`` when not given — never
+    ``BUNDLE.lock``."""
     out = []
     for f in dict.fromkeys(files):
-        guard = is_guard_path(f)
+        guard = is_guard_path(f) or (guards_dir is not None and _under(f, guards_dir))
         if strategy == GUARD_STRATEGY:
-            if not guard or PurePosixPath(str(f).replace("\\", "/")).name == _GUARD_LOCK_NAME:
+            allowed = _under(f, guards_dir) if guards_dir is not None else guard
+            if not allowed or PurePosixPath(str(f).replace("\\", "/")).name == _GUARD_LOCK_NAME:
                 out.append(f)
         elif guard:
             out.append(f)

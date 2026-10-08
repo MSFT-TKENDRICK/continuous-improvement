@@ -9,7 +9,9 @@
    ``lessons/registry.yaml``, plus an exclusive per-lesson claim file — N4);
 3. synthesize ≤ ``edit_budget`` rules: deterministic templates first, the
    :class:`~ci_lab.lessons_arm.agent.LessonSynthesizer` only for leftovers;
-4. write ``harness/guards/<lesson_id>.yaml`` — the only path this arm may write (never
+4. write ``<harness root>/guards/<lesson_id>.yaml`` — the guards dir the domain's agent loads
+   (``src/order_support/harness/guards`` in a repo-root slot; ``harness/guards`` without a
+   domain, :func:`ci_lab.domain.layout.guards_rel`) and the only path this arm may write (never
    ``BUNDLE.lock`` or extractor files; enforced by a resolved-path check and a post-commit diff);
 5. validate by loading the **full** bundle (``ci_lab.rules.load_bundle``), run the replay
    rejection filter (M16), and commit one git commit per :class:`~ci_lab.contracts.Edit`.
@@ -63,7 +65,7 @@ class GuardArmError(RuntimeError):
 
 
 class GuardPathViolation(GuardArmError):
-    """The arm tried to write outside ``harness/guards/<lesson>.yaml``."""
+    """The arm tried to write outside ``<guards dir>/<lesson>.yaml``."""
 
 
 class EditBudgetExceeded(GuardArmError, ValueError):
@@ -87,16 +89,17 @@ def git_commit(worktree: Path, files: Sequence[str], message: str) -> str:
     return _git(worktree, "rev-parse", "HEAD")
 
 
-def guard_path(worktree: Path, lesson_id: str) -> tuple[Path, str]:
+def guard_path(worktree: Path, lesson_id: str, guards_dir: str = GUARDS_DIR) -> tuple[Path, str]:
     """``(absolute, repo-relative posix)`` path for a lesson's rule file; raises
-    :class:`GuardPathViolation` for anything but a plain ``harness/guards/<id>.yaml``."""
-    root = (Path(worktree) / GUARDS_DIR)
-    rel = f"{GUARDS_DIR}/{lesson_id}.yaml"
+    :class:`GuardPathViolation` for anything but a plain ``<guards_dir>/<id>.yaml`` (``guards_dir``
+    is the domain's ``<harness root>/guards``, :func:`ci_lab.domain.layout.guards_rel`)."""
+    root = (Path(worktree) / guards_dir)
+    rel = f"{guards_dir}/{lesson_id}.yaml"
     if (not lesson_id or "/" in lesson_id or "\\" in lesson_id or lesson_id.startswith(".")
-            or "extractor" in lesson_id.casefold() or rel == GUARD_BUNDLE_LOCK):
+            or "extractor" in lesson_id.casefold() or rel == f"{guards_dir}/{Path(GUARD_BUNDLE_LOCK).name}"):
         raise GuardPathViolation(f"refusing to write {rel!r}")
     cur = Path(worktree)
-    for part in Path(GUARDS_DIR).parts:
+    for part in Path(guards_dir).parts:
         cur = cur / part
         if cur.is_symlink():
             raise GuardPathViolation(f"{cur} is a symlink")
@@ -150,10 +153,15 @@ class GuardStrategy:
                  candidates_path: Path | None = None, registry_path: Path | None = None,
                  extractor_paths: Sequence[Path] = (), vocabulary: Iterable[str] = (),
                  write_mode: Literal["shadow", "enforce"] = "shadow", require_replay: bool = False,
-                 templates: Mapping[str, Any] | None = None) -> None:
+                 templates: Mapping[str, Any] | None = None, domain: Any = None,
+                 guards_dir: str | None = None) -> None:
+        from ci_lab.domain.layout import guard_extractors, guards_rel
+
         self.synthesizer = synthesizer
         self.client_factory = client_factory
         self.committer = committer or git_commit
+        self.guards_rel = guards_dir or guards_rel(domain)
+        extractor_paths = list(extractor_paths) or guard_extractors(domain)
         self.replay = replay if replay is not None else default_replay(trajectories, dataset_texts=dataset_texts,
                                                                         extractors=list(extractor_paths))
         self.candidates_path = candidates_path
@@ -184,7 +192,7 @@ class GuardStrategy:
             except (OSError, ValueError):
                 continue
             files = [f for e in data.get("edits") or [] for f in e.get("files") or []]
-            touched |= lessons_touching(files, registry)
+            touched |= lessons_touching(files, registry, guards_dir=self.guards_rel)
         return touched
 
     def _claim(self, ctx: ArmContext, lesson_id: str) -> bool:
@@ -226,8 +234,8 @@ class GuardStrategy:
                 reason = "touched_by_other_arm"
             elif lid in encoded:
                 reason = "already_encoded"
-            elif (Path(ctx.worktree) / GUARDS_DIR / f"{lid}.yaml").exists() and \
-                    f"{GUARDS_DIR}/{lid}.yaml" not in own_changed:
+            elif (Path(ctx.worktree) / self.guards_rel / f"{lid}.yaml").exists() and \
+                    f"{self.guards_rel}/{lid}.yaml" not in own_changed:
                 reason = "guard_file_exists"
             if reason:
                 report.skipped[lid] = reason
@@ -239,7 +247,8 @@ class GuardStrategy:
 
     def _changed_since_base(self, ctx: ArmContext) -> set[str]:
         try:
-            out = _git(Path(ctx.worktree), "diff", "--name-only", f"{ctx.base_commit}..HEAD", "--", GUARDS_DIR)
+            out = _git(Path(ctx.worktree), "diff", "--name-only", f"{ctx.base_commit}..HEAD", "--",
+                       self.guards_rel)
         except (subprocess.CalledProcessError, OSError):
             return set()
         return {line.strip() for line in out.splitlines() if line.strip()}
@@ -276,13 +285,13 @@ class GuardStrategy:
     # ------------------------------------------------------------ write / validate / commit
 
     def _bundle_paths(self, worktree: Path) -> tuple[list[Path], list[Path]]:
-        guards = Path(worktree) / GUARDS_DIR
+        guards = Path(worktree) / self.guards_rel
         extractors = self.extractor_paths or sorted(guards.glob("*extractor*.yaml"))
         return rule_files(guards), list(extractors)
 
     def _apply(self, ctx: ArmContext, prop: Proposal, report: GuardReport) -> Edit | None:
         wt = Path(ctx.worktree)
-        target, rel = guard_path(wt, prop.lesson_id)
+        target, rel = guard_path(wt, prop.lesson_id, self.guards_rel)
         rule = prop.rule
         if self.write_mode == "enforce" and prop.source == "template":
             rule = rule.model_copy(update={"mode": "enforce"})
@@ -381,7 +390,9 @@ def register() -> bool:
     ``ci_lab.strategies.get_strategy("guard")`` calls this lazily (``EXTERNAL["guard"]``).
     """
     try:
-        from ci_lab.strategies import register_strategy  # type: ignore[import-not-found]
+        from ci_lab.strategies import (
+            register_strategy,  # type: ignore[import-not-found]
+        )
     except ImportError:
         return False
     register_strategy(STRATEGY, GuardStrategy)
