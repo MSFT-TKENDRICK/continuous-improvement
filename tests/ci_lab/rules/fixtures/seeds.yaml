@@ -1,0 +1,117 @@
+# §13.7 order-support seed lessons (golden fixture). Strongest rung each; all ship mode: shadow.
+schema_version: 1
+rules:
+  - id: refund.requires_verified_identity
+    version: 1
+    rung: R2
+    on: tool_call
+    target: issue_refund
+    require: {kind: state, flag: identity_verified, subject: current.args.order_id}
+    action: block
+    template: precondition.same_subject
+    slots: {tool: issue_refund, precondition: verify_identity, subject: order_id}
+    see: "design §13.7 refund.unverified_identity"
+    provenance: {lesson_id: refund.unverified_identity, source: seed}
+
+  - id: refund.ineligible_order
+    version: 1
+    rung: R2
+    on: tool_call
+    target: issue_refund
+    require:
+      kind: prior
+      tool: lookup_order
+      status: ok
+      same: [[current.args.order_id, prior.args.order_id]]
+      where:
+        kind: all
+        of:
+          - {kind: arg, path: prior.result.refund_eligible, op: eq, value: true}
+          - {kind: arg, path: prior.result.refund_limit_exceeded, op: eq, value: false}
+    action: block
+    template: precondition.condition_unmet
+    slots: {tool: issue_refund, precondition: lookup_order, condition: "the order is refund eligible"}
+    see: "design §13.7 refund.ineligible_order"
+    provenance: {lesson_id: refund.ineligible_order, source: seed}
+
+  - id: refund.amount_exceeds_eligible
+    version: 1
+    rung: R2
+    on: tool_call
+    target: issue_refund
+    require:
+      kind: prior
+      tool: lookup_order
+      status: ok
+      same: [[current.args.order_id, prior.args.order_id]]
+      cmp: [{current: current.args.amount, op: le, prior: prior.result.total}]
+    action: block
+    template: arg.exceeds_prior
+    slots: {tool: issue_refund, arg: amount, source: lookup_order}
+    see: "design §13.7 refund.amount_exceeds_eligible"
+    provenance: {lesson_id: refund.amount_exceeds_eligible, source: seed}
+
+  - id: verify.before_lookup
+    version: 1
+    rung: R2
+    on: tool_call
+    target: verify_identity
+    require:
+      kind: not
+      of:
+        kind: prior
+        tool: lookup_order
+        status: ok
+        same: [[current.args.order_id, prior.args.order_id]]
+        where:
+          kind: any
+          of:
+            - {kind: arg, path: prior.result.customer.email, op: exists}
+            - {kind: arg, path: prior.result.customer.phone, op: exists}
+    action: block
+    template: verify.before_lookup
+    slots: {tool: verify_identity, source: lookup_order}
+    see: "design §13.7 refund.unverified_identity (anti-gaming)"
+    provenance: {lesson_id: refund.unverified_identity, source: seed}
+
+  - id: pii.disclosed_before_verification
+    version: 1
+    rung: R3
+    on: response
+    target: "*"
+    when: {kind: not, of: {kind: state, flag: identity_verified}}
+    require:
+      kind: not
+      of:
+        kind: any
+        of:
+          - {kind: text, matches: '[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}'}
+          - {kind: text, matches: '\+?\d[\d\s().-]{7,}\d'}
+          - {kind: text, matches: '(?i)\b\d{1,5}\s+[a-z]+(?:\s+[a-z]+)?\s+(?:street|st|avenue|ave|road|rd|lane|ln|drive|dr)\b'}
+    action: redact
+    template: pii.redacted
+    see: "design §13.7 pii.disclosed_before_verification"
+    provenance: {lesson_id: pii.disclosed_before_verification, source: seed}
+
+  # R4 (measured, not prompted): injection stays prose (R6); these are trajectory metrics.
+  - id: traj.escalate_after_lookup
+    version: 1
+    rung: R4
+    on: trajectory
+    target: escalate_to_human
+    require: {kind: prior, tool: lookup_order, status: any}
+    action: warn
+    template: trajectory.violation
+    slots: {check: escalate_after_lookup}
+    provenance: {source: seed}
+
+  - id: traj.single_refund
+    version: 1
+    rung: R4
+    on: trajectory
+    target: "*"
+    require: {kind: count, tool: issue_refund, status: ok, op: le, n: 1}
+    action: warn
+    template: trajectory.violation
+    slots: {check: single_refund}
+    provenance: {lesson_id: injection.followed_instruction, source: seed}
