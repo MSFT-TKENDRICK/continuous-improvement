@@ -27,7 +27,6 @@ is bounded by :func:`agent_timeout` and a turn makes at most
 from __future__ import annotations
 
 import asyncio
-import contextvars
 import copy
 import os
 import threading
@@ -51,6 +50,7 @@ except Exception:  # pragma: no cover - tracing is best-effort outside ASSERT
 
 from agent_framework import ChatContext, ChatMiddleware, ChatResponse, Message
 
+from ci_lab import obs
 from order_support import data, maf_tools, otel
 
 _tracer = trace.get_tracer("order_support.agent")
@@ -308,12 +308,12 @@ def _run_sync(make: Callable[[], Awaitable[str]]) -> str:
         asyncio.get_running_loop()
     except RuntimeError:
         return asyncio.run(make())  # type: ignore[arg-type]
-    ctx = contextvars.copy_context()  # keeps the AGENT span and telemetry suppression
+    run = obs.wrap_ctx(lambda: asyncio.run(make()))  # keeps the AGENT span and telemetry suppression
     box: dict[str, Any] = {}
 
     def worker() -> None:
         try:
-            box["value"] = ctx.run(lambda: asyncio.run(make()))  # type: ignore[arg-type]
+            box["value"] = run()
         except BaseException as exc:  # noqa: BLE001 - re-raised in the caller
             box["error"] = exc
 

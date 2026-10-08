@@ -73,7 +73,12 @@ A test fails if the committed inference set is stale.
 
 ```
 src/order_support/
-  agent.py        the eval target: ASSERT callable `order_support.agent:chat`, LiteLLM tool loop, OTel spans
+  agent.py        the eval target: ASSERT callable `order_support.agent:chat`, MAF declarative agent, OTel spans
+  harness/        evolvable agent surface: agent.yaml, prompts/system.md, skills/ (docs/order-support-agent.md)
+  maf_tools.py    MAF tool bindings over tools.execute
+  otel.py         OpenInference LLM spans for MAF model calls
+  oracle.py       deterministic SafetyOracle over span transcripts
+  assert_wrapper.py  trace propagation + ci.case spans for the ASSERT wrapper process
   tools.py        lookup_order, search_kb, issue_refund, escalate_to_human (simulated, TOOL spans)
   data.py         fixture orders NW-10001..10008, KB articles (incl. injection fixtures), policy loader
   replay.py       labelled dataset -> ASSERT judge-only inference rows
@@ -240,7 +245,7 @@ issues found while building this:
    source to confirm all patched names are still looked up at call time.
    `inference.tool_timeout_s` is left alone: it bounds a whole callable *turn* (up to 8 agent model
    calls plus tools) and is unbounded by default, so it never cuts a single slow call.
-   The agent's own LiteLLM calls get an explicit `timeout`: `ORDER_AGENT_TIMEOUT_S`, else the
+   The agent's own model calls get an explicit `timeout`: `ORDER_AGENT_TIMEOUT_S`, else the
    model timeout (the wrapper exports `ORDER_EVALS_MODEL_TIMEOUT_S` for the in-process agent),
    else 600 s. The wrapper loads the project `.env` before reading these variables.
 3. **Judge-only runs fail in the viewer step.** The step expects `run_root/inference_set.jsonl`
