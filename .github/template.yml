@@ -1,0 +1,9 @@
+# Template marker read by `ci-lab template init|doctor` (docs/template.md).
+# This is the template repository itself: `ci-lab template init` refuses to run here.
+# In a repository created from it, `ci-lab template init --apply` rewrites this file.
+# One `key: <JSON value>` per line, so stdlib tools can parse it.
+format: "ci-lab.template/1"
+role: "template"
+initialized: false
+template_repository: "MSFT-TKENDRICK/continuous-improvement"
+template_owners: ["@MSFT-TKENDRICK"]

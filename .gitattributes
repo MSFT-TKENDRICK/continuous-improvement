@@ -1,1 +1,7 @@
 *.jsonl text eol=lf
+# Generated chat bundle (web/experiment-chat/build.mjs): keep bytes exact so CI can diff a rebuild.
+.github/extensions/ci-harness-dashboard/ui/chat/** -text
+# Vendored Agent Control Specification schemas (microsoft/agent-governance-toolkit, MIT).
+src/ci_lab/governance/acs/schema/** linguist-generated=true
+# Vendored Agent Control Specification conformance corpus (microsoft/agent-governance-toolkit, MIT).
+tests/ci_lab/governance/acs_conformance/** linguist-generated=true

@@ -1,0 +1,51 @@
+# Rubrics for examples/taskgraph/graph.yaml (sealed; never shown to students). Fixed canaries keep the
+# commitments in graph.yaml stable: `ci-lab graph seal examples/taskgraph/rubrics.yaml --vault <dir>`.
+# Deterministic oracles decide offline (weight 3 of 4 >= pass 0.7); the s1 criterion abstains without a judge.
+rubrics:
+  - id: brief-rubric
+    version: 1
+    deliverable: brief
+    pass_score: 0.7
+    canary: 1a2b3c4d5e6f7a8b
+    criteria:
+      - {id: b-head, description: Starts with a Brief heading, measure: deterministic, threshold: 1.0, required: true,
+         check: {kind: regex, pattern: "^# Brief$", independent: true}}
+      - {id: b-orders, description: Names two order ids, measure: deterministic, threshold: 1.0, weight: 2.0,
+         check: {kind: regex, pattern: "ORD-\\d+\\D+ORD-\\d+"}}
+      - {id: b-s1, description: Scope is stated plainly, measure: s1, threshold: 0.5,
+         check: {question: "Does the brief state which orders are in scope?", type: noul, options: []}}
+  - id: facts-rubric
+    version: 1
+    deliverable: facts
+    pass_score: 0.7
+    canary: 2b3c4d5e6f7a8b9c
+    criteria:
+      - {id: f-schema, description: Order list object, measure: deterministic, threshold: 1.0, required: true,
+         weight: 3.0, check: {kind: json_schema, schema: {type: object, required: [orders],
+         properties: {orders: {type: array, minItems: 2, items: {type: string, pattern: "^ORD-"}}}}}}
+      - {id: f-s1, description: Lists only scoped orders, measure: s1, threshold: 0.5,
+         check: {question: "Are all listed orders among those named in the brief?", type: noul, options: []}}
+  - id: risks-rubric
+    version: 1
+    deliverable: risks
+    pass_score: 0.7
+    canary: 3c4d5e6f7a8b9c0d
+    criteria:
+      - {id: r-head, description: Starts with a Risks heading, measure: deterministic, threshold: 1.0, required: true,
+         check: {kind: regex, pattern: "^# Risks$"}}
+      - {id: r-items, description: Has a bullet per risk, measure: deterministic, threshold: 1.0, weight: 2.0,
+         check: {kind: regex, pattern: "^- ORD-\\d+ "}}
+      - {id: r-s1, description: Each risk is concrete, measure: s1, threshold: 0.5,
+         check: {question: "Does every bullet name a specific order and a specific risk?", type: noul, options: []}}
+  - id: summary-rubric
+    version: 1
+    deliverable: summary
+    pass_score: 0.7
+    canary: 4d5e6f7a8b9c0d1e
+    criteria:
+      - {id: s-head, description: Starts with a Summary heading, measure: deterministic, threshold: 1.0,
+         required: true, check: {kind: regex, pattern: "^# Summary$"}}
+      - {id: s-both, description: Mentions facts and risks, measure: deterministic, threshold: 1.0, weight: 2.0,
+         check: {kind: regex, pattern: "(?s)2 orders.*1 risk"}}
+      - {id: s-s1, description: Consistent with inputs, measure: s1, threshold: 0.5,
+         check: {question: "Do the counts in the summary match the facts and risks inputs?", type: noul, options: []}}
