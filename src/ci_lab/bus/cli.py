@@ -43,7 +43,7 @@ def pools_from_env(env: dict[str, str] | None = None) -> Any:
 
 def make_voters_for(vault: Any, *, run_dir: Path, profile: str, s1_model: str | None) -> Any:
     """Deterministic oracles always; s1 / llm / assert voters only for deliverables whose rubric uses them."""
-    from ci_lab.bus.voters.local import DeterministicCheckVoter
+    from ci_lab.bus.voters.local import DeterministicCheckVoter, MetricVoter
     from ci_lab.bus.voters.remote import AgentVoter, AssertVoter, S1RubricVoter
 
     lazy: dict[str, Any] = {}
@@ -51,6 +51,8 @@ def make_voters_for(vault: Any, *, run_dir: Path, profile: str, s1_model: str | 
     def voters_for(d: Any) -> list[Any]:
         measures = {c.measure for c in vault.open(d.rubric_commitment, role="orchestrator").criteria}
         out: list[Any] = [DeterministicCheckVoter()]
+        if "metric" in measures:
+            out.append(MetricVoter())
         if "s1" in measures and s1_model:
             out.append(S1RubricVoter(s1_model) if s1_model != "default" else S1RubricVoter())
         if "llm" in measures:

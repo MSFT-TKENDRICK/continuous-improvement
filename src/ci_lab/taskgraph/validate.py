@@ -17,6 +17,7 @@ from typing import Any
 from jsonschema import Draft202012Validator
 from jsonschema.exceptions import SchemaError
 
+from ci_lab.metrics.rubric import validate_metric_check
 from ci_lab.taskgraph.model import (
     MEASURES,
     SOFT_MEASURES,
@@ -160,6 +161,14 @@ def _soft(check: Mapping[str, Any]) -> list[str]:
     return errs
 
 
+def _metric(check: Mapping[str, Any]) -> list[str]:
+    try:
+        validate_metric_check(check)
+    except ValueError as exc:
+        return [str(exc)]
+    return []
+
+
 def _criterion(c: Criterion, where: str) -> list[Problem]:
     out: list[Problem] = []
 
@@ -178,7 +187,7 @@ def _criterion(c: Criterion, where: str) -> list[Problem]:
     if not (math.isfinite(c.weight) and c.weight > 0):
         add("criterion.weight", f"weight must be > 0, got {c.weight}")
     check = c.to_json()["check"]
-    validator = {"deterministic": _deterministic, "assert": _assert}.get(c.measure, _soft)
+    validator = {"deterministic": _deterministic, "assert": _assert, "metric": _metric}.get(c.measure, _soft)
     errs = validator(check)
     out += [Problem(f"check.{c.measure}", where, e) for e in errs]
     if errs and c.required:
@@ -209,8 +218,8 @@ def validate_rubric(rubric: Rubric) -> list[Problem]:
         add("rubric.canary", "canary must be 16 lowercase hex chars")
     if not rubric.criteria:
         add("rubric.criteria", "rubric has no criteria")
-    elif not rubric.oracles():
-        add("rubric.oracle", "rubric needs at least one deterministic or assert criterion")
+    elif not any(c.oracle for c in rubric.quality()):
+        add("rubric.oracle", "rubric needs at least one deterministic or assert quality criterion")
     seen: set[str] = set()
     for c in rubric.criteria:
         if c.id in seen:

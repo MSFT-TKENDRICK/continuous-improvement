@@ -52,11 +52,11 @@ class _Fold:
 def _fold(c: Criterion, votes: Sequence[VoteBody]) -> _Fold:
     answered = [v for v in votes if v.answered]
     if not answered:
-        return _Fold(CriterionResult(None, None, c.required, c.oracle, 0), ())
+        return _Fold(CriterionResult(None, None, c.required, c.oracle, 0, c.resource), ())
     values = tuple(_value(v) for v in answered)
     score = fmean(values)
     passed = all(_vote_passes(v, c) for v in answered) if c.oracle else score >= c.threshold
-    return _Fold(CriterionResult(passed, score, c.required, c.oracle, len(answered)), values)
+    return _Fold(CriterionResult(passed, score, c.required, c.oracle, len(answered), c.resource), values)
 
 
 @dataclass(frozen=True)
@@ -78,6 +78,7 @@ class VerdictDraft:
     escalate: bool
     escalated: bool = False
     reasons: tuple[str, ...] = ()
+    subscores: Mapping[str, float] = MappingProxyType({})
 
     @property
     def attempt(self) -> str:
@@ -109,7 +110,7 @@ class VerdictDraft:
                 raise ValueError(f"commit needs {self.quorum} distinct cited voters, got {len(distinct)}")
         return VerdictBody(proposal=self.proposal, attempt=self.attempt, rubric_version=self.rubric_version,
                            decision=self.decision, score=self.score, criteria=self.criteria, votes=cited,
-                           correction=correction, escalated=self.escalated)
+                           correction=correction, escalated=self.escalated, subscores=self.subscores)
 
 
 def _not_commit(attempts_left: int) -> Decision:
@@ -133,12 +134,13 @@ def aggregate(rubric: Rubric, votes: Sequence[VoteBody], manifest_quorum: int, *
     folds = {c.id: _fold(c, [v for v in known if v.criterion == c.id]) for c in rubric.criteria}
     criteria = MappingProxyType({k: f.result for k, f in folds.items()})
     voters = tuple(sorted({v.voter for v in known if v.answered}))
-    vetoed = tuple(k for k, r in criteria.items() if r.oracle and r.passed is False)
+    # Resource (cost/simplicity) criteria never veto and never enter the quality score; a *required*
+    # resource criterion that fails still blocks via failed_required.
+    vetoed = tuple(k for k, r in criteria.items() if r.oracle and not r.resource and r.passed is False)
     missing = tuple(k for k, r in criteria.items() if r.required and r.passed is None)
     failed = tuple(k for k, r in criteria.items() if r.required and r.passed is False)
-    scored = [(by_id[k].weight, r.score) for k, r in criteria.items() if r.score is not None]
-    weight = sum(w for w, _ in scored)
-    score = sum(w * s for w, s in scored) / weight if weight else 0.0
+    score = rubric.quality_score({k: r.score for k, r in criteria.items()})
+    subscores = MappingProxyType(rubric.resource_subscores({k: r.score for k, r in criteria.items()}))
     stdev = max((pstdev(f.values) for k, f in folds.items() if not by_id[k].oracle and len(f.values) > 1),
                 default=0.0)
     reasons = [*(f"oracle veto: {k}" for k in vetoed), *(f"missing required: {k}" for k in missing),
@@ -154,7 +156,7 @@ def aggregate(rubric: Rubric, votes: Sequence[VoteBody], manifest_quorum: int, *
         pass_score=rubric.pass_score, criteria=criteria, quorum=manifest_quorum, voters=voters, vetoed=vetoed,
         missing_required=missing, failed_required=failed, soft_stdev=stdev,
         escalate=stdev > ESCALATE_STDEV or abs(score - rubric.pass_score) <= ESCALATE_MARGIN + 1e-9,
-        reasons=tuple(reasons))
+        reasons=tuple(reasons), subscores=subscores)
 
 
 class Escalator(Protocol):

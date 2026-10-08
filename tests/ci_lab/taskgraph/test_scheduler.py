@@ -14,7 +14,12 @@ from ci_lab.adversary.challenger import DeterministicChallenger
 from ci_lab.adversary.harden import Hardener, TemplatePatcher
 from ci_lab.bus import ids
 from ci_lab.bus.pools import ResourcePools
-from ci_lab.bus.voters.local import Ballot, CallableVoter, DeterministicCheckVoter
+from ci_lab.bus.voters.local import (
+    Ballot,
+    CallableVoter,
+    DeterministicCheckVoter,
+    MetricVoter,
+)
 from ci_lab.bus.wal import AgentBus
 from ci_lab.taskgraph.model import (
     Budget,
@@ -109,7 +114,7 @@ def test_commit_revise_reject_blocked_and_leak(tmp_path: Path) -> None:
     assert {t for t, _, _ in student.calls} == {"a", "b", "c", "e"}
     for _, m, mw in student.calls:  # the student never sees rubric material, always behind the firewall
         assert CANARY not in m and QUESTION not in m and "^# Report" not in m and "c-format" not in m
-        assert len(mw) == 2
+        assert len(mw) == 4  # firewall (agent + function) then evaluator metering (chat + function)
 
 
 def test_independent_deliverables_run_in_parallel_by_default(tmp_path: Path) -> None:
@@ -203,3 +208,24 @@ def test_exploit_hardens_next_attempt_only(tmp_path: Path) -> None:
     advs = [e for e in st.proposals.values() if e.author.role == "adversary"]
     assert {e.body.attempt for e in advs} == {"a@1", "a@2"}
     assert all("previous instructions" not in m.lower() for _, m, _ in student.calls)
+
+
+def test_scheduler_measures_attempts_for_metric_criteria(tmp_path: Path) -> None:
+    vault = RubricVault(tmp_path / "vault")
+    size = Criterion("m-size", "Keep it short", "metric",
+                     {"kind": "metric", "metric": "output_chars", "op": "le", "target": 10, "worst": 1010}, 0.5)
+    r = rubric("a", extra=(size,))
+    assert not validate_rubric(r)
+    graph = TaskGraph("g", "goal", (Deliverable("a", "Task a", "Write the a report.", OutputSpec("file", "out/a.md"),
+                                                (), (), vault.seal(r), Budget(max_attempts=1, timeout_s=30.0)),))
+    res = asyncio.run(run_graph(graph, bus=AgentBus(tmp_path / "bus"), vault=vault, student_factory=FakeStudent({"a": [GOOD]}),
+                                voters_for=lambda d: [*voters(d), MetricVoter()], run_id="r1", pools=ResourcePools({})))
+    assert (res.tasks["a"].status, res.tasks["a"].score) == ("committed", 1.0)  # quality-only score
+    st = AgentBus(tmp_path / "bus").state(ids.task_topic("r1", "a"))
+    prop = st.proposal_by_id("a@1/student:student")
+    m = prop.body.measurements
+    assert m["output_chars"] == len(GOOD) and m["output_lines"] == 2 and m["llm_calls"] == 0
+    assert {"wall_ms", "tool_calls", "tokens", "tokens_in", "tokens_out"} <= set(m)
+    verdict = next(v for v in st.verdicts.values() if v.ref == prop.seq)
+    assert verdict.body.criteria["m-size"].resource and verdict.body.score == 1.0
+    assert verdict.body.subscores["resource.m-size"] == pytest.approx((1010 - len(GOOD)) / 1000)

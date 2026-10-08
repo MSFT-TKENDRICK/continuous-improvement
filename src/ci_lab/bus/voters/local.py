@@ -27,6 +27,7 @@ from jsonschema import Draft202012Validator
 
 from ci_lab.bus.pools import ResourcePools
 from ci_lab.bus.types import Measure, ProposalBody, VoteBody
+from ci_lab.metrics.rubric import score_metric, validate_metric_check
 from ci_lab.rules import Bundle, evaluate
 from ci_lab.rulespec import GuardView, TrajectoryStep
 from ci_lab.taskgraph.model import Criterion, Rubric, StudentSpec
@@ -35,7 +36,7 @@ from ci_lab.tools.critic_checks import ArmDiff, CriticConfig, FileChange, run_ch
 from ci_lab.tools.paths import normalize_rel
 
 __all__ = ["Ballot", "BaseVoter", "CallableVoter", "CriticChecksVoter", "DeterministicCheckVoter",
-           "RulesVoter", "Voter", "abstain", "artifact_path", "run_voters", "targets_of"]
+           "MetricVoter", "RulesVoter", "Voter", "abstain", "artifact_path", "run_voters", "targets_of"]
 
 
 @runtime_checkable
@@ -275,6 +276,39 @@ class RulesVoter(BaseVoter):
         bad = [m for m in matches if m.rule.severity in self.fail_severities]
         b = _verdict(not bad, *(f"{m.rule.id} [{m.rule.severity}]: {m.message}" for m in matches))
         return self.ballots(proposal, self.targets(rubric), b)
+
+
+class MetricVoter(BaseVoter):
+    """Every ``metric`` criterion scored by :func:`ci_lab.metrics.rubric.score_metric` against the
+    proposal's evaluator-side ``measurements`` (never the artifact). Fails closed: a missing
+    measurement or malformed check votes 0.0 (``metric.missing`` / ``metric.invalid``), never abstains."""
+
+    per_criterion = True
+
+    def __init__(self, name: str = "metric", *, criteria: Sequence[str] | None = None,
+                 pool: str | None = None, weight: int = 1) -> None:
+        super().__init__(name, "metric", criteria=criteria, pool=pool, weight=weight)
+
+    @staticmethod
+    def ballot(c: Criterion, measurements: Mapping[str, float]) -> Ballot:
+        chk = c.to_json()["check"]
+        try:
+            metric = validate_metric_check(chk)[0]
+        except ValueError as exc:
+            return Ballot(False, 0.0, 1.0, (f"metric.invalid: {exc}"[:500],))
+        if metric not in measurements:
+            return Ballot(False, 0.0, 1.0, (f"metric.missing: {metric}",))
+        value = measurements[metric]
+        try:
+            score = score_metric(chk, value)
+        except ValueError as exc:
+            return Ballot(False, 0.0, 1.0, (f"metric.invalid: {exc}"[:500],))
+        return Ballot(score >= c.threshold, score, 1.0,
+                      (f"{metric}={value:g} -> {score:.3f} vs threshold {c.threshold:g}",))
+
+    async def vote(self, proposal: ProposalBody, artifact: bytes, rubric: Rubric,
+                   spec: StudentSpec) -> list[VoteBody]:
+        return [_vote(self, proposal, c.id, self.ballot(c, proposal.measurements)) for c in self.covered(rubric)]
 
 
 def _normalize(voter: Voter, proposal: ProposalBody, targets: list[str | None],
