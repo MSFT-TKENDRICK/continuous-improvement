@@ -1,0 +1,39 @@
+# Test suite on every PR and on main. Live/copilot-marked tests are excluded by pytest addopts
+# (they need Copilot auth or a local llama-server); everything else runs against real libraries
+# (ASSERT, AGL, MAF, SkillOpt, DSPy/GEPA) with scripted model backends.
+name: tests
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+      # uv.lock is intentionally not committed (it is generated against an internal package proxy);
+      # every pinned dependency also resolves from public PyPI, so `uv sync` works on hosted runners.
+      - name: uv sync
+        run: uv sync
+      - name: pytest
+        run: uv run pytest -q -p no:cacheprovider
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+      - name: canvas extension tests
+        run: node --test .github/extensions/ci-harness-dashboard/test/*.test.mjs
