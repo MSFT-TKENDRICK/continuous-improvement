@@ -81,6 +81,15 @@ default the repo-root `harness/`) to `<round dir>/meta-harness` and records the 
 `<round dir>/meta-harness.json`. The analyst, every proposal and repair, and the critic of that round (and of
 a resumed round) load from that copy, which must still match the recorded digest.
 
+## CLI
+
+```
+ci-lab harness validate [--dir DIR] [--json]   # exit 1 when HarnessTree(DIR).validate() reports errors
+ci-lab harness metrics [--dir DIR] [--json]    # ci_lab.metrics.simplicity.surface_metrics per manifest component
+```
+
+`DIR` defaults to `$CI_HARNESS_DIR`, else the repo-root `harness/` (`default_root()`).
+
 ## Installed wheels
 
 The wheel ships `ci_lab` only, not `harness/`. When running from an installed wheel, set `CI_HARNESS_DIR` or
