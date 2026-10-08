@@ -73,15 +73,16 @@ The lesson stays in the registry.
 
 ## HOOK notes
 
-- `# HOOK(M8b)`: register `ARM_YAMLS["guard"] = "arm_guard.yaml"` (the workflow is at `ci_lab/lessons_arm/workflows/arm_guard.yaml`), and bind the `guard_paired_eval` step to `ci_lab.lessons_arm.paired.guard_paired_eval_step`. The step is idempotent through `run_dir/guard_eval.json` and skips when `eval.json` is skipped.
-- `# HOOK(M4)`: register the JSON schema for the `com.microsoft.ci.guard` ext. When `holdout_look_required(split)` is true, append the look to the C15 holdout ledger; the payload carries `holdout.{datasetHash, plannedLooks, looksUsed}`.
-- `# HOOK(M1)`: `agent.default_builder()` uses `ci_lab.maf.loader.build_agent` when it can be imported, and otherwise falls back to `local_builder`, which runs the real MAF tool loop.
-- `# HOOK(M3)`: `Domain.evaluate` must route each case's guard sink to `$CI_GUARD_DECISIONS/<case_id>/<trial>.jsonl`, or tag each line with `case_id`/`trial`. It must also emit opportunity records and keep seeds independent of `variant`. This is wired in `order_support.guarding`, which does both: it writes the path and tags each line, and it emits call and opportunity records. The seed comes from `CI_CASE_ID|CI_TRIAL`.
-- `# HOOK(M15)`: `CI_GUARDS` is read only in `ci_lab.guards.install.resolve_mode`. Under `off`, attempts are still recorded with shadow semantics.
+
+- Done (21b) `# HOOK(M8b)`: `ARM_YAMLS["guard"]` is `ci_lab/lessons_arm/workflows/arm_guard.yaml`, and the `guard_paired_eval` step is bound to `ci_lab.lessons_arm.paired.guard_paired_eval_step`. The step is idempotent through `run_dir/guard_eval.json` and skips when `eval.json` is skipped.
+- Done (21b) `# HOOK(M4)`: the `com.microsoft.ci.guard` ext schema is `schemas/oes/ext-com.microsoft.ci.guard.schema.json`. When `holdout_look_required(split)` is true, the campaign appends one look per round to the C15 holdout ledger through `ledger.looks.record_look`. The payload carries `holdout.{datasetHash, plannedLooks, looksUsed}`.
+- `# HOOK(M1)`: `agent.default_builder()` uses `ci_lab.maf.loader.build_agent` when it can be imported, and otherwise falls back to `local_builder`, which runs the real MAF tool loop. It does not yet pass `allowed_models`, so the loader call fails and falls back.
+- Done (21a/21b) `# HOOK(M3)`: `order_support.guarding` writes each case's guard sink to `$CI_GUARD_DECISIONS/<case_id>/<trial>.jsonl`, tags each line with `case_id`/`trial`, and emits call and opportunity records. The seed comes from `CI_CASE_ID|CI_TRIAL`, so it does not depend on `variant`. `Domain.evaluate` sets these per case.
+- `# HOOK(M15)`: `CI_GUARDS` is read only in `ci_lab.guards.install.resolve_mode`. Under `off`, attempts are still recorded, with `mode="off"`.
 - `# HOOK(M16)`: the replay filter (`lessons.replay.validate_ok`), `candidates.jsonl`, and `Registry` / `conflicts`.
 - `# HOOK(M14)`: `default_templates()` must contain `precondition.prior_call`, `precondition.state_flag`, `arg.constraint`, `amount.not_exceed_prior` and `response.redact_pattern` (see `templates.catalog_gaps`).
 - `# HOOK(integration)`:
-  - add `"lessons_arm"` to `ci_lab.cli.COMMAND_MODULES`, which adds the CLI group `lessons-arm`;
+  - done (20): `"lessons_arm"` is in `ci_lab.cli.COMMAND_MODULES`, which adds the CLI group `lessons-arm`;
   - done (21b): `ci_lab.strategies.EXTERNAL["guard"]` is `ci_lab.lessons_arm.strategy`; `get_strategy("guard")` imports it lazily and calls `register()`.
 
 ## Contract change requests

@@ -1,8 +1,10 @@
 """OES envelope extension ``com.microsoft.ci.guard`` (rulespec.OES_GUARD_EXT) for guard arms.
 
-Payload is camelCase with ``version`` (OES ext convention, see ``ci_lab.oes``). Registering the
-extension JSON schema with the OES validator is HOOK(M4); so is appending the C15 look to the
-global ledger ``experiments/holdout-looks.jsonl`` when :func:`holdout_look_required` is true.
+Payload is camelCase with ``version`` (OES ext convention, see ``ci_lab.oes``). The extension
+JSON schema is registered with the OES validator
+(``schemas/oes/ext-com.microsoft.ci.guard.schema.json``), and the campaign appends the C15 look
+to the global ledger ``experiments/holdout-looks.jsonl`` when :func:`holdout_look_required` is
+true (``ci_lab.workflows.steps``).
 """
 
 from __future__ import annotations

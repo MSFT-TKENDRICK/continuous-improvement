@@ -25,7 +25,21 @@ Common flags:
 
 The `fake` profile is fully offline: stub domain, fake slots and FakeChatClient agents. Publishing is always dry-run, and all state lives under `<run-dir>/_fake`.
 
-The `copilot` and `offline` profiles exit with code 2 ("integration pending") until `load_deps` is wired to M1/M4/M6/M7/M8a.
+The `copilot` and `offline` profiles are wired by `ci_lab.campaign.wiring.wired_deps`:
+
+- **Domain:** `OrderSupportDomain(repo_root=REPO_ROOT, work_dir=<run-dir>/domain)`. Per case/trial runs get `CI_CASE_ID`/`CI_TRIAL`, and `CI_TELEMETRY`, `CI_RUN_DIR` and `CI_GUARD_DECISIONS` are passed through.
+- **Git (M6):** `GitOps` keeps one `gitops.slots.SlotPool` per campaign under `$CI_WT_ROOT/<cid>`. `provision_slot` checks out `exp/<eid>/<arm>` from the incumbent. `resolve_incumbent` returns `(commit, harness tree)`, where the tree is the `tree_hash` of the harness root (the common prefix of `domain.surface_globs`). Slot leases are not released within a process.
+- **Agents (M8a):** `MetaAgents` runs `meta.run.run_proposer`/`run_analyst`/`run_critic` with MAF specs validated against the manifest `allowed_models`. Proposer runs write under `<arm>/meta/`, because `submit_proposal` would otherwise overwrite the arm's `proposal.json`. A repair re-runs the proposer with the failing critique's reasons as feedback.
+- **Strategies (M10):** `strategy_kwargs = {domain, client_factory}`.
+- **Ledger and publishing:** `FileLedger` at `--ledger-dir` (default `<repo>/experiments`); `FileOutbox` at `<run-dir>/outbox.jsonl`; `GitHubPublisher` with journal `<run-dir>/publish-calls.jsonl`.
+- **Chat clients:** `providers.factory.make_chat_client(profile, ...)`. The `copilot` profile uses the Copilot SDK client.
+
+The `offline` profile is network-free:
+
+- Publishing is always dry-run.
+- `OPENAI_API_BASE`, `OPENAI_BASE_URL`, `AGL_OPENAI_BASE_URL` and each chat client's `base_url` must be loopback (`localhost`/127.x/::1). Otherwise `NetworkPolicyError` exits with code 2.
+
+Missing optional integrations (an `ImportError`) also exit with code 2 ("integration pending").
 
 ## Workflows (`src/ci_lab/workflows/*.yaml`)
 
@@ -36,6 +50,7 @@ The workflows contain only `InvokeFunctionTool` and `InvokeAzureAgent` actions w
 | `round.yaml` | `begin_round` → Analyst → `run_arms` → `select` → `record` → `publish` |
 | `arm_agent.yaml` | `provision_slot` → Proposer → `critique_1` → `repair_1` → `critique_2` → `repair_2` → `critique_final` → `evaluate` → `finalize_arm` |
 | `arm_gepa.yaml`, `arm_skillopt.yaml` | the same, with the Proposer replaced by `propose` (`arguments: {strategy: gepa\|skillopt}`) |
+| `lessons_arm/workflows/arm_guard.yaml` | guard arms: `ARM_YAMLS["guard"]`, which adds `guard_paired_eval` after `evaluate` |
 | `calibrate.yaml` | `aa_runs` → `delta` → `record` |
 | `confirm.yaml` | `reserve_look` → `evaluate_heldout` → `decide` → `record` |
 
@@ -49,7 +64,17 @@ Each directive carries `strategy` (`contracts.STRATEGIES`; default `agent`) and 
 
 - `agent`: the MAF Proposer agent (M8a), whose `submit_proposal` writes `proposal.json`.
 - `gepa` / `skillopt`: `CampaignDeps.get_strategy(name, **strategy_kwargs)` resolves an `ArmStrategy` (default: lazy `ci_lab.strategies.get_strategy`, M10). The `propose` step calls `await strategy.propose(contracts.ArmContext)` once (marker `proposal.json`); a failed critique re-runs it with the critic reasons appended as `critic_rejected` `FailureRecord`s.
-- `ArmResult.strategy` is filled; the incumbent pseudo-arm reports `incumbent`.
+- `guard` (§13): runs `lessons_arm/workflows/arm_guard.yaml`. `guard_paired_eval` is bound to `ci_lab.lessons_arm.paired.guard_paired_eval_step`, which runs guard-off/on paired evals and gates the arm. Hyper keys:
+  - `guard_trials`: paired repetitions. `None` gives ≥ 3 trials per case when the run is stochastic (B4).
+  - `guard_stochastic`: `None` means stochastic iff the profile is Copilot.
+  - `guard_margin`: B1 non-inferiority margin.
+  The shipped guard arm's round envelope carries the `com.microsoft.ci.guard` OES extension. Guard evals on a held-out split reserve one C15 look per round in `holdout-looks.jsonl`.
+- `ArmContext.evolve_case_ids` is set from `domain.splits()["evolve"]`. Text strategies score only these cases.
+- `ArmResult.strategy` is filled; the incumbent pseudo-arm reports `incumbent`. `ArmResult.cost` carries the strategy's optimizer cost block (`<arm>/optimizer/<arm>-<strategy>.json`).
+- **Edit scope (B2/N5).** Before evaluation, the arm's declared edit files plus its actual `base..HEAD` diff are checked with `strategies.base.edit_scope_violations`:
+  - text strategies may never write `**/harness/guards/**`;
+  - `guard` may write only guard rule files (never `BUNDLE.lock`).
+  A violating arm is skipped (`edit_scope: ...`).
 
 The trivial default schedule rotates `hyper["strategies"]` (default `["agent"]`) over the arms; M7 allocates for real.
 
@@ -99,7 +124,7 @@ All paths below are under `campaigns/<cid>/`:
 | `confirm.json`, `confirm/envelope.json` | Confirm decision and its envelope. |
 | `land.json` | Land result. |
 
-The global `holdout-looks.jsonl` sits at the ledger root, keyed by `cid|dataset_hash`.
+The global `holdout-looks.jsonl` sits at the ledger root, keyed by `cid|dataset_hash`. It is written with `ci_lab.ledger.looks.record_look`, which raises `LookBudgetExceeded` past the planned looks. Round decisions are recorded at decision time with `ci_lab.ledger.decisions.record_decisions`, which checks verdicts and emits the `record` step span.
 
 ## Publishing (`ci_lab.publish.github`)
 
@@ -146,4 +171,9 @@ The driver codes only against `contracts.py`, and every collaborator from anothe
 
 - The response shape of the native stacks REST API is parsed defensively. It is unverified against live GitHub.
 - The land mechanism is unverified: `gh pr merge --auto` on the top PR of a native stack.
-- The `copilot` and `offline` profiles need the integration wiring in `load_deps`.
+- The `copilot` profile is covered only by offline tests (with a monkeypatched chat client factory), not by a live run.
+- Wired deps:
+  - give `FileLedger` no git committer (files only);
+  - pass no leak corpus to the critic;
+  - build round/confirm envelopes with `defaults.build_envelope` rather than the full `ci_lab.oes.build` builders.
+- The order-support judge is not registered as an offline provider (domain HOOK(M11)). In an `offline` run, the ASSERT child uses whatever judge its environment configures.

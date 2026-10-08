@@ -20,7 +20,10 @@ only the keyword arguments its constructor accepts.
   names that resolve. `gepa` is the DSPy-based strategy (`ci_lab.optim`); there is no
   separate `dspy` name.
 - Text strategies treat `**/harness/guards/**` as frozen (§13 B2), so only the `guard`
-  strategy can write guard rule bundles.
+  strategy can write guard rule bundles. The campaign enforces this before evaluation with
+  `strategies.base.edit_scope_violations(strategy, files)` over both the declared edit files
+  and the arm's `base..HEAD` diff. `guard` may not write outside `harness/guards/`, and it
+  may not write `BUNDLE.lock`.
 
 Importing the package does not import dspy, gepa or skillopt_sleep (C26).
 
@@ -48,17 +51,17 @@ Importing the package does not import dspy, gepa or skillopt_sleep (C26).
   in a scratch copy under `<run_dir>/optimizer/<arm>-<strategy>-scratch`. Evolve case ids
   are taken from the first available source:
   1. explicit `evolve_cases`;
-  2. `domain.splits()["evolve"]`;
-  3. `scorer.evolve_cases()`;
-  4. the case ids of `ctx.failures`.
+  2. `ctx.evolve_case_ids` (the campaign sets it from `domain.splits()["evolve"]`);
+  3. `domain.splits()["evolve"]`;
+  4. `scorer.evolve_cases()`;
+  5. the case ids of `ctx.failures`.
 - **LM:** the injected `lm`, or else `make_lm(ctx.profile, "optimizer")`.
 - **Budget:** `ctx.budget_tokens` caps the optimizer's metric calls (C18). When it is too
   small for one iteration, the strategy returns no edits.
 
 ## Cost report (ΔC accounting)
 
-`ArmResult` has no cost field, so text strategies write
-`<run_dir>/optimizer/<arm>-<strategy>.json` with these fields:
+Text strategies write `<run_dir>/optimizer/<arm>-<strategy>.json` with these fields:
 
 - `experiment_id`, `arm`, `strategy`;
 - `cost`: summed metric calls and budget, refused calls, scorer, reflection and total
@@ -68,7 +71,8 @@ Importing the package does not import dspy, gepa or skillopt_sleep (C26).
 - `edits`;
 - `acceptance: "diagnostic-only"`.
 
-The arm worker or round should add `cost.total_tokens` to the arm's ΔC.
+The campaign's `finalize_arm` copies the report's `cost` block into `ArmResult.cost`, where
+it counts toward the arm's ΔC.
 
 SkillOpt also saves `best_skill.md` / `best_memory.md` under
 `<run_dir>/optimizer/<arm>-skillopt/<skill-dir>/`.
