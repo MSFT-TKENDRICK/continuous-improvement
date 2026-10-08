@@ -11,13 +11,19 @@ Durable state, git plumbing and shared caches for the self-improving harness
 | `atomic` | `atomic_write_{bytes,text,json}`, `read_json`, `append_jsonl`, `read_jsonl` | Same-dir temp file + fsync + `os.replace` (retried on Windows sharing violations) + POSIX dir fsync. JSONL readers skip a torn last line; appends repair it first. |
 | `lock` | `FileLock`, `lock_for`, `ledger_lock`, `LockTimeout` | Cross-process exclusive lock (`msvcrt.locking` / `fcntl.flock`) with timeout; reentrant per thread / asyncio task; sync and `async with`. Lock files live in `<git-common-dir>/ci-lab/` so they never enter `experiments/`. |
 | `commit` | `ledger_commit(repo, paths, message, *, ref="refs/heads/main", expected_old=None)` | Refuses any path (given or resulting from the tree diff) outside `experiments/**`. Builds the tree in a private `GIT_INDEX_FILE` seeded from the ref's parent, so the user's index is never touched, then `commit-tree` + `update-ref <ref> <new> <old>` (CAS). A moved ref raises `LedgerConflict`. Unchanged trees are a no-op. |
-| `frontier` | `read_frontier(path)`, `cas_frontier(path, expected_incumbent, new)` | Compare-and-swap of the incumbent under a lock; `FrontierConflict` on mismatch; idempotent when already applied. |
+| `frontier` | `read_frontier(path)`, `cas_frontier(path, expected_incumbent, new, *, experiment_id=None)` | Compare-and-swap of the incumbent under a lock; `FrontierConflict` on mismatch; idempotent when already applied. |
+| `decisions` | `record_decisions(repo, cid, eid, decisions)`, `read_decisions` | Atomic `rounds/<eid>/decisions.json`; `decision` must be `ship` / `do_not_ship` / `rerun`. |
 | `outbox` | `FileOutbox(path)` (`contracts.Outbox`) | JSONL journal of `started` / `succeeded(result)` / `failed` per op id. `run_once`/`arun_once`: succeeded → stored result; otherwise `reconcile()` first and only run `fn` if it returns `None`. A per-op cross-process lock serializes concurrent runners. |
 | `looks` | `record_look`, `count_looks`, `planned_looks`, `LookBudgetExceeded` | Global held-out look ledger keyed by dataset hash; idempotent per (dataset, experiment); refuses looks beyond the plan fixed by the first record. |
 
 If `ledger_commit` targets the branch checked out in the user's worktree, the ref moves
 but the worktree/index do not: `git status` will show the ledger change as a reverse
 diff until the user updates. Prefer a dedicated ref such as `exp-ledger/<cid>`.
+
+Observability (design §12.3): `record_decisions` and `cas_frontier` each emit a
+`ci.step{ci.phase=record}` span via `ci_lab.obs` carrying `oes.experiment_id`
+(+ `oes.decision`, or `rrsi.round`/`ci.score` for the frontier). Without a tracer
+provider (installed only by `ci_lab.telemetry.setup`) these are no-ops.
 
 ## `ci_lab.gitops` — git plumbing
 

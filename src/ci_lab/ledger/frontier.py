@@ -8,6 +8,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from ci_lab import obs
+from ci_lab.contracts import ATTR_EXPERIMENT, ATTR_PHASE, ATTR_ROUND, ATTR_SCORE, SPAN_STEP
 from ci_lab.ledger.atomic import atomic_write_json, read_json
 from ci_lab.ledger.lock import DEFAULT_TIMEOUT, FileLock, lock_for
 
@@ -50,12 +52,14 @@ def read_frontier(path: str | os.PathLike[str]) -> Frontier | None:
 
 def cas_frontier(path: str | os.PathLike[str], expected_incumbent: str | None,
                  new: Frontier | Mapping[str, Any], *, lock: FileLock | None = None,
-                 timeout: float = DEFAULT_TIMEOUT) -> Frontier:
+                 timeout: float = DEFAULT_TIMEOUT, experiment_id: str | None = None) -> Frontier:
     """Write ``new`` iff the current incumbent equals ``expected_incumbent`` (``None`` = the
     frontier must not exist yet). Raises :class:`FrontierConflict` otherwise. Idempotent:
-    re-applying the same swap after it already happened returns the stored frontier."""
+    re-applying the same swap after it already happened returns the stored frontier.
+    Emits a ``ci.step{ci.phase=record}`` span (``oes.experiment_id`` when given)."""
     target = new if isinstance(new, Frontier) else Frontier.from_json(new)
-    with lock or lock_for(path, timeout=timeout):
+    with obs.span(SPAN_STEP, {ATTR_PHASE: "record", ATTR_EXPERIMENT: experiment_id, ATTR_ROUND: target.round,
+                              ATTR_SCORE: target.score}), lock or lock_for(path, timeout=timeout):
         current = read_frontier(path)
         if current is not None and current.to_json() == target.to_json():
             return current
