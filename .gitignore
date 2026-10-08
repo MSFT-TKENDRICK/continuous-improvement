@@ -6,7 +6,8 @@ dist/
 build/
 *.egg-info/
 .env
-reports/*.tmp
+artifacts/
+.python-version
 *.gguf
 
 # lockfile is generated against an internal package proxy; regenerate with 'uv lock'
