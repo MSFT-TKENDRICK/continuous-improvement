@@ -109,9 +109,26 @@ The Copilot CLI discovers `.github/extensions/ci-guardrails/extension.mjs` autom
 - `git -c core.hooksPath=…` overrides
 - force-push (`-f`, `--force[-with-lease]`, `+ref`) or delete targeting `main`/`master`
 - `git config` that sets `core.hooksPath` to anything other than `.githooks`, or unsets it
-- edits or creates of frozen contracts (`src/ci_lab/contracts.py`, `src/ci_lab/rulespec.py`, `src/ci_lab/rules/templates.yaml`, `harness/guards/BUNDLE.lock`), including `apply_patch` and shell writes, unless `CI_ALLOW_CONTRACT_EDIT=1`
+- edits or creates of frozen contracts, including `apply_patch` and shell writes, unless `CI_ALLOW_CONTRACT_EDIT=1`:
+  - files `FROZEN_PATHS`: `src/ci_lab/contracts.py`, `src/ci_lab/rulespec.py`, `src/ci_lab/rules/templates.yaml`, `harness/guards/BUNDLE.lock`, `src/order_support/oracle.py`;
+  - directories `FROZEN_DIRS` (any file below): `lint/rules/**`, `**/harness/guards/**` (any depth, e.g. `src/order_support/harness/guards/**`), `src/ci_lab/rules/**`.
+
+  New or changed lint rules (including `ci-lab reflect` proposals) and guard bundles are therefore written by a human, or by an agent only in an explicitly approved session with `CI_ALLOW_CONTRACT_EDIT=1`. They are then reviewed through CODEOWNERS.
 
 Deny reasons use the same `Violation`/`Fix`/`See` format as the lint output.
+
+### CODEOWNERS
+
+`.github/CODEOWNERS` assigns `@MSFT-TKENDRICK` to:
+
+- the frozen paths above;
+- the runtime guard engine (`src/ci_lab/guards/**`);
+- the safety oracle (`src/order_support/oracle.py`);
+- the System-1 judge (`src/ci_lab/judge/**`, `evals/assert/judge_replay/**`);
+- the lint engine and hooks (`src/ci_lab/lint/**`, `.githooks/**`);
+- `.github/workflows/**`, `.github/extensions/**`, `scripts/sleep_publish.py` and the Aspire hash pins.
+
+The extension only stops agents in the dev loop. CODEOWNERS (with "Require review from Code Owners" branch protection) is the merge-time gate. `tests/ci_lab/lint/test_codeowners.py` keeps both lists in sync.
 
 ## `ci-lab reflect`: mining dev transcripts (opt-in, B8)
 

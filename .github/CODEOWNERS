@@ -1,0 +1,32 @@
+# Code owners for the harness's frozen / trust-boundary paths (design §13.5, §13.6; docs/harness.md).
+# Changes here need review from the owner. Branch protection must enable "Require review from Code
+# Owners" for this to block merges. The ci-guardrails extension (.github/extensions/ci-guardrails)
+# also denies agent edits to the frozen subset (FROZEN_PATHS / FROZEN_DIRS in policy.mjs).
+# Keep the two lists in sync; tests/ci_lab/lint/test_codeowners.py checks it.
+
+# Frozen contracts and rule DSL + evaluator
+/src/ci_lab/contracts.py                @MSFT-TKENDRICK
+/src/ci_lab/rulespec.py                 @MSFT-TKENDRICK
+/src/ci_lab/rules/**                    @MSFT-TKENDRICK
+
+# Runtime guards: engine and guard bundles
+/src/ci_lab/guards/**                   @MSFT-TKENDRICK
+**/harness/guards/**                    @MSFT-TKENDRICK
+/src/order_support/harness/guards/**    @MSFT-TKENDRICK
+
+# Measurement: safety oracle and System-1 judge (evaluator is frozen per campaign, I1)
+/src/order_support/oracle.py            @MSFT-TKENDRICK
+/src/ci_lab/judge/**                    @MSFT-TKENDRICK
+/evals/assert/judge_replay/**           @MSFT-TKENDRICK
+
+# Dev-loop lint: lessons encoded as structure (R5)
+/lint/rules/**                          @MSFT-TKENDRICK
+/src/ci_lab/lint/**                     @MSFT-TKENDRICK
+/.githooks/**                           @MSFT-TKENDRICK
+
+# CI, Copilot extensions, publish validator, supply-chain pins
+/.github/workflows/**                   @MSFT-TKENDRICK
+/.github/extensions/**                  @MSFT-TKENDRICK
+/.github/CODEOWNERS                     @MSFT-TKENDRICK
+/scripts/sleep_publish.py               @MSFT-TKENDRICK
+/src/ci_lab/telemetry/aspire.lock.json  @MSFT-TKENDRICK

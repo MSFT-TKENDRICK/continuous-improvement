@@ -9,6 +9,14 @@ export const FROZEN_PATHS = Object.freeze([
   "src/ci_lab/rulespec.py",
   "src/ci_lab/rules/templates.yaml",
   "harness/guards/BUNDLE.lock",
+  "src/order_support/oracle.py",
+]);
+// Frozen directories (any file below them). `harness/guards/` matches at any depth, e.g.
+// src/order_support/harness/guards/**; the others are repo-relative. Mirrored in .github/CODEOWNERS.
+export const FROZEN_DIRS = Object.freeze([
+  "lint/rules/",
+  "harness/guards/",
+  "src/ci_lab/rules/",
 ]);
 export const HOOKS_PATH = ".githooks";
 const PROTECTED_BRANCHES = new Set(["main", "master"]);
@@ -232,9 +240,32 @@ export function normalizePath(p, workingDirectory) {
   return path.posix.normalize(s).toLowerCase();
 }
 
+function dirHit(n, dir) {
+  const d = dir.toLowerCase();
+  const base = d.replace(/\/$/, "");
+  return n === base || n.startsWith(d) || n.includes(`/${d}`) || n.endsWith(`/${base}`);
+}
+
+const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const DIR_SHELL_RES = FROZEN_DIRS.map((d) => [
+  d,
+  new RegExp(`(?:^|[^a-z0-9_.-])${escapeRe(d.toLowerCase().replace(/\/$/, ""))}(?=$|/|[^a-z0-9_.-])`),
+]);
+
+/** The frozen file, or `<dir>**` for a path under a frozen directory, else null. */
 export function frozenTarget(p, workingDirectory) {
   const n = normalizePath(p, workingDirectory);
-  return FROZEN_PATHS.find((f) => n === f.toLowerCase() || n.endsWith(`/${f.toLowerCase()}`)) ?? null;
+  const file = FROZEN_PATHS.find((f) => n === f.toLowerCase() || n.endsWith(`/${f.toLowerCase()}`));
+  if (file) return file;
+  const dir = FROZEN_DIRS.find((d) => dirHit(n, d));
+  return dir ? `${dir}**` : null;
+}
+
+function frozenInShell(lower) {
+  const file = FROZEN_PATHS.find((f) => lower.includes(f.toLowerCase()));
+  if (file) return file;
+  const dir = DIR_SHELL_RES.find(([, re]) => re.test(lower));
+  return dir ? `${dir[0]}**` : null;
 }
 
 function editTargets(toolArgs) {
@@ -280,7 +311,7 @@ function shellDecision(command, ctx) {
     }
   }
   if (ctx.env?.CI_ALLOW_CONTRACT_EDIT !== "1" && SHELL_WRITE_RE.test(lower)) {
-    const hit = FROZEN_PATHS.find((f) => lower.includes(f.toLowerCase()));
+    const hit = frozenInShell(lower);
     if (hit) return contractDenial(hit);
   }
   return null;
