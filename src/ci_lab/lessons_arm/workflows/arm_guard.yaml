@@ -3,8 +3,8 @@
 # extra gate: guard_paired_eval runs Domain.evaluate twice on identical cases/seeds with
 # CI_GUARDS=off / CI_GUARDS=enforce and writes rulespec.GuardMetrics (marker guard_eval.json).
 # Expression-free: literal arguments only, no PowerFx, no Goto/SetVariable.
-# HOOK(M8b): ARM_YAMLS["guard"] = this file; bind guard_paired_eval ->
-#   ci_lab.lessons_arm.paired.guard_paired_eval_step.
+# Wired (21b): ci_lab.workflows.ARM_YAMLS["guard"] = this file; the campaign's arm_tools binds
+#   guard_paired_eval -> ci_lab.lessons_arm.paired.guard_paired_eval_step.
 kind: Workflow
 trigger:
   kind: OnConversationStart

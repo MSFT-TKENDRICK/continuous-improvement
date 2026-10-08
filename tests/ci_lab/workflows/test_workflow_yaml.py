@@ -34,6 +34,8 @@ EXPECTED_ORDER = {
                  "critique_final", "evaluate", "finalize_arm"],
     "arm_skillopt": ["provision_slot", "propose", "critique_1", "repair_1", "critique_2", "repair_2",
                      "critique_final", "evaluate", "finalize_arm"],
+    "arm_guard": ["provision_slot", "propose", "critique_1", "repair_1", "critique_2", "repair_2",
+                  "critique_final", "evaluate", "guard_paired_eval", "finalize_arm"],
     "calibrate": ["aa_runs", "delta", "record"],
     "confirm": ["reserve_look", "evaluate_heldout", "decide", "record"],
 }
@@ -151,12 +153,11 @@ def test_yaml_loads_and_runs_with_workflow_factory(name: str, tmp_path: Path) ->
 def test_arm_yamls_cover_every_strategy() -> None:
     from ci_lab.contracts import STRATEGIES
 
-    # The contracts v2.4 "guard" arm workflow is owned by lessons_arm (arm_guard.yaml); wiring it
-    # into ARM_YAMLS is a later cross-module step.
-    assert set(ARM_YAMLS) == set(STRATEGIES) - {"guard"}
+    # The v2.4 "guard" arm workflow is owned by lessons_arm (arm_guard.yaml), wired in 21b.
+    assert set(ARM_YAMLS) == set(STRATEGIES)
     assert ARM_YAML == ARM_YAMLS["agent"]
     assert set(agent_names(ARM_YAMLS["agent"])) == {"Proposer"}
-    for strategy in ("gepa", "skillopt"):
+    for strategy in ("gepa", "skillopt", "guard"):
         assert not agent_names(ARM_YAMLS[strategy])
         doc = assert_expression_free(ARM_YAMLS[strategy])
         propose = next(a for a in doc["trigger"]["actions"] if a["id"] == "propose")

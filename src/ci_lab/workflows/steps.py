@@ -51,7 +51,9 @@ from ci_lab.workflows.runtime import GatedAgent, StepAborted
 
 INCUMBENT = "inc"
 INCUMBENT_STRATEGY = "incumbent"  # status.json label only; not an arm strategy
+INCUMBENT_GUARD = "inc-guard"     # run-dir/slot name of the incumbent's paired guard eval (B1)
 FINAL_CRITIQUE = 3  # critique_1, critique_2, critique_final
+_GUARD_LOCKS: dict[tuple[int, str], asyncio.Lock] = {}
 
 
 # ------------------------------------------------------------------ contexts
@@ -154,6 +156,38 @@ class RoundContext:
     def arm_state(self, arm: str, strategy: str, state: str, phase: str | None) -> None:
         """Arm workers write their own marker (``status.d/<arm>.json``)."""
         self.progress.as_writer(arm).write(arms={arm: {"strategy": strategy, "state": state, "phase": phase}})
+
+    async def incumbent_guard_metrics(self, split: str) -> Any:
+        """Paired guard-off/on metrics of this round's incumbent (B1 ship baseline for guard arms);
+        computed once per round in its own slot (``<run_dir>/inc-guard``), shared by all guard arms."""
+        from ci_lab.lessons_arm.paired import guard_paired_eval_step
+        from ci_lab.rulespec import GuardMetrics
+
+        run_dir = self.dir / INCUMBENT_GUARD
+        lock = _GUARD_LOCKS.setdefault((id(asyncio.get_running_loop()), str(run_dir)), asyncio.Lock())
+        async with lock:
+            slot = _done(run_dir / "slot.json")
+            if slot is None:
+                worktree = self.env.deps.provision_slot(self.eid, INCUMBENT_GUARD, self.begin()["base_commit"])
+                slot = {"worktree": str(worktree)}
+                records.write_json(run_dir / "slot.json", slot)
+            data = await guard_paired_eval_step(domain=self.env.deps.domain, worktree=Path(slot["worktree"]),
+                                                run_dir=run_dir, split=split, experiment_id=self.eid,
+                                                variant=INCUMBENT_GUARD, **guard_eval_options(self.env))
+        return GuardMetrics.model_validate(data["metrics"])
+
+
+def guard_eval_options(env: CampaignEnv) -> dict[str, Any]:
+    """``k``/``trials``/``stochastic``/``margin`` for paired guard evals. B4: a stochastic provider
+    (the Copilot profile unless ``guard_stochastic`` says otherwise) gets >= 3 trials per case."""
+    from ci_lab.lessons_arm.paired import MIN_STOCHASTIC_TRIALS
+
+    hyper = env.hyper
+    k = int(hyper["k"])
+    stochastic = hyper.get("guard_stochastic")
+    stochastic = env.profile is Profile.COPILOT if stochastic is None else bool(stochastic)
+    trials = hyper.get("guard_trials") or (-(-MIN_STOCHASTIC_TRIALS // k) if stochastic else 1)
+    return {"k": k, "trials": int(trials), "stochastic": stochastic, "margin": float(hyper.get("guard_margin") or 0.0)}
 
 
 def normalize_directive(raw: Any) -> dict[str, Any]:
@@ -364,6 +398,22 @@ def arm_tools(ctx: ArmRun) -> dict[str, Callable[..., Awaitable[Any]]]:
         records.write_json(marker, data)
         return {k: v for k, v in data.items() if k != "eval"}
 
+    async def guard_paired_eval(split: str = "evolve") -> dict[str, Any]:
+        """``arm_guard.yaml`` (v2.4 §13, B1/B4): paired guard-off/on eval of the arm, gated against
+        the incumbent's paired metrics (marker ``guard_eval.json``; skipped with ``evaluate``)."""
+        from ci_lab.lessons_arm.paired import GUARD_EVAL_FILE, guard_paired_eval_step
+
+        data = _done(ctx.dir / GUARD_EVAL_FILE)
+        if data is None:
+            ev = _done(ctx.dir / "eval.json")
+            if ev is None:
+                raise RuntimeError("guard_paired_eval before evaluate")
+            incumbent = None if ev.get("skipped") else await ctx.round.incumbent_guard_metrics(split)
+            data = await guard_paired_eval_step(domain=deps.domain, worktree=ctx.worktree, run_dir=ctx.dir,
+                                                split=split, experiment_id=ctx.eid, variant=ctx.arm,
+                                                incumbent=incumbent, **guard_eval_options(ctx.round.env))
+        return {"skipped": bool(data.get("skipped")), "ship": (data.get("ship") or {}).get("ok")}
+
     def finalize_arm() -> dict[str, Any]:
         marker = ctx.dir / "arm.done"
         if (data := _done(marker)) is not None:
@@ -375,13 +425,27 @@ def arm_tools(ctx: ArmRun) -> dict[str, Callable[..., Awaitable[Any]]]:
         proposal = _done(ctx.proposal_path) or {}
         edits = [Edit(e["component"], e.get("hypothesis", ""), tuple(e.get("files", ())), e.get("commit", ""))
                  for e in proposal.get("edits", ())]
+        reason = ev.get("reason")
+        status = "evaluated" if not ev["skipped"] else "rejected"
+        guard = None
+        if ctx.strategy == "guard":
+            from ci_lab.lessons_arm.paired import GUARD_EVAL_FILE
+
+            guard = _done(ctx.dir / GUARD_EVAL_FILE)
+            if guard is None:
+                raise RuntimeError("finalize_arm before guard_paired_eval")
+            ship = guard.get("ship")
+            if status == "evaluated" and ship is not None and not ship.get("ok"):
+                status, reason = "rejected", "guard_ship_rule: " + "; ".join(ship.get("reasons") or ())
         result = ArmResult(
             arm=ctx.arm, base_commit=ctx.base_commit, head_commit=ev.get("head"), harness_tree=ev.get("tree"),
             edits=edits, critic=verdict,
             eval=records.eval_from_dict(ev["eval"]) if ev.get("eval") else None,
-            status="evaluated" if not ev["skipped"] else "rejected", strategy=ctx.strategy)
-        records.write_json(marker, {"result": records.arm_to_dict(result), "reason": ev.get("reason"),
-                                    "directive": dict(ctx.directive)})
+            status=status, strategy=ctx.strategy)
+        done = {"result": records.arm_to_dict(result), "reason": reason, "directive": dict(ctx.directive)}
+        if guard is not None:
+            done["guard"] = guard
+        records.write_json(marker, done)
         return {"arm": ctx.arm, "status": result.status}
 
     async def propose(strategy: str = "") -> dict[str, Any]:
@@ -396,7 +460,7 @@ def arm_tools(ctx: ArmRun) -> dict[str, Callable[..., Awaitable[Any]]]:
     tracker = ctx.tracker
     return {name: step(name, fn, tracker) for name, fn in {
         "provision_slot": provision_slot, "propose": propose, "critique": critique, "repair": repair,
-        "evaluate": evaluate, "finalize_arm": finalize_arm}.items()}
+        "evaluate": evaluate, "guard_paired_eval": guard_paired_eval, "finalize_arm": finalize_arm}.items()}
 
 
 async def run_arm(rctx: RoundContext, name: str) -> None:

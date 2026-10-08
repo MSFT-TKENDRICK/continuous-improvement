@@ -31,6 +31,7 @@ from ci_lab.contracts import (
     FailureRecord,
     Outbox,
     TaskScore,
+    Violation,
 )
 
 ScoreFn = Callable[[Sequence[str], str, int], float]
@@ -111,9 +112,15 @@ class StubDomain:
         self.tokens_per_case = tokens_per_case
         self.calls: list[tuple[str, str, str]] = []
         self.fail_on: Callable[[str, str, str], bool] | None = None
+        # (edits, case_id, trial) -> violation rule id or None; tests read CI_GUARDS here (B1 pairing)
+        self.violation_fn: Callable[[Sequence[str], str, int], str | None] | None = None
 
     def splits(self) -> Mapping[str, Sequence[str]]:
         return self._splits
+
+    def _violations(self, edits: Sequence[str], case: str, trial: int) -> tuple[Violation, ...]:
+        rule = self.violation_fn(edits, case, trial) if self.violation_fn is not None else None
+        return (Violation(rule, "major", "stub violation"),) if rule else ()
 
     async def evaluate(self, harness_dir: Path, split: str, k: int, *, experiment_id: str,
                        variant: str) -> EvalResult:
@@ -123,6 +130,7 @@ class StubDomain:
         commit = self.repo.head_commit(harness_dir)
         edits = self.repo.edits(commit) or []
         scores = [TaskScore(case, trial, "stub", self.score_fn(edits, case, trial),
+                            violations=self._violations(edits, case, trial),
                             tokens_in=self.tokens_per_case, tokens_out=0)
                   for case in self._splits[split] for trial in range(k)]
         return EvalResult(self.repo.tree_of(commit), split,  # type: ignore[arg-type]
@@ -229,7 +237,8 @@ class FakeStrategy:
         if any(f.category == "critic_rejected" for f in ctx.failures):
             hypothesis += " (repaired)"
         commit = self.repo.apply(ctx.worktree, ctx.base_commit, hypothesis)
-        return [Edit(component, hypothesis, (f"harness/{component}/x",), commit)]
+        path = f"harness/guards/{d.arm}.yaml" if self.name == "guard" else f"harness/{component}/x"
+        return [Edit(component, hypothesis, (path,), commit)]
 
 
 class FakeStrategies:

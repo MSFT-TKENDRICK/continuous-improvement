@@ -25,15 +25,22 @@ DEFAULT_HYPER: dict[str, Any] = {
     "strategies": ["agent"],  # arm strategies rotated by the trivial schedule (M7 allocates)
     "arm_budget_tokens": None,  # ArmContext.budget_tokens for optimizer strategies
     "heartbeat_s": 30.0,      # status marker heartbeat while long steps run (<= 60, C36)
+    "guard_trials": None,     # paired guard-off/on repetitions (None: >= 3 trials/case if stochastic, B4)
+    "guard_stochastic": None,  # None: stochastic iff the Copilot profile
+    "guard_margin": 0.0,      # B1 task-completion non-inferiority margin (C5)
 }
 
 
 def schedule(round_no: int, hyper: Mapping[str, Any], history: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
     n = int(hyper.get("arms", 2))
     strategies = list(hyper.get("strategies") or ["agent"])
-    return [{"arm": f"v{i + 1}", "component": TEXT_COMPONENTS[(round_no + i) % len(TEXT_COMPONENTS)],
-             "strategy": strategies[i % len(strategies)], "budget": int(hyper.get("budget", 1))}
-            for i in range(n)]
+    out = []
+    for i in range(n):
+        strategy = strategies[i % len(strategies)]
+        component = "guard" if strategy == "guard" else TEXT_COMPONENTS[(round_no + i) % len(TEXT_COMPONENTS)]
+        out.append({"arm": f"v{i + 1}", "component": component, "strategy": strategy,
+                    "budget": int(hyper.get("budget", 1))})
+    return out
 
 
 def select(incumbent: EvalResult, arms: Mapping[str, ArmResult], delta: float,

@@ -18,7 +18,10 @@ ROUND_YAML = WORKFLOW_DIR / "round.yaml"
 ARM_AGENT_YAML = WORKFLOW_DIR / "arm_agent.yaml"
 ARM_GEPA_YAML = WORKFLOW_DIR / "arm_gepa.yaml"
 ARM_SKILLOPT_YAML = WORKFLOW_DIR / "arm_skillopt.yaml"
-ARM_YAMLS = {"agent": ARM_AGENT_YAML, "gepa": ARM_GEPA_YAML, "skillopt": ARM_SKILLOPT_YAML}  # by strategy
+# v2.4 §13: owned by the lessons arm (path only; importing ci_lab.lessons_arm here is not needed).
+ARM_GUARD_YAML = WORKFLOW_DIR.parent / "lessons_arm" / "workflows" / "arm_guard.yaml"
+ARM_YAMLS = {"agent": ARM_AGENT_YAML, "gepa": ARM_GEPA_YAML, "skillopt": ARM_SKILLOPT_YAML,
+             "guard": ARM_GUARD_YAML}  # by strategy
 ARM_YAML = ARM_AGENT_YAML
 CALIBRATE_YAML = WORKFLOW_DIR / "calibrate.yaml"
 CONFIRM_YAML = WORKFLOW_DIR / "confirm.yaml"
