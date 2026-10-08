@@ -1,0 +1,10 @@
+{
+  "_comment": "Pinned Aspire.Dashboard.Sdk.<rid> nupkg sha256 per version/RID (design §12.2, C34). New RIDs are recorded only via `ci-lab dashboard up --trust-new` (TOFU); commit the diff after review.",
+  "package": "Aspire.Dashboard.Sdk",
+  "default_version": "13.6.1",
+  "packages": {
+    "13.6.1": {
+      "win-arm64": "B53B7F4A20D884A0CB673F847CC2D4D4FF753D9B3612D9ECA605EFB5C8C45166"
+    }
+  }
+}
