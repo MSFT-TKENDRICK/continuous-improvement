@@ -1,0 +1,17 @@
+{
+  "eid": "tone-a1-r02",
+  "round": 2,
+  "base_commit": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "directives": [
+    {
+      "arm": "v1",
+      "strategy": "gepa",
+      "component": "prompt"
+    },
+    {
+      "arm": "v2",
+      "strategy": "agent",
+      "component": "tools"
+    }
+  ]
+}

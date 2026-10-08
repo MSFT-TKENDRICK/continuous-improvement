@@ -1,0 +1,4 @@
+{"v":1,"kind":"start","rollout_id":"ro-abababababababababababab","attempt_id":"at-1","ts":1791434970,"key":"tone-a1-r02/v1/case-1/0","input":{"secret":"do not show"}}
+{"v":1,"kind":"event","rollout_id":"ro-abababababababababababab","attempt_id":"at-1","ts":1791434980,"event_id":"e1","event_type":"model_request","data":{}}
+{"v":1,"kind":"event","rollout_id":"ro-abababababababababababab","attempt_id":"at-1","ts":1791434985,"event_id":"e2","event_type":"ci.score","data":{"value":0.75}}
+{"v":1,"kind":"finish","rollout_id":"ro-abababababababababababab","attempt_id":"at-1","ts":1791434990,"status":"succeeded"}

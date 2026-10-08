@@ -1,0 +1,68 @@
+{
+  "data": {
+    "resourceSpans": [
+      {
+        "resource": {
+          "attributes": [
+            {"key": "service.name", "value": {"stringValue": "ci-lab.night"}},
+            {"key": "ci.profile", "value": {"stringValue": "fake"}},
+            {"key": "process.pid", "value": {"intValue": "4242"}}
+          ]
+        },
+        "scopeSpans": [
+          {
+            "scope": {"name": "ci_lab"},
+            "spans": [
+              {
+                "traceId": "8ebd07609606fa610c83c7b246b9e9bb",
+                "spanId": "22cb37a110a6b0b1",
+                "name": "ci.round",
+                "kind": 1,
+                "startTimeUnixNano": "1791435780322264900",
+                "endTimeUnixNano": "1791435781322264900",
+                "attributes": [
+                  {"key": "ci.campaign_id", "value": {"stringValue": "c1"}},
+                  {"key": "ci.round", "value": {"intValue": "3"}},
+                  {"key": "ci.score", "value": {"doubleValue": 0.75}},
+                  {"key": "ci.ok", "value": {"boolValue": true}},
+                  {"key": "ci.tags", "value": {"arrayValue": {"values": [{"stringValue": "a"}, {"stringValue": "b"}]}}}
+                ],
+                "events": [
+                  {"timeUnixNano": "1791435781000000000", "name": "exception",
+                   "attributes": [{"key": "exception.type", "value": {"stringValue": "ValueError"}}]}
+                ],
+                "links": [
+                  {"traceId": "0123456789abcdef0123456789abcdef", "spanId": "0123456789abcdef",
+                   "attributes": [{"key": "ci.link", "value": {"stringValue": "resume"}}]}
+                ],
+                "status": {"code": 2, "message": "ValueError"}
+              }
+            ]
+          },
+          {
+            "scope": {"name": "agent_framework", "version": "1.0.0"},
+            "spans": [
+              {
+                "traceId": "8ebd07609606fa610c83c7b246b9e9bb",
+                "spanId": "fc046149ab886a93",
+                "parentSpanId": "22cb37a110a6b0b1",
+                "name": "chat gpt-5",
+                "kind": 3,
+                "startTimeUnixNano": "1791435780400000000",
+                "endTimeUnixNano": "1791435780900000000",
+                "attributes": [
+                  {"key": "gen_ai.operation.name", "value": {"stringValue": "chat"}},
+                  {"key": "gen_ai.request.model", "value": {"stringValue": "gpt-5"}},
+                  {"key": "gen_ai.usage.input_tokens", "value": {"intValue": "120"}}
+                ],
+                "status": {"code": 1}
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "totalCount": 1,
+  "returnedCount": 1
+}
