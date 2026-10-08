@@ -9,6 +9,10 @@ from ci_lab.contracts import STRATEGIES
 
 CiThreshold = Literal["zero", "delta"]
 
+# Contracts v2.4 added the "guard" strategy (lessons arm; writes harness/guards/*.yaml only).
+# It is opt-in via ``Hyperparams.strategies``; the default allocation stays over the text strategies.
+DEFAULT_STRATEGIES: tuple[str, ...] = tuple(s for s in STRATEGIES if s != "guard")
+
 
 @dataclass(frozen=True)
 class Hyperparams:
@@ -47,7 +51,7 @@ class Hyperparams:
     ci_lower_threshold: CiThreshold = "zero"
     seed: int = 0
     # v2.2 arm strategies (design §11.2, C23): Thompson allocation over these strategies.
-    strategies: tuple[str, ...] = STRATEGIES
+    strategies: tuple[str, ...] = DEFAULT_STRATEGIES
     strategy_floor_every: int = 3  # K: every strategy gets >= 1 arm in any K consecutive rounds
     strategy_prior: tuple[float, float] = (1.0, 1.0)  # Beta(a0, b0) prior on accepted rate
     strategy_cap: int | None = None  # max arms per strategy per round (None = unlimited)

@@ -7,10 +7,10 @@ from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
 from ci_lab import obs
-from ci_lab.contracts import ATTR_EXPERIMENT, ATTR_PHASE, ATTR_ROUND, ATTR_STRATEGY, SPAN_STEP, STRATEGIES
+from ci_lab.contracts import ATTR_EXPERIMENT, ATTR_PHASE, ATTR_ROUND, ATTR_STRATEGY, SPAN_STEP
 from ci_lab.rrsi import schedule as S
 from ci_lab.rrsi.attribution import attribute, component_stats
-from ci_lab.rrsi.params import Hyperparams, profile
+from ci_lab.rrsi.params import DEFAULT_STRATEGIES, Hyperparams, profile
 from ci_lab.rrsi.readjudicate import readjudicate, round_record
 from ci_lab.rrsi.selection import SelectionInputs, select
 from ci_lab.rrsi.strategies import allocate_strategies, starved, strategy_stats
@@ -30,7 +30,7 @@ def test_strategy_stats_hand_computed(mk):
             mk.rec(2, "v2", ["memory"], None, strategy="skillopt"),   # not measured -> ignored
             mk.rec(2, "v3", ["memory"], 0.2, accepted=True, strategy="unknown")]  # outside vocabulary
     st = strategy_stats(recs, prior=(1.0, 2.0))
-    assert set(st) == set(STRATEGIES)
+    assert set(st) == set(DEFAULT_STRATEGIES)
     g = st["gepa"]
     # one arm = one trial, however many edits/components it carries
     assert (g.tried, g.accepted, g.last_round, g.alpha, g.beta) == (2, 1, 1, 2.0, 3.0)
@@ -57,7 +57,7 @@ def test_floor_rotates_untried_strategies(mk):
             mk.rec(0, "v2", ["prompt"], -0.1, strategy="gepa")]
     a1 = allocate_strategies(1, 2, hist, hp())
     assert a1.strategies[0] == "skillopt" and a1.reasons == ("floor", "thompson")
-    assert a1.samples[0] == {} and set(a1.samples[1]) == set(STRATEGIES)
+    assert a1.samples[0] == {} and set(a1.samples[1]) == set(DEFAULT_STRATEGIES)
 
 
 def test_floor_after_k_rounds(mk):
@@ -92,7 +92,7 @@ def test_thompson_is_seeded_and_argmax_of_draws(mk):
     assert a.reasons == ("thompson", "thompson")
     assert allocate_strategies(10, 2, hist, hp(seed=4)) == a
     for s, draw in zip(a.strategies, a.samples):
-        assert s == max(draw, key=lambda k: (draw[k], -STRATEGIES.index(k)))
+        assert s == max(draw, key=lambda k: (draw[k], -DEFAULT_STRATEGIES.index(k)))
     picks = {allocate_strategies(10, 2, hist, hp(seed=i)).strategies for i in range(30)}
     assert len(picks) > 1  # different seeds explore
 
@@ -106,7 +106,7 @@ def test_thompson_prefers_successful_strategy(mk):
 def test_strategy_cap(mk):
     hist = recent(mk, 10, {"agent": (0, 20), "gepa": (20, 20), "skillopt": (0, 20)})
     a = allocate_strategies(10, 3, hist, hp(n_arms=3, strategy_cap=1, seed=1))
-    assert sorted(a.strategies) == sorted(STRATEGIES) and a.strategies[0] == "gepa"
+    assert sorted(a.strategies) == sorted(DEFAULT_STRATEGIES) and a.strategies[0] == "gepa"
 
 
 def test_strategy_hyperparam_validation():
@@ -120,6 +120,8 @@ def test_strategy_hyperparam_validation():
         hp(n_arms=4, strategy_cap=1)
     with pytest.raises(ValueError, match="prior"):
         hp(strategy_prior=(0.0, 1.0))
+    assert hp().strategies == DEFAULT_STRATEGIES and "guard" not in DEFAULT_STRATEGIES
+    assert hp(strategies=(*DEFAULT_STRATEGIES, "guard")).strategies[-1] == "guard"
     h = hp(strategies=["gepa", "agent"], strategy_prior=[2, 3], strategy_cap=2)
     assert h.strategies == ("gepa", "agent") and h.strategy_prior == (2.0, 3.0)
     assert Hyperparams.from_dict(json.loads(json.dumps(h.to_dict()))) == h
@@ -131,20 +133,20 @@ def test_floor_guarantee_property(mk):
     rng = random.Random(3)
     for it in range(40):
         n_arms, k = rng.randint(1, 3), rng.randint(1, 4)
-        if len(STRATEGIES) > n_arms * k:
+        if len(DEFAULT_STRATEGIES) > n_arms * k:
             continue
         h = hp(n_arms=n_arms, strategy_floor_every=k, seed=it)
         hist, seen = [], []
         for t in range(15):
             a = allocate_strategies(t, n_arms, hist, h)
-            assert len(a.strategies) == n_arms and set(a.strategies) <= set(STRATEGIES)
+            assert len(a.strategies) == n_arms and set(a.strategies) <= set(DEFAULT_STRATEGIES)
             assert a == allocate_strategies(t, n_arms, hist + [mk.rec(t + 1, "x", ["prompt"], 0.0)], h)
             win = rng.randrange(n_arms)
             hist += [mk.rec(t, f"v{i}", ["prompt"], rng.choice([-0.1, 0.0, 0.1]), accepted=i == win, strategy=s)
                      for i, s in enumerate(a.strategies)]
             seen.append(set(a.strategies))
         for t in range(len(seen) - k + 1):
-            assert set().union(*seen[t:t + k]) == set(STRATEGIES), (it, t)
+            assert set().union(*seen[t:t + k]) == set(DEFAULT_STRATEGIES), (it, t)
 
 
 # ---------------------------------------------------------------- directives + span

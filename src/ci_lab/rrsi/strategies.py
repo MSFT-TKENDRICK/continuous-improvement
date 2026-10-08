@@ -19,11 +19,9 @@ from typing import Any
 
 import numpy as np
 
-from ci_lab.contracts import STRATEGIES
-
 from . import stats
 from .history import HistoryRecord
-from .params import Hyperparams
+from .params import DEFAULT_STRATEGIES, Hyperparams
 
 
 @dataclass(frozen=True)
@@ -47,7 +45,7 @@ class StrategyStats:
         return {**asdict(self), "success_rate": self.success_rate, "posterior_mean": self.posterior_mean}
 
 
-def strategy_stats(records: Iterable[HistoryRecord], strategies: Sequence[str] = STRATEGIES,
+def strategy_stats(records: Iterable[HistoryRecord], strategies: Sequence[str] = DEFAULT_STRATEGIES,
                    prior: tuple[float, float] = (1.0, 1.0)) -> dict[str, StrategyStats]:
     tried: Counter[str] = Counter()
     won: Counter[str] = Counter()

@@ -93,6 +93,8 @@ The paper accepts an arm on the point estimate alone. The C16 gate only *narrows
 
 The strategy assignment is orthogonal to the component schedule: slot *i* receives both a component focus and a strategy.
 
+- **Strategy set.** `hp.strategies` defaults to `params.DEFAULT_STRATEGIES` (`agent`, `gepa`, `skillopt`). The contracts v2.4 `guard` strategy is accepted but opt-in: pass it in `hp.strategies` to allocate guard arms.
+
 - **Evidence.** Each strategy has its own statistics, kept separate from the per-component statistics.
   - The unit is the measured arm: one arm counts as one trial for its `HistoryRecord.strategy`, however many edits or components it carries.
   - Success means the arm was elected (*a* = 1).
