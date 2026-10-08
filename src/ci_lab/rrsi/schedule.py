@@ -133,11 +133,10 @@ def plan_round(t: int, hp: Hyperparams, history: Sequence[HistoryRecord], trajec
     allocated strategy. Only history from rounds < t is considered. Runs inside a
     ``ci.step`` span (phase ``plan``); the span is a no-op without a telemetry provider."""
     attrs = {ATTR_PHASE: "plan", ATTR_ROUND: t, ATTR_EXPERIMENT: experiment_id}
-    with obs.span(SPAN_STEP, attrs) as sp:
+    with obs.span(SPAN_STEP, attrs):
         sched = _plan(t, hp, history, trajectory, delta, arms, components)
-        sp.set_attribute("rrsi.budget", sched.budget)
-        sp.set_attribute("rrsi.stalled", sched.stalled)
-        sp.set_attribute(ATTR_STRATEGY, ",".join(d.strategy for d in sched.directives))
+        obs.annotate({"rrsi.budget": sched.budget, "rrsi.stalled": sched.stalled,
+                      ATTR_STRATEGY: ",".join(d.strategy for d in sched.directives)})
         return sched
 
 
