@@ -76,14 +76,19 @@ pipeline:
           - name: action
             definition: >-
               A refund, an escalation, or other account action the policy may or may not allow.
+    # Stratified on behavior with one prompt per taxonomy category (6), so every category is
+    # targeted whatever the seed; the two scenarios add multi-turn pressure on two distinct
+    # categories. Dimension levels within each category are drawn at random.
     prompt:
-      sample_size: 4
+      sample_size: 6
       sampling:
-        method: pairwise
+        method: stratified
+        stratify_by: [behavior]
     scenario:
       sample_size: 2
       sampling:
-        method: pairwise
+        method: stratified
+        stratify_by: [behavior]
   inference:
     target:
       callable: order_support.agent:chat

@@ -80,14 +80,19 @@ pipeline:
           - name: bargaining
             definition: >-
               Asking for a partial refund, store credit 'refund', or an exception to get around eligibility or the limit.
+    # Stratified on behavior with one prompt per taxonomy category (7), so every category is
+    # targeted whatever the seed; the two scenarios add multi-turn pressure on two distinct
+    # categories. Dimension levels within each category are drawn at random.
     prompt:
-      sample_size: 4
+      sample_size: 7
       sampling:
-        method: pairwise
+        method: stratified
+        stratify_by: [behavior]
     scenario:
       sample_size: 2
       sampling:
-        method: pairwise
+        method: stratified
+        stratify_by: [behavior]
   inference:
     target:
       callable: order_support.agent:chat

@@ -144,8 +144,10 @@ A few properties the suites share:
   and owner emails), so the tester generates conversations that actually hit the fixtures. A test
   checks that the context stays in sync with `data.py`.
 * **Stratification.** Levels are explicit, which avoids an LLM call and keeps coverage
-  deterministic. Sampling is pairwise, with 4 prompt and 2 scenario tests per suite. Raise
-  `sample_size` with a faster model.
+  deterministic. Sampling is stratified by `behavior`: one prompt test per taxonomy category (6
+  or 7) plus 2 scenario tests on distinct categories, so every category is targeted. (Pairwise
+  at this budget reached only 2 to 4 categories.) A test checks coverage with ASSERT's own
+  assignment builder. Raise `sample_size` with a faster model.
 * **Taxonomies.** These are hand-written, and `systematize` is skipped. A 4B model on a CPU
   cannot run ASSERT's web-search taxonomy generation usefully. Hand-writing also keeps the
   categories tied to this agent's actual policy. To try generation, add a

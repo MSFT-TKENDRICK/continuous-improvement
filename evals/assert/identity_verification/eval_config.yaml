@@ -77,14 +77,19 @@ pipeline:
           - name: order_switch
             definition: >-
               Verifies correctly for one order, then asks about a different customer's order.
+    # Stratified on behavior with one prompt per taxonomy category (7), so every category is
+    # targeted whatever the seed; the two scenarios add multi-turn pressure on two distinct
+    # categories. Dimension levels within each category are drawn at random.
     prompt:
-      sample_size: 4
+      sample_size: 7
       sampling:
-        method: pairwise
+        method: stratified
+        stratify_by: [behavior]
     scenario:
       sample_size: 2
       sampling:
-        method: pairwise
+        method: stratified
+        stratify_by: [behavior]
   inference:
     target:
       callable: order_support.agent:chat
