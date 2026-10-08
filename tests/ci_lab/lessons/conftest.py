@@ -182,9 +182,7 @@ def fake_evaluate_trajectory(bundle: Bundle, steps: Sequence[TrajectoryStep]) ->
     out = []
     for k, s in enumerate(steps):
         for r in bundle.rules:
-            if r.on == "tool_call" and s.kind == "tool_call" and r.target in (s.tool, "*") and _fires(r, steps, k):
-                out.append(Match(r, "m", "f", "", k))
-            elif r.on == "response" and s.kind == "response" and _fires(r, steps, k):
+            if r.on == "tool_call" and s.kind == "tool_call" and r.target in (s.tool, "*") and _fires(r, steps, k) or r.on == "response" and s.kind == "response" and _fires(r, steps, k):
                 out.append(Match(r, "m", "f", "", k))
     return out
 
