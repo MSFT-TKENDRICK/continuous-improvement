@@ -28,7 +28,8 @@ from typing import Any
 import yaml
 from agent_framework import FileCheckpointStorage, Workflow, WorkflowCheckpoint
 
-from ci_lab.maf.loader import experimental_features
+from ci_lab.contracts import RolloutKey
+from ci_lab.maf.loader import experimental_features, record_rollout
 from ci_lab.maf.specs import iter_strings
 
 FORBIDDEN_ACTIONS: frozenset[str] = frozenset({
@@ -147,9 +148,15 @@ async def latest_checkpoint(storage: FileCheckpointStorage, workflow_name: str) 
 async def run_or_resume(yaml_path: str | Path, message: Any, *, agents: Mapping[str, Any],
                         tools: Mapping[str, Callable[..., Any]], checkpoint_dir: str | Path,
                         max_iterations: int = DEFAULT_MAX_ITERATIONS,
-                        checkpoint_types: Collection[str] = ()) -> list[Any]:
+                        checkpoint_types: Collection[str] = (),
+                        rollout: RolloutKey | None = None) -> list[Any]:
     """Resume ``yaml_path`` from its latest checkpoint in ``checkpoint_dir`` if any, else run
-    it fresh with ``message``. Returns the workflow outputs of this invocation."""
+    it fresh with ``message``. Returns the workflow outputs of this invocation.
+
+    Runs in the caller's OTel context (open a ``ci.case``/``ci.step`` span with
+    ``obs.span`` first); MAF's GenAI spans and tool calls nest under it. ``rollout``
+    tags that current span with ``agl.rollout_id`` / ``oes.variant``."""
+    record_rollout(rollout)
     workflow, storage = build_workflow(yaml_path, agents=agents, tools=tools, checkpoint_dir=checkpoint_dir,
                                        max_iterations=max_iterations, checkpoint_types=checkpoint_types)
     before = {cp.checkpoint_id for cp in await storage.list_checkpoints(workflow_name=workflow.name)}

@@ -105,6 +105,10 @@ trigger:
   - Resuming re-runs the superstep after the checkpoint, so tools must be idempotent.
   - Resuming a completed run returns `[]`.
 
+## Observability
+
+maf-core opens no spans of its own: MAF emits the GenAI spans. `run_or_resume` and agent runs execute in the caller's OTel context, and async tasks inherit it. Open a `ci.case` or `ci.step` span with `ci_lab.obs.span(...)` before calling them, and MAF's spans and tool calls will nest under it. `run_or_resume(..., rollout=RolloutKey)` and `record_rollout(rollout, **attrs)` tag the current span with `agl.rollout_id` and `oes.variant`. If no span is recording, they do nothing. This module never installs a tracer provider.
+
 **Trust boundary:** checkpoints contain **pickle** data.
 - Keep a checkpoint dir private to one run on one machine (under `CI_RUN_DIR`).
 - Never cache, upload, commit or restore it across jobs or branches.

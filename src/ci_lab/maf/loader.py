@@ -29,8 +29,9 @@ from typing import Any
 
 from agent_framework import Agent, FileSystemAgentFileStore, SkillsProvider, create_harness_agent
 from agent_framework import FunctionTool as AFFunctionTool
+from opentelemetry import trace
 
-from ci_lab.contracts import ChatClientFactory, Profile, RolloutKey
+from ci_lab.contracts import ATTR_ROLLOUT, ATTR_VARIANT, ChatClientFactory, Profile, RolloutKey
 from ci_lab.maf.specs import (
     DEFAULT_ALLOWED_OPTIONS,
     AgentSpec,
@@ -96,6 +97,20 @@ def provenance() -> dict[str, Any]:
         experimental = dict(sorted(_experimental.items()))
     return {"versions": versions, "experimental_features": experimental,
             "powerfx_installed": importlib.util.find_spec("powerfx") is not None}
+
+
+def record_rollout(rollout: RolloutKey | None, **attributes: Any) -> None:
+    """Tag the *current* OTel span (opened by the caller via ``obs.span``) with the rollout's
+    ``agl.rollout_id`` / ``oes.variant`` plus any extra attributes. No span is created
+    and nothing happens when no span is recording."""
+    span = trace.get_current_span()
+    if not span.is_recording():
+        return
+    attrs: dict[str, Any] = dict(attributes)
+    if rollout is not None:
+        attrs |= {ATTR_ROLLOUT: rollout.rollout_id, ATTR_VARIANT: rollout.variant}
+    span.set_attributes({k: v if isinstance(v, (str, bool, int, float)) else str(v)
+                         for k, v in attrs.items() if v is not None})
 
 
 # ---------------------------------------------------------------- agents
