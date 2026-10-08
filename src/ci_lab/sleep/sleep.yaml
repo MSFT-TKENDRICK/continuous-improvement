@@ -1,0 +1,47 @@
+kind: Workflow
+# Nightly SkillOpt-Sleep (design §6). Expression-free: literal arguments only, no "=" strings,
+# no If/ConditionGroup/Foreach/Goto. Night context reaches the steps through Python closures.
+trigger:
+  kind: OnConversationStart
+  id: sleep_night
+  actions:
+    - kind: InvokeFunctionTool
+      id: harvest
+      functionName: sleep_harvest
+      arguments:
+        split: evolve
+      output:
+        result: Local.harvest
+        autoSend: false
+    - kind: InvokeFunctionTool
+      id: consolidate
+      functionName: sleep_consolidate
+      arguments:
+        gate_mode: "on"
+      output:
+        result: Local.consolidate
+        autoSend: false
+    - kind: InvokeFunctionTool
+      id: assert_gate
+      functionName: sleep_assert_gate
+      arguments:
+        suite_split: evolve
+      output:
+        result: Local.assert_gate
+        autoSend: false
+    - kind: InvokeFunctionTool
+      id: record
+      functionName: sleep_record
+      arguments:
+        envelope_kind: sleep
+      output:
+        result: Local.record
+        autoSend: false
+    - kind: InvokeFunctionTool
+      id: bundle
+      functionName: sleep_bundle
+      arguments:
+        layout: v1
+      output:
+        result: Local.bundle
+        autoSend: false
