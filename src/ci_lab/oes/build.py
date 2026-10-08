@@ -23,8 +23,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
-from opentelemetry import trace
-
+from ci_lab import obs
 from ci_lab.contracts import (
     ARM_RE,
     ATTR_CAMPAIGN,
@@ -323,17 +322,13 @@ def _data_sources(stats: Mapping[str, ArmStats], results: Mapping[str, EvalResul
 
 def _record_decision(doc: Mapping[str, Any]) -> None:
     """Annotate the caller's current span (design §12.3); a no-op without a recording span."""
-    span = trace.get_current_span()
-    if not span.is_recording():
-        return
     rrsi = doc.get("extensions", {}).get(RRSI_EXT, {})
     sleep = doc.get("extensions", {}).get(SLEEP_EXT, {})
     shipped = [r["comparison"]["variantId"] for r in doc.get("results", {}).get("metricResults", [])
                if r.get("decisionImpact") == "supports_ship"]
-    attrs = {ATTR_EXPERIMENT: doc["experiment"]["id"], ATTR_DECISION: doc["decision"].get("outcome"),
-             ATTR_CAMPAIGN: rrsi.get("campaignId"), ATTR_ROUND: rrsi.get("round"), ATTR_NIGHT: sleep.get("night"),
-             ATTR_VARIANT: shipped[0] if shipped else None}
-    span.set_attributes({k: v for k, v in attrs.items() if v is not None})
+    obs.annotate({ATTR_EXPERIMENT: doc["experiment"]["id"], ATTR_DECISION: doc["decision"].get("outcome"),
+                  ATTR_CAMPAIGN: rrsi.get("campaignId"), ATTR_ROUND: rrsi.get("round"),
+                  ATTR_NIGHT: sleep.get("night"), ATTR_VARIANT: shipped[0] if shipped else None})
 
 
 def _finish(env: Envelope) -> dict[str, Any]:
