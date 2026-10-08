@@ -226,12 +226,20 @@ issues found while building this:
 1. **`artifacts_root` resolves against the installed package.** A relative `artifacts_root`
    resolves against the package root, which is site-packages for a wheel install. The wrapper
    always passes an absolute `<repo>/artifacts` unless you override it.
-2. **The 300 s model timeout is hard-coded.** `DEFAULT_MODEL_TIMEOUT_S = 300` is hard-coded and
-   imported by name into `assert_ai.core.judge` and `assert_ai.stages.inference`. A replay verdict
-   is ~5.4k prompt tokens and ~1.3k output tokens. A 4B model on a CPU at ~5.4 tok/s needs about
-   6 minutes, so the wrapper patches both module globals from `--model-timeout` or
-   `ORDER_EVALS_MODEL_TIMEOUT_S`. A test parses ASSERT's source to confirm the globals are still
-   read at call time.
+2. **The 300 s model timeout is hard-coded, and some calls have none.** `DEFAULT_MODEL_TIMEOUT_S = 300`
+   is hard-coded and imported by name into `assert_ai.core.judge` and `assert_ai.stages.inference`
+   (judge, tester, hosted target). A replay verdict is ~5.4k prompt tokens and ~1.3k output
+   tokens. A 4B model on a CPU at ~5.4 tok/s needs about 6 minutes, so the wrapper patches both
+   module globals from `--model-timeout` or `ORDER_EVALS_MODEL_TIMEOUT_S`. Test-set generation,
+   stratification, systematize and simulated tools pass no timeout at all, and LiteLLM then cuts
+   any chat call at its own 600 s fallback. With a model timeout set, the wrapper also makes
+   ASSERT's shared await helper default to it (an explicit `test_set.timeout_s` still wins) and
+   sets `litellm.request_timeout`. It does this at runtime rather than through
+   `--override test_set.timeout_s=...`, because the `test_set` config is part of ASSERT's
+   artifact-cache key and a timeout override would regenerate the test set. Tests parse ASSERT's
+   source to confirm all patched names are still looked up at call time.
+   `inference.tool_timeout_s` is left alone: it bounds a whole callable *turn* (up to 8 agent model
+   calls plus tools) and is unbounded by default, so it never cuts a single slow call.
 3. **Judge-only runs fail in the viewer step.** The step expects `run_root/inference_set.jsonl`
    to exist, even though the judge reads the configured path. The wrapper copies the committed
    inference set there first.

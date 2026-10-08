@@ -13,14 +13,74 @@ def test_artifacts_root_injected_unless_overridden(tmp_path):
     assert cli.with_artifacts_root(["--override=artifacts_root=/x"], tmp_path) == ["--override=artifacts_root=/x"]
 
 
-def test_model_timeout_patch_targets_exist(monkeypatch):
+@pytest.fixture
+def restore_timeouts(monkeypatch):
+    """Snapshot every global set_model_timeout touches so the patch can't leak between tests."""
     import importlib
+
+    import litellm
 
     modules = [importlib.import_module(m) for m in cli._TIMEOUT_MODULES]
     for m in modules:
         monkeypatch.setattr(m, "DEFAULT_MODEL_TIMEOUT_S", m.DEFAULT_MODEL_TIMEOUT_S)
+    client = importlib.import_module(cli._MODEL_CLIENT)
+    monkeypatch.setattr(client, cli._AWAIT_HELPER, getattr(client, cli._AWAIT_HELPER))
+    monkeypatch.setattr(litellm, "request_timeout", litellm.request_timeout)
+    monkeypatch.setattr(litellm, "request_timeout_explicitly_set", litellm.request_timeout_explicitly_set)
+    return modules
+
+
+def test_model_timeout_patch_targets_exist(restore_timeouts):
     cli.set_model_timeout(1234)
-    assert all(m.DEFAULT_MODEL_TIMEOUT_S == 1234.0 for m in modules)
+    assert all(m.DEFAULT_MODEL_TIMEOUT_S == 1234.0 for m in restore_timeouts)
+
+
+def test_model_timeout_must_be_positive(restore_timeouts):
+    with pytest.raises(ValueError):
+        cli.set_model_timeout(0)
+
+
+def test_model_timeout_bounds_calls_assert_leaves_unbounded(restore_timeouts):
+    """test_set / stratification / systematize pass timeout_s=None; the patch must bound them."""
+    import asyncio
+    import importlib
+
+    client = importlib.import_module(cli._MODEL_CLIENT)
+    cli.set_model_timeout(0.05)
+    cli.set_model_timeout(0.05)  # idempotent: wraps the original helper, not the wrapper
+    helper = getattr(client, cli._AWAIT_HELPER)
+    assert not hasattr(helper.__wrapped__, "__wrapped__")
+    with pytest.raises(TimeoutError):
+        asyncio.run(helper(asyncio.sleep(1), timeout_s=None))
+    # An explicit per-call timeout (e.g. test_set.timeout_s in YAML) still wins.
+    assert asyncio.run(helper(asyncio.sleep(0.1, result="ok"), timeout_s=5)) == "ok"
+
+
+def test_model_client_routes_every_call_through_patched_helper():
+    """The helper patch only works if model_client looks the name up at call time."""
+    import ast
+    import importlib
+    import inspect
+
+    client = importlib.import_module(cli._MODEL_CLIENT)
+    tree = ast.parse(inspect.getsource(client))
+    funcs = {f.name: f for f in ast.walk(tree) if isinstance(f, (ast.FunctionDef, ast.AsyncFunctionDef))}
+    for name in ("generate", "generate_structured", "generate_with_tools", "_run_sync_with_timeout"):
+        assert any(isinstance(n, ast.Name) and n.id == cli._AWAIT_HELPER for n in ast.walk(funcs[name])), name
+
+
+def test_model_timeout_overrides_litellm_600s_fallback(restore_timeouts):
+    from litellm.litellm_core_utils.completion_timeout import CompletionTimeout
+    from litellm.litellm_core_utils.request_timeout_resolver import get_configured_request_timeout
+
+    def resolve() -> float:
+        return CompletionTimeout.resolve(None, {}, "openai", global_timeout=get_configured_request_timeout(),
+                                         supports_httpx_timeout=lambda _: True)
+
+    cli.set_model_timeout(1800)
+    assert resolve() == 1800.0
+    cli.set_model_timeout(6000)  # LiteLLM's "unset" sentinel value must still be honoured
+    assert resolve() == 6000.0
 
 
 def test_timeout_is_read_at_call_time():

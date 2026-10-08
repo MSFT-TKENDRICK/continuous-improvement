@@ -8,7 +8,7 @@
 an absolute ``artifacts_root`` (a relative one resolves inside site-packages
 when assert-ai is installed as a wheel), staging the committed replay
 inference set into the run directory (ASSERT's viewer build expects it
-there), and an optional per-call model timeout for slow local judges.
+there), and an optional per-call model timeout for slow local models.
 """
 
 from __future__ import annotations
@@ -30,6 +30,11 @@ REPLAY_CONFIG = replay.REPLAY_DIR / "eval_config.yaml"
 TIMEOUT_ENV = "ORDER_EVALS_MODEL_TIMEOUT_S"
 # Modules that bind assert_ai.core.config_model.DEFAULT_MODEL_TIMEOUT_S at import time.
 _TIMEOUT_MODULES = ("assert_ai.core.judge", "assert_ai.stages.inference")
+# Every assert-ai model call (generate, generate_structured, generate_with_tools) awaits
+# litellm through this helper; timeout_s=None (test-set generation, stratification,
+# systematize, simulated tools) means no ASSERT-side bound.
+_MODEL_CLIENT = "assert_ai.core.model_client"
+_AWAIT_HELPER = "_await_with_timeout"
 
 
 def _overrides(passthrough: list[str]) -> list[str]:
@@ -50,13 +55,42 @@ def with_artifacts_root(passthrough: list[str], artifacts: Path = DEFAULT_ARTIFA
 
 
 def set_model_timeout(seconds: float) -> None:
+    """Bound every assert-ai model call by ``seconds``.
+
+    * judge / tester / hosted target: patch the imported ``DEFAULT_MODEL_TIMEOUT_S``;
+    * calls ASSERT makes with ``timeout_s=None`` (test-set generation, stratification,
+      systematize, simulated tools): default the shared await helper to ``seconds``
+      (an explicit ``timeout_s``, e.g. ``test_set.timeout_s`` in YAML, still wins);
+    * LiteLLM: without an explicit timeout ``completion()`` falls back to a 600 s HTTP
+      deadline, which would cut longer calls first, so set ``litellm.request_timeout``.
+    """
     import importlib
 
+    import litellm
+
+    seconds = float(seconds)
+    if seconds <= 0:
+        raise ValueError("model timeout must be > 0")
     for name in _TIMEOUT_MODULES:
         module = importlib.import_module(name)
         if not hasattr(module, "DEFAULT_MODEL_TIMEOUT_S"):
             raise RuntimeError(f"{name}.DEFAULT_MODEL_TIMEOUT_S not found; assert-ai internals changed")
-        module.DEFAULT_MODEL_TIMEOUT_S = float(seconds)
+        module.DEFAULT_MODEL_TIMEOUT_S = seconds
+
+    client = importlib.import_module(_MODEL_CLIENT)
+    current = getattr(client, _AWAIT_HELPER, None)
+    if current is None:
+        raise RuntimeError(f"{_MODEL_CLIENT}.{_AWAIT_HELPER} not found; assert-ai internals changed")
+    original = getattr(current, "__wrapped__", current)
+
+    async def _await_with_default_timeout(awaitable: Any, *, timeout_s: float | None) -> Any:
+        return await original(awaitable, timeout_s=seconds if timeout_s is None else timeout_s)
+
+    _await_with_default_timeout.__wrapped__ = original  # type: ignore[attr-defined]
+    setattr(client, _AWAIT_HELPER, _await_with_default_timeout)
+
+    litellm.request_timeout = seconds
+    litellm.request_timeout_explicitly_set = True
 
 
 def stage_replay_inference_set(config: Path, passthrough: list[str]) -> Path | None:
@@ -133,7 +167,8 @@ def build_parser() -> argparse.ArgumentParser:
     run = sub.add_parser("run", help="run an ASSERT eval config (extra options go to assert-ai run)")
     run.add_argument("config")
     run.add_argument("--model-timeout", type=float, default=None,
-                     help=f"per-call judge/tester timeout in seconds (default: ASSERT's 300; env {TIMEOUT_ENV})")
+                     help="per-call timeout in seconds for every ASSERT model call (judge, tester, "
+                          f"test-set generation, ...; default: ASSERT's 300 for judge/tester; env {TIMEOUT_ENV})")
     rp = sub.add_parser("replay", help="build or check the judge-replay inference set")
     rp.add_argument("action", choices=["build", "check"])
     cal = sub.add_parser("calibrate", help="compare judge_replay scores with reference labels")
