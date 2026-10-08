@@ -1,0 +1,2 @@
+# Fixture mirrors the real repo layout; the root .gitignore excludes artifacts/.
+!artifacts/

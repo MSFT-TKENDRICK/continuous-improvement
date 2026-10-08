@@ -1,0 +1,1 @@
+{"schemaVersion":1,"traceId":"11111111111111111111111111111111","spanId":"2222222222222222","name":"ci.sleep.night","startTimeUnixNano":"1791431400000000000","endTimeUnixNano":"1791432000000000000","attributes":{"sleep.night":"2026-10-07"},"resource":{"service.name":"ci-lab.sleep"}}

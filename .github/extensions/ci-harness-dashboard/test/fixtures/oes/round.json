@@ -1,0 +1,792 @@
+{
+  "schemaVersion": "0.1.0",
+  "objectType": "experiment",
+  "exportedAt": "2026-10-08T05:00:00Z",
+  "sourceSystem": "ci-lab",
+  "sourceSystemVersion": "0.2.0",
+  "experiment": {
+    "id": "tone-a1-r01",
+    "title": "tone-a1: RRSI round 1",
+    "slug": "tone-a1-r01",
+    "hypothesis": "At least one proposed harness edit improves the evolve score beyond the noise band without worsening safety (exploratory; not an inferential claim).",
+    "learningGoal": "Select the next incumbent via RRSI Alg. 2.",
+    "tags": [
+      "rrsi",
+      "round",
+      "tone-a1"
+    ],
+    "status": "decided"
+  },
+  "design": {
+    "type": "abn",
+    "randomizationUnit": "task",
+    "analysisUnit": "task_trial",
+    "assignmentMethod": "every task evaluated on every variant (paired)",
+    "population": "evolve split",
+    "minimumDetectableEffect": 0.02,
+    "multipleTestingPolicy": "custom",
+    "peekingPolicy": "informal",
+    "stoppingRule": "fixed budget b_t=2; one evaluation per variant"
+  },
+  "variants": [
+    {
+      "id": "inc",
+      "key": "inc",
+      "name": "incumbent",
+      "role": "baseline",
+      "description": "Current campaign incumbent harness",
+      "config": {
+        "harnessTree": "d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0"
+      },
+      "codeReferences": [
+        {
+          "type": "commit",
+          "sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ]
+    },
+    {
+      "id": "v1",
+      "key": "v1",
+      "name": "arm v1",
+      "role": "treatment",
+      "description": "[prompt] v1: clarify refund policy",
+      "config": {
+        "harnessTree": "d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1",
+        "status": "evaluated"
+      },
+      "codeReferences": [
+        {
+          "type": "commit",
+          "sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "component": "prompt"
+        },
+        {
+          "type": "branch",
+          "ref": "exp/tone-a1-r01/v1",
+          "sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        }
+      ]
+    },
+    {
+      "id": "v2",
+      "key": "v2",
+      "name": "arm v2",
+      "role": "treatment",
+      "description": "[prompt] v2: clarify refund policy",
+      "config": {
+        "harnessTree": "d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2",
+        "status": "evaluated"
+      },
+      "codeReferences": [
+        {
+          "type": "commit",
+          "sha": "cccccccccccccccccccccccccccccccccccccccc",
+          "component": "prompt"
+        },
+        {
+          "type": "branch",
+          "ref": "exp/tone-a1-r01/v2",
+          "sha": "cccccccccccccccccccccccccccccccccccccccc"
+        },
+        {
+          "type": "tag",
+          "ref": "exp-archive/tone-a1-r01/v2"
+        }
+      ]
+    },
+    {
+      "id": "v3",
+      "key": "v3",
+      "name": "arm v3",
+      "role": "treatment",
+      "description": "arm v3 (rejected)",
+      "config": {
+        "harnessTree": null,
+        "status": "rejected"
+      }
+    }
+  ],
+  "metrics": [
+    {
+      "id": "evolve_score",
+      "name": "evolve score",
+      "description": "Mean ASSERT task score over cases x trials; a missing trial counts as 0.",
+      "role": "primary",
+      "direction": "increase_is_good",
+      "type": "ratio",
+      "unit": "score/trial",
+      "aggregation": "mean"
+    },
+    {
+      "id": "safety_violations",
+      "name": "Critical safety violations",
+      "description": "Critical violations found by the deterministic safety oracle. Non-compensatory: must not increase, whatever the primary gain.",
+      "role": "guardrail",
+      "direction": "decrease_is_good",
+      "type": "count",
+      "unit": "violations",
+      "aggregation": "sum",
+      "com.microsoft.ci:nonCompensatory": true
+    },
+    {
+      "id": "cost_tokens_per_task",
+      "name": "Tokens per task",
+      "description": "Agent tokens in+out per trial (RRSI cost rule input).",
+      "role": "guardrail",
+      "direction": "decrease_is_good",
+      "type": "custom",
+      "unit": "tokens/trial",
+      "aggregation": "mean"
+    },
+    {
+      "id": "missing_trial_rate",
+      "name": "Missing trial rate",
+      "description": "Fraction of trials with no score (counted as 0 in the primary).",
+      "role": "data_quality",
+      "direction": "decrease_is_good",
+      "type": "ratio",
+      "unit": "fraction",
+      "aggregation": "mean"
+    },
+    {
+      "id": "judge_error_rate",
+      "name": "Judge error rate",
+      "description": "Fraction of trials whose judge call errored.",
+      "role": "data_quality",
+      "direction": "decrease_is_good",
+      "type": "ratio",
+      "unit": "fraction",
+      "aggregation": "mean"
+    },
+    {
+      "id": "evaluator_pin",
+      "name": "Evaluator pin match",
+      "description": "1 when the variant was scored with the baseline's evaluator pin (tree, judge model/provider, served judge models), else 0.",
+      "role": "invariant",
+      "direction": "no_change_expected",
+      "type": "custom",
+      "unit": "bool",
+      "aggregation": "mean"
+    },
+    {
+      "id": "suite_score.identity",
+      "name": "identity suite score",
+      "role": "diagnostic",
+      "direction": "increase_is_good",
+      "type": "ratio",
+      "unit": "score/trial",
+      "aggregation": "mean"
+    },
+    {
+      "id": "suite_score.refund",
+      "name": "refund suite score",
+      "role": "diagnostic",
+      "direction": "increase_is_good",
+      "type": "ratio",
+      "unit": "score/trial",
+      "aggregation": "mean"
+    },
+    {
+      "id": "suite_score.tone",
+      "name": "tone suite score",
+      "role": "diagnostic",
+      "direction": "increase_is_good",
+      "type": "ratio",
+      "unit": "score/trial",
+      "aggregation": "mean"
+    }
+  ],
+  "analysis": {
+    "method": "custom",
+    "model": "RRSI Alg.2 regularized selection (cost rule / weighted rule, non-compensatory safety guard, floor S* - delta)",
+    "varianceEstimator": "bootstrap",
+    "missingDataHandling": "missing trial scored as 0; baseline missing rate above limit => rerun",
+    "generatedAt": "2026-10-08T05:00:00Z"
+  },
+  "results": {
+    "sampleSizes": {
+      "inc": 9,
+      "v1": 9,
+      "v2": 9
+    },
+    "metricResults": [
+      {
+        "metricId": "evolve_score",
+        "comparison": {
+          "baselineVariantId": "inc",
+          "variantId": "v1"
+        },
+        "role": "primary",
+        "baselineValue": 0.6,
+        "variantValue": 0.7,
+        "absoluteDifference": 0.1,
+        "relativeDifference": 0.166667,
+        "confidenceInterval": {
+          "level": 0.95,
+          "lower": 0.04
+        },
+        "resultStatus": "positive",
+        "decisionImpact": "supports_ship"
+      },
+      {
+        "metricId": "safety_violations",
+        "comparison": {
+          "baselineVariantId": "inc",
+          "variantId": "v1"
+        },
+        "role": "guardrail",
+        "baselineValue": 0,
+        "variantValue": 0,
+        "absoluteDifference": 0.0,
+        "resultStatus": "neutral",
+        "decisionImpact": "informational"
+      },
+      {
+        "metricId": "cost_tokens_per_task",
+        "comparison": {
+          "baselineVariantId": "inc",
+          "variantId": "v1"
+        },
+        "role": "guardrail",
+        "baselineValue": 150.0,
+        "variantValue": 150.0,
+        "absoluteDifference": 0.0,
+        "relativeDifference": 0.0,
+        "decisionImpact": "informational"
+      },
+      {
+        "metricId": "missing_trial_rate",
+        "comparison": {
+          "baselineVariantId": "inc",
+          "variantId": "v1"
+        },
+        "role": "data_quality",
+        "baselineValue": 0.0,
+        "variantValue": 0.0,
+        "absoluteDifference": 0.0,
+        "decisionImpact": "informational"
+      },
+      {
+        "metricId": "judge_error_rate",
+        "comparison": {
+          "baselineVariantId": "inc",
+          "variantId": "v1"
+        },
+        "role": "data_quality",
+        "baselineValue": 0.0,
+        "variantValue": 0.0,
+        "absoluteDifference": 0.0,
+        "decisionImpact": "informational"
+      },
+      {
+        "metricId": "evaluator_pin",
+        "comparison": {
+          "baselineVariantId": "inc",
+          "variantId": "v1"
+        },
+        "role": "invariant",
+        "baselineValue": 1,
+        "variantValue": 1,
+        "absoluteDifference": 0.0,
+        "relativeDifference": 0.0,
+        "resultStatus": "neutral",
+        "decisionImpact": "informational"
+      },
+      {
+        "metricId": "suite_score.identity",
+        "comparison": {
+          "baselineVariantId": "inc",
+          "variantId": "v1"
+        },
+        "role": "diagnostic",
+        "baselineValue": 0.6,
+        "variantValue": 0.7,
+        "absoluteDifference": 0.1,
+        "relativeDifference": 0.166667,
+        "decisionImpact": "informational"
+      },
+      {
+        "metricId": "suite_score.refund",
+        "comparison": {
+          "baselineVariantId": "inc",
+          "variantId": "v1"
+        },
+        "role": "diagnostic",
+        "baselineValue": 0.5,
+        "variantValue": 0.6,
+        "absoluteDifference": 0.1,
+        "relativeDifference": 0.2,
+        "decisionImpact": "informational"
+      },
+      {
+        "metricId": "suite_score.tone",
+        "comparison": {
+          "baselineVariantId": "inc",
+          "variantId": "v1"
+        },
+        "role": "diagnostic",
+        "baselineValue": 0.7,
+        "variantValue": 0.8,
+        "absoluteDifference": 0.1,
+        "relativeDifference": 0.142857,
+        "decisionImpact": "informational"
+      },
+      {
+        "metricId": "evolve_score",
+        "comparison": {
+          "baselineVariantId": "inc",
+          "variantId": "v2"
+        },
+        "role": "primary",
+        "baselineValue": 0.6,
+        "variantValue": 0.55,
+        "absoluteDifference": -0.05,
+        "relativeDifference": -0.083333,
+        "confidenceInterval": {
+          "level": 0.95,
+          "lower": -0.1
+        },
+        "resultStatus": "negative",
+        "decisionImpact": "informational"
+      },
+      {
+        "metricId": "safety_violations",
+        "comparison": {
+          "baselineVariantId": "inc",
+          "variantId": "v2"
+        },
+        "role": "guardrail",
+        "baselineValue": 0,
+        "variantValue": 1,
+        "absoluteDifference": 1.0,
+        "resultStatus": "negative",
+        "decisionImpact": "blocks_ship"
+      },
+      {
+        "metricId": "cost_tokens_per_task",
+        "comparison": {
+          "baselineVariantId": "inc",
+          "variantId": "v2"
+        },
+        "role": "guardrail",
+        "baselineValue": 150.0,
+        "variantValue": 150.0,
+        "absoluteDifference": 0.0,
+        "relativeDifference": 0.0,
+        "decisionImpact": "informational"
+      },
+      {
+        "metricId": "missing_trial_rate",
+        "comparison": {
+          "baselineVariantId": "inc",
+          "variantId": "v2"
+        },
+        "role": "data_quality",
+        "baselineValue": 0.0,
+        "variantValue": 0.0,
+        "absoluteDifference": 0.0,
+        "decisionImpact": "informational"
+      },
+      {
+        "metricId": "judge_error_rate",
+        "comparison": {
+          "baselineVariantId": "inc",
+          "variantId": "v2"
+        },
+        "role": "data_quality",
+        "baselineValue": 0.0,
+        "variantValue": 0.111111,
+        "absoluteDifference": 0.111111,
+        "decisionImpact": "informational"
+      },
+      {
+        "metricId": "evaluator_pin",
+        "comparison": {
+          "baselineVariantId": "inc",
+          "variantId": "v2"
+        },
+        "role": "invariant",
+        "baselineValue": 1,
+        "variantValue": 1,
+        "absoluteDifference": 0.0,
+        "relativeDifference": 0.0,
+        "resultStatus": "neutral",
+        "decisionImpact": "informational"
+      },
+      {
+        "metricId": "suite_score.identity",
+        "comparison": {
+          "baselineVariantId": "inc",
+          "variantId": "v2"
+        },
+        "role": "diagnostic",
+        "baselineValue": 0.6,
+        "variantValue": 0.55,
+        "absoluteDifference": -0.05,
+        "relativeDifference": -0.083333,
+        "decisionImpact": "informational"
+      },
+      {
+        "metricId": "suite_score.refund",
+        "comparison": {
+          "baselineVariantId": "inc",
+          "variantId": "v2"
+        },
+        "role": "diagnostic",
+        "baselineValue": 0.5,
+        "variantValue": 0.45,
+        "absoluteDifference": -0.05,
+        "relativeDifference": -0.1,
+        "decisionImpact": "informational"
+      },
+      {
+        "metricId": "suite_score.tone",
+        "comparison": {
+          "baselineVariantId": "inc",
+          "variantId": "v2"
+        },
+        "role": "diagnostic",
+        "baselineValue": 0.7,
+        "variantValue": 0.65,
+        "absoluteDifference": -0.05,
+        "relativeDifference": -0.071429,
+        "decisionImpact": "informational"
+      }
+    ]
+  },
+  "scorecard": {
+    "summary": "arm v1 admissible under the cost rule (dS=0.1, dC=0.0); becomes the new incumbent.",
+    "primaryOutcome": {
+      "metricId": "evolve_score",
+      "variantId": "v1",
+      "absoluteDifference": 0.1
+    },
+    "guardrailOutcomes": [
+      {
+        "metricId": "safety_violations",
+        "variantId": "v1",
+        "status": "pass"
+      }
+    ],
+    "qualityStatus": "warning",
+    "overallResult": "win",
+    "recommendedAction": "ship"
+  },
+  "decision": {
+    "status": "decided",
+    "outcome": "ship",
+    "rationale": "arm v1 admissible under the cost rule (dS=0.1, dC=0.0); becomes the new incumbent.",
+    "decidedBy": {
+      "type": "algorithm",
+      "name": "rrsi.alg2"
+    },
+    "decidedAt": "2026-10-08T05:00:00Z"
+  },
+  "qualityChecks": [
+    {
+      "checkType": "missing_trials",
+      "status": "pass",
+      "severity": "medium",
+      "observed": {
+        "inc": 0.0,
+        "v1": 0.0,
+        "v2": 0.0
+      },
+      "expected": {
+        "maxMissingRate": 0.1
+      },
+      "message": "all variants within the missing-trial limit"
+    },
+    {
+      "checkType": "invariant_metric",
+      "status": "pass",
+      "severity": "critical",
+      "observed": {
+        "inc": {
+          "evaluatorTree": "e0e1e2e3e4e5e6e7e8e9e0e1e2e3e4e5e6e7e8e9",
+          "judgeModel": "gpt-judge",
+          "judgeProvider": "GitHubCopilot",
+          "servedJudgeModels": [
+            "gpt-judge-2026-09"
+          ]
+        },
+        "v1": {
+          "evaluatorTree": "e0e1e2e3e4e5e6e7e8e9e0e1e2e3e4e5e6e7e8e9",
+          "judgeModel": "gpt-judge",
+          "judgeProvider": "GitHubCopilot",
+          "servedJudgeModels": [
+            "gpt-judge-2026-09"
+          ]
+        },
+        "v2": {
+          "evaluatorTree": "e0e1e2e3e4e5e6e7e8e9e0e1e2e3e4e5e6e7e8e9",
+          "judgeModel": "gpt-judge",
+          "judgeProvider": "GitHubCopilot",
+          "servedJudgeModels": [
+            "gpt-judge-2026-09"
+          ]
+        }
+      },
+      "expected": {
+        "evaluatorTree": "e0e1e2e3e4e5e6e7e8e9e0e1e2e3e4e5e6e7e8e9",
+        "judgeModel": "gpt-judge",
+        "judgeProvider": "GitHubCopilot",
+        "servedJudgeModels": [
+          "gpt-judge-2026-09"
+        ]
+      },
+      "message": "evaluator_pin identical for all variants"
+    },
+    {
+      "checkType": "judge_errors",
+      "status": "warn",
+      "severity": "medium",
+      "observed": {
+        "inc": 0.0,
+        "v1": 0.0,
+        "v2": 0.111111
+      },
+      "expected": {
+        "maxJudgeErrorRate": 0.1
+      },
+      "message": "max judge error rate 0.111111"
+    },
+    {
+      "checkType": "critic_v1",
+      "status": "pass",
+      "severity": "medium",
+      "observed": {
+        "reasons": [],
+        "repairs": 0
+      },
+      "message": "critic passed arm v1"
+    },
+    {
+      "checkType": "critic_v2",
+      "status": "pass",
+      "severity": "medium",
+      "observed": {
+        "reasons": [],
+        "repairs": 0
+      },
+      "message": "critic passed arm v2"
+    },
+    {
+      "checkType": "critic_v3",
+      "status": "fail",
+      "severity": "medium",
+      "observed": {
+        "reasons": [
+          "touches frozen path"
+        ],
+        "repairs": 0
+      },
+      "message": "critic rejected arm v3"
+    }
+  ],
+  "artifacts": [
+    {
+      "type": "csv",
+      "uri": "experiments/campaigns/tone-a1/r01/eval.csv"
+    }
+  ],
+  "provenance": {
+    "createdBy": {
+      "tool": "ci-lab"
+    },
+    "analysisGeneratedBy": "ci_lab.oes.build",
+    "dataSources": [
+      {
+        "variantId": "inc",
+        "split": "evolve",
+        "harnessTree": "d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0",
+        "trials": 9,
+        "evaluatorTree": "e0e1e2e3e4e5e6e7e8e9e0e1e2e3e4e5e6e7e8e9",
+        "judgeModel": "gpt-judge",
+        "judgeProvider": "GitHubCopilot",
+        "servedJudgeModels": [
+          "gpt-judge-2026-09"
+        ]
+      },
+      {
+        "variantId": "v1",
+        "split": "evolve",
+        "harnessTree": "d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1",
+        "trials": 9,
+        "evaluatorTree": "e0e1e2e3e4e5e6e7e8e9e0e1e2e3e4e5e6e7e8e9",
+        "judgeModel": "gpt-judge",
+        "judgeProvider": "GitHubCopilot",
+        "servedJudgeModels": [
+          "gpt-judge-2026-09"
+        ]
+      },
+      {
+        "variantId": "v2",
+        "split": "evolve",
+        "harnessTree": "d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2",
+        "trials": 9,
+        "evaluatorTree": "e0e1e2e3e4e5e6e7e8e9e0e1e2e3e4e5e6e7e8e9",
+        "judgeModel": "gpt-judge",
+        "judgeProvider": "GitHubCopilot",
+        "servedJudgeModels": [
+          "gpt-judge-2026-09"
+        ]
+      }
+    ],
+    "codeVersion": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "metricDefinitionVersion": "ci-lab-metrics/0.1.0",
+    "resultHash": "sha256:cc7407f4267271d8d82e31149de6c692d838c6c22ca6fc2d41e705fc50011cf5"
+  },
+  "extensions": {
+    "com.microsoft.ci.rrsi": {
+      "version": "0.1.0",
+      "kind": "round",
+      "campaignId": "tone-a1",
+      "round": 1,
+      "split": "evolve",
+      "multipleTesting": "exploratory",
+      "budget": 2,
+      "stall": false,
+      "explorationSlots": 1,
+      "pruneSet": [
+        "config"
+      ],
+      "delta": 0.02,
+      "deltaMethod": "aa_bootstrap_q95",
+      "costRule": {
+        "beta0": 0.1,
+        "beta1": 44.5
+      },
+      "weights": {
+        "ws": 0.0,
+        "wc": 15.0,
+        "wn": 0.5
+      },
+      "selection": {
+        "winner": "v1",
+        "candidates": [
+          {
+            "variantId": "v1",
+            "admissible": true,
+            "deltaS": 0.1,
+            "deltaC": 0.0,
+            "novelty": 0.2,
+            "ciLowerBound": 0.04,
+            "ciLevel": 0.95,
+            "rule": "cost",
+            "objective": null,
+            "reasons": []
+          },
+          {
+            "variantId": "v2",
+            "admissible": false,
+            "deltaS": -0.05,
+            "deltaC": 0.0,
+            "novelty": 0.1,
+            "ciLowerBound": -0.1,
+            "ciLevel": 0.95,
+            "rule": "weighted",
+            "objective": -0.7,
+            "reasons": [
+              "safety guard"
+            ]
+          }
+        ],
+        "incumbentScore": 0.6,
+        "newIncumbentScore": 0.7
+      },
+      "variants": {
+        "inc": {
+          "status": "incumbent",
+          "baseCommit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "headCommit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "harnessTree": "d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0",
+          "edits": [],
+          "critic": null,
+          "archiveRef": null
+        },
+        "v1": {
+          "status": "evaluated",
+          "baseCommit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "headCommit": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "harnessTree": "d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1",
+          "edits": [
+            {
+              "component": "prompt",
+              "hypothesis": "v1: clarify refund policy",
+              "commit": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "files": [
+                "src/order_support/harness/prompts/system.md"
+              ]
+            }
+          ],
+          "critic": {
+            "passed": true,
+            "reasons": [],
+            "repairs": 0
+          },
+          "archiveRef": null
+        },
+        "v2": {
+          "status": "evaluated",
+          "baseCommit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "headCommit": "cccccccccccccccccccccccccccccccccccccccc",
+          "harnessTree": "d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2",
+          "edits": [
+            {
+              "component": "prompt",
+              "hypothesis": "v2: clarify refund policy",
+              "commit": "cccccccccccccccccccccccccccccccccccccccc",
+              "files": [
+                "src/order_support/harness/prompts/system.md"
+              ]
+            }
+          ],
+          "critic": {
+            "passed": true,
+            "reasons": [],
+            "repairs": 0
+          },
+          "archiveRef": "exp-archive/tone-a1-r01/v2"
+        },
+        "v3": {
+          "status": "rejected",
+          "baseCommit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "headCommit": null,
+          "harnessTree": null,
+          "edits": [],
+          "critic": {
+            "passed": false,
+            "reasons": [
+              "touches frozen path"
+            ],
+            "repairs": 0
+          },
+          "archiveRef": null
+        }
+      },
+      "harnessTree": "d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0",
+      "evaluatorPin": {
+        "evaluatorTree": "e0e1e2e3e4e5e6e7e8e9e0e1e2e3e4e5e6e7e8e9",
+        "judgeModel": "gpt-judge",
+        "judgeProvider": "GitHubCopilot",
+        "servedJudgeModels": [
+          "gpt-judge-2026-09"
+        ]
+      },
+      "splitHashes": {
+        "evolve": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+        "heldout": "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+      },
+      "supersedes": null,
+      "lineage": {
+        "parentExperimentId": "tone-a1-cal",
+        "incumbentCommit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "incumbentTree": "d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0"
+      },
+      "ciLowerBound": 0.04
+    }
+  },
+  "contentHash": "sha256:7f9bfe4126381a2664cd7b9dfc0b56b29c04958d0eaefad7580b802df968ae05"
+}

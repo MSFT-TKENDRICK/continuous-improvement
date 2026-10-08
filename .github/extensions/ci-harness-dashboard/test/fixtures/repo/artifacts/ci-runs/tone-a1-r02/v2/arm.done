@@ -1,0 +1,13 @@
+{
+  "result": {
+    "arm": "v2",
+    "base_commit": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "status": "failed",
+    "eval": null
+  },
+  "reason": "RuntimeError: boom",
+  "directive": {
+    "arm": "v2",
+    "strategy": "agent"
+  }
+}

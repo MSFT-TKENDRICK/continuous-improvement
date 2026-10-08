@@ -1,0 +1,606 @@
+{
+  "schemaVersion": "0.1.0",
+  "objectType": "experiment",
+  "exportedAt": "2026-10-08T05:00:00Z",
+  "sourceSystem": "ci-lab",
+  "sourceSystemVersion": "0.2.0",
+  "experiment": {
+    "id": "tone-a1-cal",
+    "title": "tone-a1: A/A noise calibration",
+    "slug": "tone-a1-cal",
+    "hypothesis": "Repeated evaluations of an unchanged harness differ only by evaluation noise.",
+    "learningGoal": "Fix the campaign noise band delta used by every RRSI round.",
+    "tags": [
+      "rrsi",
+      "calibration",
+      "tone-a1"
+    ],
+    "status": "decided"
+  },
+  "design": {
+    "type": "abn",
+    "randomizationUnit": "task",
+    "analysisUnit": "task_trial",
+    "assignmentMethod": "every task evaluated in every repeat",
+    "population": "aa split",
+    "multipleTestingPolicy": "none",
+    "peekingPolicy": "fixed_horizon"
+  },
+  "variants": [
+    {
+      "id": "rep0",
+      "key": "rep0",
+      "name": "incumbent repeat 0",
+      "role": "baseline",
+      "description": "A/A copy of the incumbent harness",
+      "config": {
+        "harnessTree": "d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0"
+      },
+      "codeReferences": [
+        {
+          "type": "commit",
+          "sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ]
+    },
+    {
+      "id": "rep1",
+      "key": "rep1",
+      "name": "incumbent repeat 1",
+      "role": "treatment",
+      "description": "A/A copy of the incumbent harness",
+      "config": {
+        "harnessTree": "d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0"
+      },
+      "codeReferences": [
+        {
+          "type": "commit",
+          "sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ]
+    },
+    {
+      "id": "rep2",
+      "key": "rep2",
+      "name": "incumbent repeat 2",
+      "role": "treatment",
+      "description": "A/A copy of the incumbent harness",
+      "config": {
+        "harnessTree": "d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0"
+      },
+      "codeReferences": [
+        {
+          "type": "commit",
+          "sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ]
+    }
+  ],
+  "metrics": [
+    {
+      "id": "evolve_score",
+      "name": "evolve score",
+      "description": "Mean ASSERT task score over cases x trials; a missing trial counts as 0.",
+      "role": "primary",
+      "direction": "increase_is_good",
+      "type": "ratio",
+      "unit": "score/trial",
+      "aggregation": "mean"
+    },
+    {
+      "id": "safety_violations",
+      "name": "Critical safety violations",
+      "description": "Critical violations found by the deterministic safety oracle. Non-compensatory: must not increase, whatever the primary gain.",
+      "role": "guardrail",
+      "direction": "decrease_is_good",
+      "type": "count",
+      "unit": "violations",
+      "aggregation": "sum",
+      "com.microsoft.ci:nonCompensatory": true
+    },
+    {
+      "id": "cost_tokens_per_task",
+      "name": "Tokens per task",
+      "description": "Agent tokens in+out per trial (RRSI cost rule input).",
+      "role": "guardrail",
+      "direction": "decrease_is_good",
+      "type": "custom",
+      "unit": "tokens/trial",
+      "aggregation": "mean"
+    },
+    {
+      "id": "missing_trial_rate",
+      "name": "Missing trial rate",
+      "description": "Fraction of trials with no score (counted as 0 in the primary).",
+      "role": "data_quality",
+      "direction": "decrease_is_good",
+      "type": "ratio",
+      "unit": "fraction",
+      "aggregation": "mean"
+    },
+    {
+      "id": "judge_error_rate",
+      "name": "Judge error rate",
+      "description": "Fraction of trials whose judge call errored.",
+      "role": "data_quality",
+      "direction": "decrease_is_good",
+      "type": "ratio",
+      "unit": "fraction",
+      "aggregation": "mean"
+    },
+    {
+      "id": "evaluator_pin",
+      "name": "Evaluator pin match",
+      "description": "1 when the variant was scored with the baseline's evaluator pin (tree, judge model/provider, served judge models), else 0.",
+      "role": "invariant",
+      "direction": "no_change_expected",
+      "type": "custom",
+      "unit": "bool",
+      "aggregation": "mean"
+    },
+    {
+      "id": "suite_score.identity",
+      "name": "identity suite score",
+      "role": "diagnostic",
+      "direction": "increase_is_good",
+      "type": "ratio",
+      "unit": "score/trial",
+      "aggregation": "mean"
+    },
+    {
+      "id": "suite_score.refund",
+      "name": "refund suite score",
+      "role": "diagnostic",
+      "direction": "increase_is_good",
+      "type": "ratio",
+      "unit": "score/trial",
+      "aggregation": "mean"
+    },
+    {
+      "id": "suite_score.tone",
+      "name": "tone suite score",
+      "role": "diagnostic",
+      "direction": "increase_is_good",
+      "type": "ratio",
+      "unit": "score/trial",
+      "aggregation": "mean"
+    }
+  ],
+  "analysis": {
+    "method": "custom",
+    "model": "A/A repeat comparison; delta via aa_bootstrap_q95",
+    "missingDataHandling": "missing trial scored as 0; baseline missing rate above limit => rerun",
+    "generatedAt": "2026-10-08T05:00:00Z"
+  },
+  "results": {
+    "sampleSizes": {
+      "rep0": 9,
+      "rep1": 9,
+      "rep2": 9
+    },
+    "metricResults": [
+      {
+        "metricId": "evolve_score",
+        "comparison": {
+          "baselineVariantId": "rep0",
+          "variantId": "rep1"
+        },
+        "role": "primary",
+        "baselineValue": 0.6,
+        "variantValue": 0.61,
+        "absoluteDifference": 0.01,
+        "relativeDifference": 0.016667,
+        "resultStatus": "neutral",
+        "decisionImpact": "informational"
+      },
+      {
+        "metricId": "safety_violations",
+        "comparison": {
+          "baselineVariantId": "rep0",
+          "variantId": "rep1"
+        },
+        "role": "guardrail",
+        "baselineValue": 0,
+        "variantValue": 0,
+        "absoluteDifference": 0.0,
+        "resultStatus": "neutral",
+        "decisionImpact": "informational"
+      },
+      {
+        "metricId": "cost_tokens_per_task",
+        "comparison": {
+          "baselineVariantId": "rep0",
+          "variantId": "rep1"
+        },
+        "role": "guardrail",
+        "baselineValue": 150.0,
+        "variantValue": 150.0,
+        "absoluteDifference": 0.0,
+        "relativeDifference": 0.0,
+        "decisionImpact": "informational"
+      },
+      {
+        "metricId": "missing_trial_rate",
+        "comparison": {
+          "baselineVariantId": "rep0",
+          "variantId": "rep1"
+        },
+        "role": "data_quality",
+        "baselineValue": 0.0,
+        "variantValue": 0.0,
+        "absoluteDifference": 0.0,
+        "decisionImpact": "informational"
+      },
+      {
+        "metricId": "judge_error_rate",
+        "comparison": {
+          "baselineVariantId": "rep0",
+          "variantId": "rep1"
+        },
+        "role": "data_quality",
+        "baselineValue": 0.0,
+        "variantValue": 0.111111,
+        "absoluteDifference": 0.111111,
+        "decisionImpact": "informational"
+      },
+      {
+        "metricId": "evaluator_pin",
+        "comparison": {
+          "baselineVariantId": "rep0",
+          "variantId": "rep1"
+        },
+        "role": "invariant",
+        "baselineValue": 1,
+        "variantValue": 1,
+        "absoluteDifference": 0.0,
+        "relativeDifference": 0.0,
+        "resultStatus": "neutral",
+        "decisionImpact": "informational"
+      },
+      {
+        "metricId": "suite_score.identity",
+        "comparison": {
+          "baselineVariantId": "rep0",
+          "variantId": "rep1"
+        },
+        "role": "diagnostic",
+        "baselineValue": 0.6,
+        "variantValue": 0.61,
+        "absoluteDifference": 0.01,
+        "relativeDifference": 0.016667,
+        "decisionImpact": "informational"
+      },
+      {
+        "metricId": "suite_score.refund",
+        "comparison": {
+          "baselineVariantId": "rep0",
+          "variantId": "rep1"
+        },
+        "role": "diagnostic",
+        "baselineValue": 0.5,
+        "variantValue": 0.51,
+        "absoluteDifference": 0.01,
+        "relativeDifference": 0.02,
+        "decisionImpact": "informational"
+      },
+      {
+        "metricId": "suite_score.tone",
+        "comparison": {
+          "baselineVariantId": "rep0",
+          "variantId": "rep1"
+        },
+        "role": "diagnostic",
+        "baselineValue": 0.7,
+        "variantValue": 0.71,
+        "absoluteDifference": 0.01,
+        "relativeDifference": 0.014286,
+        "decisionImpact": "informational"
+      },
+      {
+        "metricId": "evolve_score",
+        "comparison": {
+          "baselineVariantId": "rep0",
+          "variantId": "rep2"
+        },
+        "role": "primary",
+        "baselineValue": 0.6,
+        "variantValue": 0.605,
+        "absoluteDifference": 0.005,
+        "relativeDifference": 0.008333,
+        "resultStatus": "neutral",
+        "decisionImpact": "informational"
+      },
+      {
+        "metricId": "safety_violations",
+        "comparison": {
+          "baselineVariantId": "rep0",
+          "variantId": "rep2"
+        },
+        "role": "guardrail",
+        "baselineValue": 0,
+        "variantValue": 0,
+        "absoluteDifference": 0.0,
+        "resultStatus": "neutral",
+        "decisionImpact": "informational"
+      },
+      {
+        "metricId": "cost_tokens_per_task",
+        "comparison": {
+          "baselineVariantId": "rep0",
+          "variantId": "rep2"
+        },
+        "role": "guardrail",
+        "baselineValue": 150.0,
+        "variantValue": 150.0,
+        "absoluteDifference": 0.0,
+        "relativeDifference": 0.0,
+        "decisionImpact": "informational"
+      },
+      {
+        "metricId": "missing_trial_rate",
+        "comparison": {
+          "baselineVariantId": "rep0",
+          "variantId": "rep2"
+        },
+        "role": "data_quality",
+        "baselineValue": 0.0,
+        "variantValue": 0.0,
+        "absoluteDifference": 0.0,
+        "decisionImpact": "informational"
+      },
+      {
+        "metricId": "judge_error_rate",
+        "comparison": {
+          "baselineVariantId": "rep0",
+          "variantId": "rep2"
+        },
+        "role": "data_quality",
+        "baselineValue": 0.0,
+        "variantValue": 0.0,
+        "absoluteDifference": 0.0,
+        "decisionImpact": "informational"
+      },
+      {
+        "metricId": "evaluator_pin",
+        "comparison": {
+          "baselineVariantId": "rep0",
+          "variantId": "rep2"
+        },
+        "role": "invariant",
+        "baselineValue": 1,
+        "variantValue": 1,
+        "absoluteDifference": 0.0,
+        "relativeDifference": 0.0,
+        "resultStatus": "neutral",
+        "decisionImpact": "informational"
+      },
+      {
+        "metricId": "suite_score.identity",
+        "comparison": {
+          "baselineVariantId": "rep0",
+          "variantId": "rep2"
+        },
+        "role": "diagnostic",
+        "baselineValue": 0.6,
+        "variantValue": 0.605,
+        "absoluteDifference": 0.005,
+        "relativeDifference": 0.008333,
+        "decisionImpact": "informational"
+      },
+      {
+        "metricId": "suite_score.refund",
+        "comparison": {
+          "baselineVariantId": "rep0",
+          "variantId": "rep2"
+        },
+        "role": "diagnostic",
+        "baselineValue": 0.5,
+        "variantValue": 0.505,
+        "absoluteDifference": 0.005,
+        "relativeDifference": 0.01,
+        "decisionImpact": "informational"
+      },
+      {
+        "metricId": "suite_score.tone",
+        "comparison": {
+          "baselineVariantId": "rep0",
+          "variantId": "rep2"
+        },
+        "role": "diagnostic",
+        "baselineValue": 0.7,
+        "variantValue": 0.705,
+        "absoluteDifference": 0.005,
+        "relativeDifference": 0.007143,
+        "decisionImpact": "informational"
+      }
+    ]
+  },
+  "scorecard": {
+    "summary": "A/A calibration of the incumbent (3 repeats); no change to ship. delta fixed at 0.02 for campaign tone-a1.",
+    "qualityStatus": "warning",
+    "overallResult": "neutral",
+    "recommendedAction": "do_not_ship"
+  },
+  "decision": {
+    "status": "decided",
+    "outcome": "do_not_ship",
+    "rationale": "A/A calibration of the incumbent (3 repeats); no change to ship. delta fixed at 0.02 for campaign tone-a1.",
+    "decidedBy": {
+      "type": "algorithm",
+      "name": "rrsi.calibration"
+    },
+    "decidedAt": "2026-10-08T05:00:00Z"
+  },
+  "qualityChecks": [
+    {
+      "checkType": "missing_trials",
+      "status": "pass",
+      "severity": "medium",
+      "observed": {
+        "rep0": 0.0,
+        "rep1": 0.0,
+        "rep2": 0.0
+      },
+      "expected": {
+        "maxMissingRate": 0.1
+      },
+      "message": "all variants within the missing-trial limit"
+    },
+    {
+      "checkType": "invariant_metric",
+      "status": "pass",
+      "severity": "critical",
+      "observed": {
+        "rep0": {
+          "evaluatorTree": "e0e1e2e3e4e5e6e7e8e9e0e1e2e3e4e5e6e7e8e9",
+          "judgeModel": "gpt-judge",
+          "judgeProvider": "GitHubCopilot",
+          "servedJudgeModels": [
+            "gpt-judge-2026-09"
+          ]
+        },
+        "rep1": {
+          "evaluatorTree": "e0e1e2e3e4e5e6e7e8e9e0e1e2e3e4e5e6e7e8e9",
+          "judgeModel": "gpt-judge",
+          "judgeProvider": "GitHubCopilot",
+          "servedJudgeModels": [
+            "gpt-judge-2026-09"
+          ]
+        },
+        "rep2": {
+          "evaluatorTree": "e0e1e2e3e4e5e6e7e8e9e0e1e2e3e4e5e6e7e8e9",
+          "judgeModel": "gpt-judge",
+          "judgeProvider": "GitHubCopilot",
+          "servedJudgeModels": [
+            "gpt-judge-2026-09"
+          ]
+        }
+      },
+      "expected": {
+        "evaluatorTree": "e0e1e2e3e4e5e6e7e8e9e0e1e2e3e4e5e6e7e8e9",
+        "judgeModel": "gpt-judge",
+        "judgeProvider": "GitHubCopilot",
+        "servedJudgeModels": [
+          "gpt-judge-2026-09"
+        ]
+      },
+      "message": "evaluator_pin identical for all variants"
+    },
+    {
+      "checkType": "judge_errors",
+      "status": "warn",
+      "severity": "medium",
+      "observed": {
+        "rep0": 0.0,
+        "rep1": 0.111111,
+        "rep2": 0.0
+      },
+      "expected": {
+        "maxJudgeErrorRate": 0.1
+      },
+      "message": "max judge error rate 0.111111"
+    },
+    {
+      "checkType": "aa_noise_band",
+      "status": "pass",
+      "severity": "low",
+      "observed": {
+        "maxAbsDeltaS": 0.01,
+        "pairs": {
+          "rep0-rep1": 0.01,
+          "rep0-rep2": 0.005,
+          "rep1-rep2": 0.005
+        }
+      },
+      "expected": {
+        "delta": 0.02
+      },
+      "message": "A/A max |dS| 0.01 vs delta 0.02 (aa_bootstrap_q95)"
+    },
+    {
+      "checkType": "harness_identity",
+      "status": "pass",
+      "severity": "critical",
+      "observed": [
+        "d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0"
+      ],
+      "expected": "d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0",
+      "message": "all repeats evaluate the same harness tree"
+    }
+  ],
+  "provenance": {
+    "createdBy": {
+      "tool": "ci-lab"
+    },
+    "analysisGeneratedBy": "ci_lab.oes.build",
+    "dataSources": [
+      {
+        "variantId": "rep0",
+        "split": "aa",
+        "harnessTree": "d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0",
+        "trials": 9,
+        "evaluatorTree": "e0e1e2e3e4e5e6e7e8e9e0e1e2e3e4e5e6e7e8e9",
+        "judgeModel": "gpt-judge",
+        "judgeProvider": "GitHubCopilot",
+        "servedJudgeModels": [
+          "gpt-judge-2026-09"
+        ]
+      },
+      {
+        "variantId": "rep1",
+        "split": "aa",
+        "harnessTree": "d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0",
+        "trials": 9,
+        "evaluatorTree": "e0e1e2e3e4e5e6e7e8e9e0e1e2e3e4e5e6e7e8e9",
+        "judgeModel": "gpt-judge",
+        "judgeProvider": "GitHubCopilot",
+        "servedJudgeModels": [
+          "gpt-judge-2026-09"
+        ]
+      },
+      {
+        "variantId": "rep2",
+        "split": "aa",
+        "harnessTree": "d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0",
+        "trials": 9,
+        "evaluatorTree": "e0e1e2e3e4e5e6e7e8e9e0e1e2e3e4e5e6e7e8e9",
+        "judgeModel": "gpt-judge",
+        "judgeProvider": "GitHubCopilot",
+        "servedJudgeModels": [
+          "gpt-judge-2026-09"
+        ]
+      }
+    ],
+    "codeVersion": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "metricDefinitionVersion": "ci-lab-metrics/0.1.0",
+    "resultHash": "sha256:8e4a9ab44a6a88004aa9e91019b827af3e29977cad4dfb736891dc215f52261d"
+  },
+  "extensions": {
+    "com.microsoft.ci.rrsi": {
+      "version": "0.1.0",
+      "kind": "calibration",
+      "campaignId": "tone-a1",
+      "round": 0,
+      "split": "aa",
+      "multipleTesting": "none",
+      "repeats": 3,
+      "delta": 0.02,
+      "deltaMethod": "aa_bootstrap_q95",
+      "harnessTree": "d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0",
+      "evaluatorPin": {
+        "evaluatorTree": "e0e1e2e3e4e5e6e7e8e9e0e1e2e3e4e5e6e7e8e9",
+        "judgeModel": "gpt-judge",
+        "judgeProvider": "GitHubCopilot",
+        "servedJudgeModels": [
+          "gpt-judge-2026-09"
+        ]
+      },
+      "splitHashes": {
+        "evolve": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+        "heldout": "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+      },
+      "supersedes": null
+    }
+  },
+  "contentHash": "sha256:042c2f946d0d695ae8d9050bdd3b68321f51b04e590dfe5c40fe919f4a75fac9"
+}

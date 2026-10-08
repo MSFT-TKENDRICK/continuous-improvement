@@ -1,0 +1,18 @@
+{
+  "format": 1,
+  "night": 3,
+  "last_night_id": "sleep-20261007-3",
+  "last_date": "2026-10-07",
+  "last_status": "accepted",
+  "last_base_sha": "cccccccccccccccccccccccccccccccccccccccc",
+  "accepted_total": 2,
+  "history": [
+    {
+      "night_id": "sleep-20261007-3",
+      "night": 3,
+      "status": "accepted",
+      "delta_lcb": 0.01,
+      "n_tasks": 12
+    }
+  ]
+}
