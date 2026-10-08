@@ -215,6 +215,12 @@ def test_enforce_write_mode(env):
 
 
 def test_register_with_strategy_registry(monkeypatch):
+    try:  # don't leak "guard" into the real registry when ci_lab.strategies is installed
+        import ci_lab.strategies as real
+    except ImportError:
+        pass
+    else:
+        monkeypatch.setattr(real, "_FACTORIES", dict(real._FACTORIES))
     assert register() is False or "ci_lab.strategies" in sys.modules
     registered: dict[str, object] = {}
     fake = types.ModuleType("ci_lab.strategies")
