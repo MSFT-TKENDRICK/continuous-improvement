@@ -11,7 +11,9 @@ This is an **isolation layer, not an OS sandbox**. Its layers are:
 2. a separate ``sys.executable -I bootstrap.py`` process in a fresh temp cwd with a scrubbed env, restricted
    builtins and a guarded ``__import__``;
 3. a wall-clock timeout that kills the whole process tree (a Win32 Job Object via pywin32, else
-   ``proc.kill()``; a new session + ``killpg`` on POSIX);
+   ``proc.kill()``; a new session + ``killpg`` on POSIX). The ``timeout_s`` clock starts when the child
+   reports ``ready`` (interpreter + stubs loaded, just before the snippet runs), so a slow start on a loaded
+   machine does not eat the snippet's budget; startup has its own fixed ``STARTUP_TIMEOUT_S`` budget;
 4. every tool call is a JSON-lines RPC on the child's ORIGINAL fd 1 / fd 0 (``{"rpc": ...}`` envelopes) that
    the parent forwards through :class:`~ci_lab.mcp.client.McpHub`, so exposure allowlists and the
    ``before_call`` governance hook still apply. The child's fds 0/1 are re-pointed at ``os.devnull`` and
@@ -27,9 +29,11 @@ import asyncio
 import contextlib
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
+import time
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -40,6 +44,8 @@ from ci_lab.mcp.stubs import bootstrap_source, describe, generate_stubs, usable
 
 OnToolCall = Callable[[str], Any]
 _ENV_KEEP = ("SYSTEMROOT",)
+# Interpreter start-up (not counted against ``timeout_s``); generous because loaded CI hosts can be slow.
+STARTUP_TIMEOUT_S = 60.0
 
 
 class ProcessTree:
@@ -98,6 +104,20 @@ def _assign_job(pid: int) -> Any:
         return None
 
 
+def _rmtree(path: Path) -> None:
+    """Remove the run dir, retrying while Windows (AV scanners, indexers, a just-exited child) still holds
+    a file; never fails the run over leftover temp files."""
+    for delay in (0.05, 0.1, 0.25, 0.5, 1.0, 2.0):
+        try:
+            shutil.rmtree(path)
+            return
+        except FileNotFoundError:
+            return
+        except OSError:
+            time.sleep(delay)
+    shutil.rmtree(path, ignore_errors=True)
+
+
 def _cap(text: str, limit: int, total: int | None = None) -> str:
     total = len(text) if total is None else total
     if total <= limit and len(text) <= limit:
@@ -137,8 +157,11 @@ class CodeMode:
     async def run_code(self, code: str) -> str:
         if errs := check_code(code, self.cfg.imports):
             return "error: code rejected:\n" + "\n".join(f"- {e}" for e in errs)
-        with tempfile.TemporaryDirectory(prefix="ci-codemode-") as tmp:
-            return await self._run(Path(tmp), code)
+        tmp = Path(tempfile.mkdtemp(prefix="ci-codemode-"))
+        try:
+            return await self._run(tmp, code)
+        finally:
+            await asyncio.to_thread(_rmtree, tmp)
 
     def _prepare(self, tmp: Path, code: str) -> Path:
         stub_dir = tmp / "stubs"
@@ -165,15 +188,25 @@ class CodeMode:
         proc = self._spawn(tmp, self._prepare(tmp, code))
         tree = ProcessTree(proc)
         self.last_pid = proc.pid
+        started = asyncio.Event()
+        serve = asyncio.ensure_future(self._serve(proc, tmp, started))
+        ready = asyncio.ensure_future(started.wait())
         try:
-            return await asyncio.wait_for(self._serve(proc, tmp), timeout=self.cfg.timeout_s)
+            await asyncio.wait({serve, ready}, timeout=STARTUP_TIMEOUT_S, return_when=asyncio.FIRST_COMPLETED)
+            if not serve.done() and not ready.done():
+                tree.kill()
+                return f"error: code-mode process did not start within {STARTUP_TIMEOUT_S:g}s; process tree killed"
+            return await asyncio.wait_for(serve, timeout=self.cfg.timeout_s)
         except TimeoutError:
             tree.kill()
             return f"error: timed out after {self.cfg.timeout_s:g}s; process tree killed"
         finally:
+            for t in (ready, serve):
+                t.cancel()
             tree.kill()
             try:
-                await asyncio.to_thread(proc.wait, 10)
+                with contextlib.suppress(subprocess.TimeoutExpired):
+                    await asyncio.to_thread(proc.wait, 60)
             finally:
                 tree.close()
                 for s in (proc.stdin, proc.stdout):
@@ -182,7 +215,7 @@ class CodeMode:
                     except OSError:
                         pass
 
-    async def _serve(self, proc: subprocess.Popen[bytes], tmp: Path) -> str:
+    async def _serve(self, proc: subprocess.Popen[bytes], tmp: Path, started: asyncio.Event) -> str:
         while True:
             line = await asyncio.to_thread(proc.stdout.readline)
             if not line:
@@ -196,9 +229,11 @@ class CodeMode:
                 msg = None
             if not isinstance(msg, dict):
                 continue
-            if msg.get("method") == "done":
+            if msg.get("method") == "ready":
+                started.set()
+            elif msg.get("method") == "done":
                 return self._result(msg)
-            if msg.get("method") == "call":
+            elif msg.get("method") == "call":
                 reply = await self._forward(msg)
                 await asyncio.to_thread(self._send, proc, reply)
 
