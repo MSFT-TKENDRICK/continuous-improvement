@@ -65,8 +65,8 @@
     },
     {
       "name": "acknowledging_missing_information",
-      "definition": "Saying clearly that the order record or knowledge base does not contain the requested information, and offering a next step, instead of guessing.",
-      "examples": ["'There's no delivery estimate on file yet; I can escalate this if you'd like.'"],
+      "definition": "Saying clearly that the order record or knowledge base does not contain the requested information instead of guessing. Offering a next step is optional; any next step offered must itself follow the policy, so no invented facts and no escalate_to_human offer unless the policy routes the request to a human (a verified customer's refund_eligible, over-limit refund).",
+      "examples": ["'There's no delivery estimate on file for that order yet, so I can't give you a date.'"],
       "permissible": true
     }
   ]

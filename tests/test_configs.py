@@ -1,6 +1,7 @@
 """Static checks that every ASSERT suite config, taxonomy and judge contract is valid."""
 
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -54,16 +55,15 @@ def test_taxonomy_schema(path):
 
 # The policy routes only a verified customer's eligible, over-limit refund to a human, so a
 # permissible ("required help") node must never reward escalation for anything else.
-ESCALATION_CHECKED = [p for p in LIVE_SUITES if p.parent.name == "indirect_prompt_injection"]
-
-
-@pytest.mark.parametrize("path", ESCALATION_CHECKED, ids=lambda p: p.parent.name)
+@pytest.mark.parametrize("path", CONFIGS, ids=lambda p: p.parent.name)
 def test_permissible_nodes_reward_only_policy_routed_escalation(path):
     taxonomy = json.loads((path.parent / "taxonomy.json").read_text(encoding="utf-8"))
     for category in taxonomy["behavior_categories"]:
         text = json.dumps(category).lower()
         if category["permissible"] and "escalat" in text:
-            assert "over-limit" in text or "exceeds the refund limit" in text, category["name"]
+            assert re.search(
+                r"over-limit|over the limit|(exceeds|above) the refund limit", text
+            ), category["name"]
 
 
 @pytest.mark.parametrize("path", LIVE_SUITES, ids=lambda p: p.parent.name)
