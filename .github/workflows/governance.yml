@@ -1,0 +1,47 @@
+# Governance (docs/governance.md): AGT/ACS policies, MAF middleware, audit chain, launch gate.
+# Every PR touching governance-relevant paths runs the governance tests (incl. the vendored ACS
+# conformance corpus, 25 cases, against the pure-Python runtime; the MAF wiring, campaign gate and
+# protected-path tests), `ci-lab governance doctor` and the repo lint (governed-factory rule).
+# Always on, like tests.yml. The weekly native ACS parity check is governance-native.yml.
+name: governance
+
+on:
+  pull_request:
+    paths:
+      - 'src/ci_lab/governance/**'
+      - 'src/ci_lab/maf/**'
+      - 'src/ci_lab/campaign/**'
+      - 'src/ci_lab/tools/**'
+      - 'src/ci_lab/lint/**'
+      - 'lint/rules/**'
+      - 'tests/ci_lab/governance/**'
+      - '.github/workflows/governance.yml'
+      - 'pyproject.toml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: governance-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pr:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+      # uv.lock is intentionally not committed (internal package proxy); see tests.yml.
+      - name: uv sync
+        run: uv sync
+      - name: governance tests + ACS conformance
+        run: uv run pytest -q -p no:cacheprovider tests/ci_lab/governance
+      - name: governance doctor
+        run: uv run ci-lab governance doctor
+      - name: repo lint (governed agent factory rule)
+        run: uv run python -m ci_lab.lint lint
