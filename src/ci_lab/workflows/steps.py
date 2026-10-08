@@ -1,0 +1,684 @@
+"""Workflow step functions, bound as closures over run contexts (design §5, C5, C6).
+
+Every step is idempotent: it first checks its durable marker under the run dir
+(``CI_RUN_DIR/<eid>/...``) and returns the recorded result if present. External
+effects go through ``deps.outbox`` with :func:`ci_lab.contracts.op_id` keys.
+Exceptions are converted to :class:`~ci_lab.workflows.runtime.StepAborted` so the
+declarative runner stops at the failing superstep (it swallows ``Exception``).
+"""
+
+from __future__ import annotations
+
+import asyncio
+import functools
+import hashlib
+import inspect
+import random
+from collections.abc import Awaitable, Callable, Mapping
+from dataclasses import asdict, dataclass, field
+from pathlib import Path
+from typing import Any
+
+from ci_lab.campaign import records
+from ci_lab.campaign.deps import CampaignDeps
+from ci_lab.contracts import (
+    ARM_RE,
+    ArmResult,
+    CriticVerdict,
+    Edit,
+    EvalResult,
+    Profile,
+    arm_branch,
+    op_id,
+    round_experiment_id,
+)
+from ci_lab.workflows import ARM_YAML
+from ci_lab.workflows.runtime import GatedAgent, StepAborted
+
+INCUMBENT = "inc"
+FINAL_CRITIQUE = 3  # critique_1, critique_2, critique_final
+
+
+# ------------------------------------------------------------------ contexts
+
+@dataclass
+class CampaignEnv:
+    cid: str
+    profile: Profile
+    hyper: Mapping[str, Any]
+    deps: CampaignDeps
+    run_root: Path
+
+    @property
+    def campaign_dir(self) -> Path:
+        return self.run_root / self.cid
+
+    def rel(self, *parts: str) -> str:
+        return "/".join(("campaigns", self.cid, *parts))
+
+    def frontier(self) -> dict[str, Any]:
+        frontier = self.deps.ledger.read_json(self.rel("frontier.json"))
+        if not frontier:
+            raise RuntimeError(f"campaign {self.cid} has no frontier (run `campaign new`)")
+        return frontier
+
+    def delta(self) -> float:
+        cal = self.deps.ledger.read_json(self.rel("calibration.json"))
+        if not cal:
+            raise RuntimeError(f"campaign {self.cid} is not calibrated")
+        return float(cal["delta"])
+
+    def commit_ledger(self, key: str, message: str, paths: list[str]) -> Any:
+        return self.deps.outbox.run_once(op_id("ledger-commit", self.cid, key),
+                                         lambda: {"sha": self.deps.ledger.commit(message, paths)})
+
+    def remember_incumbent(self, tree: str, result: EvalResult) -> None:
+        data = records.eval_to_dict(result)
+        records.write_json(self.campaign_dir / "inc-cache" / f"{tree}.json", data)
+        records.write_json(self.campaign_dir / "last_incumbent_eval.json", data)
+
+
+@dataclass
+class RoundContext:
+    env: CampaignEnv
+    round_no: int
+
+    @property
+    def eid(self) -> str:
+        return round_experiment_id(self.env.cid, self.round_no)
+
+    @property
+    def dir(self) -> Path:
+        return self.env.run_root / self.eid
+
+    @property
+    def ckpt(self) -> Path:
+        return self.dir / "ckpt"
+
+    @property
+    def analysis_path(self) -> Path:
+        """Written by the Analyst's terminal ``submit_analysis`` tool (M8a)."""
+        return self.dir / "analysis.json"
+
+    def begin(self) -> dict[str, Any]:
+        data = records.read_json(self.dir / "begin.json")
+        if data is None:
+            raise RuntimeError(f"{self.eid}: begin_round has not run")
+        return data
+
+    def brief(self) -> dict[str, Any]:
+        """Read-only round brief for analyst/proposer tools (typed failures only, C12)."""
+        begin = self.begin()
+        return {"experiment_id": self.eid, "round": self.round_no, "directives": begin["directives"],
+                "failures": begin["failures"], "history": begin["history"],
+                "analysis": records.read_json(self.analysis_path)}
+
+    def arm(self, name: str) -> ArmContext:
+        directive = next((d for d in self.begin()["directives"] if d["arm"] == name), {"arm": name})
+        return ArmContext(self, name, directive)
+
+    def arm_result(self, name: str) -> ArmResult | None:
+        data = records.read_json(self.dir / name / "arm.done")
+        return records.arm_from_dict(data["result"]) if data else None
+
+
+@dataclass
+class ArmContext:
+    round: RoundContext
+    arm: str
+    directive: Mapping[str, Any]
+    reinvoke_proposer: Callable[[str], Awaitable[Any]] | None = field(default=None, repr=False)
+
+    @property
+    def eid(self) -> str:
+        return self.round.eid
+
+    @property
+    def dir(self) -> Path:
+        return self.round.dir / self.arm
+
+    @property
+    def ckpt(self) -> Path:
+        return self.dir / "ckpt"
+
+    @property
+    def proposal_path(self) -> Path:
+        """Written by the Proposer's terminal ``submit_proposal`` tool (M8a)."""
+        return self.dir / "proposal.json"
+
+    @property
+    def base_commit(self) -> str:
+        return self.round.begin()["base_commit"]
+
+    @property
+    def worktree(self) -> Path:
+        slot = records.read_json(self.dir / "slot.json")
+        if slot is None:
+            raise RuntimeError(f"{self.eid}/{self.arm}: slot not provisioned")
+        return Path(slot["worktree"])
+
+    def verdict(self, attempt: int) -> CriticVerdict | None:
+        data = records.read_json(self.dir / f"critique_{attempt}.json")
+        return records.verdict_from_dict(data) if data else None
+
+
+# ------------------------------------------------------------------ step wrapper
+
+def step(name: str, fn: Callable[..., Any]) -> Callable[..., Awaitable[Any]]:
+    """Async tool wrapper: tolerate literal YAML args, abort the workflow on error."""
+
+    @functools.wraps(fn)
+    async def wrapper(**kwargs: Any) -> Any:
+        params = inspect.signature(fn).parameters
+        kwargs = {k: v for k, v in kwargs.items() if k in params}
+        try:
+            result = fn(**kwargs)
+            if inspect.isawaitable(result):
+                result = await result
+            return result
+        except Exception as exc:
+            raise StepAborted(name, exc) from exc
+
+    return wrapper
+
+
+def _done(path: Path) -> dict[str, Any] | None:
+    return records.read_json(path)
+
+
+# ------------------------------------------------------------------ arm.yaml
+
+def arm_tools(ctx: ArmContext) -> dict[str, Callable[..., Awaitable[Any]]]:
+    deps = ctx.round.env.deps
+    hyper = ctx.round.env.hyper
+
+    def provision_slot() -> dict[str, Any]:
+        marker = ctx.dir / "slot.json"
+        if (data := _done(marker)) is not None:
+            return data
+        base = ctx.base_commit
+        worktree = deps.provision_slot(ctx.eid, ctx.arm, base)
+        data = {"worktree": str(worktree), "base_commit": base, "branch": arm_branch(ctx.eid, ctx.arm)}
+        records.write_json(marker, data)
+        return data
+
+    async def critique(attempt: int) -> dict[str, Any]:
+        attempt = int(attempt)
+        marker = ctx.dir / f"critique_{attempt}.json"
+        if (data := _done(marker)) is not None:
+            return data
+        prev = ctx.verdict(attempt - 1) if attempt > 1 else None
+        if prev is not None and prev.passed:
+            verdict = prev  # no-op gate: already passed
+        elif not ctx.proposal_path.exists():
+            verdict = CriticVerdict(False, ["proposer did not call submit_proposal"])
+        else:
+            verdict = await deps.critique(ctx, attempt)
+        verdict = CriticVerdict(verdict.passed, list(verdict.reasons),
+                                verdict.repairs if prev is not None and prev.passed else attempt - 1)
+        data = records.verdict_to_dict(verdict)
+        records.write_json(marker, data)
+        return data
+
+    async def repair(attempt: int) -> dict[str, Any]:
+        attempt = int(attempt)
+        marker = ctx.dir / f"repair_{attempt}.json"
+        if (data := _done(marker)) is not None:
+            return data
+        verdict = ctx.verdict(attempt)
+        if verdict is None:
+            raise RuntimeError(f"repair_{attempt} before critique_{attempt}")
+        if verdict.passed:
+            data = {"repaired": False, "reason": "critique passed"}
+        else:
+            if ctx.reinvoke_proposer is None:
+                raise RuntimeError("no proposer bound for repair")
+            reasons = "\n".join(f"- {r}" for r in verdict.reasons) or "- unspecified"
+            await ctx.reinvoke_proposer(
+                "The critic rejected your proposal:\n" + reasons +
+                "\nRepair the edits with your tools, then call submit_proposal again.")
+            data = {"repaired": True, "reasons": verdict.reasons}
+        records.write_json(marker, data)
+        return data
+
+    async def evaluate(split: str = "evolve") -> dict[str, Any]:
+        marker = ctx.dir / "eval.json"
+        if (data := _done(marker)) is not None:
+            return {k: v for k, v in data.items() if k != "eval"}
+        verdict = ctx.verdict(FINAL_CRITIQUE)
+        if verdict is None:
+            raise RuntimeError("evaluate before critique_final")
+        head = deps.head_commit(ctx.worktree)
+        if not verdict.passed:
+            data = {"skipped": True, "reason": "critic_rejected", "head": head}
+        elif head == ctx.base_commit:
+            data = {"skipped": True, "reason": "no_edits", "head": head}
+        else:
+            tree = deps.harness_tree(ctx.worktree)
+            result = await deps.domain.evaluate(ctx.worktree, split, int(hyper["k"]),
+                                                experiment_id=ctx.eid, variant=ctx.arm)
+            data = {"skipped": False, "head": head, "tree": tree, "eval": records.eval_to_dict(result)}
+        records.write_json(marker, data)
+        return {k: v for k, v in data.items() if k != "eval"}
+
+    def finalize_arm() -> dict[str, Any]:
+        marker = ctx.dir / "arm.done"
+        if (data := _done(marker)) is not None:
+            return {"arm": ctx.arm, "status": data["result"]["status"]}
+        ev = _done(ctx.dir / "eval.json")
+        verdict = ctx.verdict(FINAL_CRITIQUE)
+        if ev is None or verdict is None:
+            raise RuntimeError("finalize_arm before evaluate")
+        proposal = _done(ctx.proposal_path) or {}
+        edits = [Edit(e["component"], e.get("hypothesis", ""), tuple(e.get("files", ())), e.get("commit", ""))
+                 for e in proposal.get("edits", ())]
+        result = ArmResult(
+            arm=ctx.arm, base_commit=ctx.base_commit, head_commit=ev.get("head"), harness_tree=ev.get("tree"),
+            edits=edits, critic=verdict,
+            eval=records.eval_from_dict(ev["eval"]) if ev.get("eval") else None,
+            status="evaluated" if not ev["skipped"] else "rejected")
+        records.write_json(marker, {"result": records.arm_to_dict(result), "reason": ev.get("reason"),
+                                    "directive": dict(ctx.directive)})
+        return {"arm": ctx.arm, "status": result.status}
+
+    return {name: step(name, fn) for name, fn in {
+        "provision_slot": provision_slot, "critique": critique, "repair": repair,
+        "evaluate": evaluate, "finalize_arm": finalize_arm}.items()}
+
+
+async def run_arm(rctx: RoundContext, name: str) -> None:
+    """Launch (or resume) one arm.yaml workflow with its own checkpoint dir (C5)."""
+    env = rctx.env
+    deps = env.deps
+    ctx = rctx.arm(name)
+    proposer = deps.make_agent("proposer", ctx)
+
+    async def reinvoke(message: str) -> Any:
+        return await proposer.run(message)
+
+    ctx.reinvoke_proposer = reinvoke
+    workflow = deps.build_workflow(ARM_YAML, {"Proposer": GatedAgent(proposer, ctx.proposal_path)},
+                                   arm_tools(ctx), ctx.ckpt)
+    try:
+        await deps.run_or_resume(workflow, ctx.ckpt, "start")
+    except Exception as exc:
+        attempts_path = ctx.dir / "attempts.json"
+        attempts = (_done(attempts_path) or {"failures": []})["failures"]
+        attempts.append(f"{type(exc).__name__}: {exc}")
+        records.write_json(attempts_path, {"failures": attempts})
+        if len(attempts) < int(env.hyper["max_arm_attempts"]):
+            raise
+        result = ArmResult(arm=name, base_commit=ctx.base_commit, status="failed")
+        records.write_json(ctx.dir / "arm.done", {"result": records.arm_to_dict(result),
+                                                  "reason": attempts[-1], "directive": dict(ctx.directive)})
+        return
+    if not (ctx.dir / "arm.done").exists():
+        raise RuntimeError(f"{rctx.eid}/{name}: workflow completed without arm.done")
+
+
+async def run_incumbent(rctx: RoundContext) -> None:
+    """Re-evaluate the incumbent this round (C8); cached by tree off the Copilot profile."""
+    env = rctx.env
+    begin = rctx.begin()
+    base, tree = begin["base_commit"], begin["base_tree"]
+    cache = env.campaign_dir / "inc-cache" / f"{tree}.json"
+    reuse = env.profile is not Profile.COPILOT and env.hyper.get("cache_incumbent", True)
+    if reuse and (cached := _done(cache)) is not None:
+        result = records.eval_from_dict(cached)
+    else:
+        worktree = env.deps.provision_slot(rctx.eid, INCUMBENT, base)
+        result = await env.deps.domain.evaluate(worktree, "evolve", int(env.hyper["k"]),
+                                                experiment_id=rctx.eid, variant=INCUMBENT)
+        env.remember_incumbent(tree, result)
+    arm = ArmResult(arm=INCUMBENT, base_commit=base, head_commit=base, harness_tree=tree, eval=result,
+                    status="evaluated")
+    records.write_json(rctx.dir / INCUMBENT / "arm.done",
+                       {"result": records.arm_to_dict(arm), "reason": None, "directive": {}})
+
+
+# ------------------------------------------------------------------ round.yaml
+
+def round_tools(ctx: RoundContext) -> dict[str, Callable[..., Awaitable[Any]]]:
+    env = ctx.env
+    deps = env.deps
+    hyper = env.hyper
+
+    def begin_round() -> dict[str, Any]:
+        marker = ctx.dir / "begin.json"
+        if (data := _done(marker)) is not None:
+            return {"eid": data["eid"], "arms": [d["arm"] for d in data["directives"]]}
+        frontier = env.frontier()
+        history = deps.ledger.read_jsonl(env.rel("history.jsonl"))
+        directives = [dict(d) for d in deps.schedule(ctx.round_no, hyper, history)]
+        names = [d.get("arm") for d in directives]
+        if not names or len(set(names)) != len(names) or INCUMBENT in names or \
+                not all(isinstance(n, str) and ARM_RE.match(n) for n in names):
+            raise ValueError(f"bad schedule arm names {names!r}")
+        last_inc = _done(env.campaign_dir / "last_incumbent_eval.json")
+        failures = [asdict(f) for f in deps.domain.failures(records.eval_from_dict(last_inc))] if last_inc else []
+        data = {"eid": ctx.eid, "round": ctx.round_no, "base_commit": frontier["incumbent_commit"],
+                "base_tree": frontier["incumbent_tree"], "directives": directives, "failures": failures,
+                "history": history}
+        records.write_json(marker, data)
+        return {"eid": ctx.eid, "arms": names}
+
+    async def run_arms() -> dict[str, Any]:
+        marker = ctx.dir / "arms.json"
+        if (data := _done(marker)) is not None:
+            return data
+        arms = [d["arm"] for d in ctx.begin()["directives"]]
+        order_path = ctx.dir / "run_order.json"
+        order = _done(order_path)
+        if order is None:
+            order = [*arms, INCUMBENT]
+            random.Random(f"{hyper['seed']}|{ctx.eid}").shuffle(order)  # C8 interleaving
+            records.write_json(order_path, order)
+        sem = asyncio.Semaphore(max(1, int(hyper["max_parallel_arms"])))
+
+        async def one(name: str) -> None:
+            async with sem:
+                if (ctx.dir / name / "arm.done").exists():
+                    return
+                await (run_incumbent(ctx) if name == INCUMBENT else run_arm(ctx, name))
+
+        outcomes = await asyncio.gather(*(one(n) for n in order), return_exceptions=True)
+        errors = [o for o in outcomes if isinstance(o, BaseException)]
+        if errors:
+            raise RuntimeError(f"{len(errors)} arm(s) failed; rerun resumes them") from errors[0]
+        statuses = {}
+        for name in order:
+            result = ctx.arm_result(name)
+            if result is None:
+                raise RuntimeError(f"{ctx.eid}/{name}: missing arm.done")
+            statuses[name] = result.status
+        data = {"order": order, "status": statuses}
+        records.write_json(marker, data)
+        return data
+
+    def select() -> dict[str, Any]:
+        marker = ctx.dir / "selection.json"
+        if (data := _done(marker)) is not None:
+            return {"decision": data["decision"], "winner": data["winner"]}
+        incumbent = ctx.arm_result(INCUMBENT)
+        if incumbent is None or incumbent.eval is None:
+            raise RuntimeError("incumbent not evaluated")
+        arms = {d["arm"]: ctx.arm_result(d["arm"]) for d in ctx.begin()["directives"]}
+        verdict = dict(deps.select(incumbent.eval, arms, env.delta(), hyper))
+        winner = verdict.get("winner")
+        if verdict.get("decision") not in ("ship", "do_not_ship", "rerun"):
+            raise ValueError(f"bad decision {verdict.get('decision')!r}")
+        if (verdict["decision"] == "ship") != (winner is not None) or \
+                (winner is not None and (winner not in arms or arms[winner].status != "evaluated")):
+            raise ValueError(f"inconsistent selection {verdict!r}")
+        records.write_json(marker, verdict)
+        return {"decision": verdict["decision"], "winner": winner}
+
+    def record() -> dict[str, Any]:
+        marker = ctx.dir / "record.done"
+        if (data := _done(marker)) is not None:
+            return data
+        begin = ctx.begin()
+        sel = _done(ctx.dir / "selection.json")
+        if sel is None:
+            raise RuntimeError("record before select")
+        incumbent = ctx.arm_result(INCUMBENT)
+        arms = {d["arm"]: ctx.arm_result(d["arm"]) for d in begin["directives"]}
+        winner = sel.get("winner") if sel["decision"] == "ship" else None
+        arm_rows = []
+        for d in begin["directives"]:
+            a = arms[d["arm"]]
+            arm_rows.append({"arm": a.arm, "component": d.get("component"), "status": a.status,
+                             "head": a.head_commit, "tree": a.harness_tree,
+                             "score": records.mean_score(a.eval) if a.eval else None,
+                             "hypotheses": [e.hypothesis for e in a.edits],
+                             "critic": asdict(a.critic) if a.critic else None, "accepted": a.arm == winner})
+        tokens = records.tokens(incumbent.eval) + sum(records.tokens(a.eval) for a in arms.values())
+        rec = {"eid": ctx.eid, "campaignId": env.cid, "round": ctx.round_no, "base_commit": begin["base_commit"],
+               "base_tree": begin["base_tree"], "delta": env.delta(), "decision": sel["decision"],
+               "winner": winner, "selection": sel, "arms": arm_rows, "tokens": tokens,
+               "incumbent_score": records.mean_score(incumbent.eval)}
+        rounds = f"rounds/{ctx.eid}"
+        deps.ledger.write_json(env.rel(rounds, "envelope.json"), deps.build_envelope("round", rec))
+        deps.ledger.write_json(env.rel(rounds, "decisions.json"), sel)
+        deps.ledger.write_json(env.rel(rounds, "evals.json"), {
+            "incumbent": records.arm_to_dict(incumbent),
+            "arms": {k: records.arm_to_dict(v) for k, v in arms.items()}})
+        deps.ledger.append_jsonl(env.rel("history.jsonl"), {
+            "eid": ctx.eid, "round": ctx.round_no, "decision": sel["decision"], "winner": winner,
+            "tokens": tokens, "arms": [{k: r[k] for k in ("arm", "component", "hypotheses", "accepted", "score",
+                                                          "status")} for r in arm_rows]}, key="eid")
+        paths = [env.rel(rounds, n) for n in ("envelope.json", "decisions.json", "evals.json")]
+        paths.append(env.rel("history.jsonl"))
+        if winner:
+            w = arms[winner]
+            new = {"incumbent_commit": w.head_commit, "incumbent_tree": w.harness_tree,
+                   "score": records.mean_score(w.eval) if w.eval else None, "round": ctx.round_no, "eid": ctx.eid}
+            current = env.frontier()
+            if current.get("incumbent_commit") != w.head_commit:
+                if current.get("incumbent_commit") != begin["base_commit"] or \
+                        not deps.ledger.cas_json(env.rel("frontier.json"), current, new):
+                    raise RuntimeError(f"frontier CAS conflict for {ctx.eid}")
+            paths.append(env.rel("frontier.json"))
+        env.commit_ledger(ctx.eid, f"Record {ctx.eid}: {sel['decision']}", paths)
+        data = {"decision": sel["decision"], "winner": winner}
+        records.write_json(marker, data)
+        return data
+
+    def publish() -> dict[str, Any]:
+        marker = ctx.dir / "publish.done"
+        if (data := _done(marker)) is not None:
+            return {k: data[k] for k in ("winner", "layers")}
+        begin = ctx.begin()
+        rec = _done(ctx.dir / "record.done")
+        if rec is None:
+            raise RuntimeError("publish before record")
+        heads = {}
+        for d in begin["directives"]:
+            a = ctx.arm_result(d["arm"])
+            if a and a.head_commit and a.head_commit != begin["base_commit"]:
+                heads[a.arm] = a.head_commit
+        winner = rec["winner"]
+        stack = deps.ledger.read_json(env.rel("stack.json")) or {"layers": [], "stack_number": None}
+        envelope = env.rel("rounds", ctx.eid, "envelope.json")
+        title = f"RRSI {ctx.eid}: accept {winner}" if winner else f"RRSI {ctx.eid}"
+        edits = ctx.arm_result(winner).edits if winner else []
+        body = (f"Accepted arm `{winner}` of experiment `{ctx.eid}` (campaign `{env.cid}`).\n\n"
+                f"OES envelope: `experiments/{envelope}`\n\n" +
+                "\n".join(f"- {e.component}: {e.hypothesis}" for e in edits))
+        result = deps.publisher.publish_round(eid=ctx.eid, winner=winner, heads=heads, stack=stack,
+                                              title=title, body=body)
+        if result.get("stack") != stack:
+            deps.ledger.write_json(env.rel("stack.json"), result["stack"])
+            env.commit_ledger(f"{ctx.eid}-stack", f"Record stack after {ctx.eid}", [env.rel("stack.json")])
+        data = {"winner": winner, "layers": len(result["stack"]["layers"]), "result": result}
+        records.write_json(marker, data)
+        return {"winner": winner, "layers": data["layers"]}
+
+    return {name: step(name, fn) for name, fn in {
+        "begin_round": begin_round, "run_arms": run_arms, "select": select, "record": record,
+        "publish": publish}.items()}
+
+
+# ------------------------------------------------------------------ calibrate.yaml
+
+@dataclass
+class CalibrationContext:
+    env: CampaignEnv
+
+    @property
+    def eid(self) -> str:
+        return f"{self.env.cid}-cal"
+
+    @property
+    def dir(self) -> Path:
+        return self.env.run_root / self.eid
+
+    @property
+    def ckpt(self) -> Path:
+        return self.dir / "ckpt"
+
+
+def calibrate_tools(ctx: CalibrationContext) -> dict[str, Callable[..., Awaitable[Any]]]:
+    env = ctx.env
+    deps = env.deps
+    hyper = env.hyper
+    repeats = int(hyper["aa_repeats"])
+
+    async def aa_runs(split: str = "evolve") -> dict[str, Any]:
+        frontier = env.frontier()
+        slot = ctx.dir / "slot.json"
+        if (data := _done(slot)) is None:
+            worktree = deps.provision_slot(ctx.eid, "h0", frontier["incumbent_commit"])
+            data = {"worktree": str(worktree), "base_commit": frontier["incumbent_commit"]}
+            records.write_json(slot, data)
+        worktree = Path(data["worktree"])
+        sem = asyncio.Semaphore(max(1, int(hyper["max_parallel_arms"])))
+
+        async def one(i: int) -> None:
+            path = ctx.dir / f"aa_{i}.json"
+            if path.exists():
+                return
+            async with sem:
+                result = await deps.domain.evaluate(worktree, split, int(hyper["k"]),
+                                                    experiment_id=ctx.eid, variant=f"aa{i}")
+            records.write_json(path, records.eval_to_dict(result))
+
+        await asyncio.gather(*(one(i) for i in range(repeats)))
+        env.remember_incumbent(frontier["incumbent_tree"],
+                               records.eval_from_dict(_done(ctx.dir / "aa_0.json")))
+        return {"repeats": repeats}
+
+    def delta() -> dict[str, Any]:
+        marker = ctx.dir / "delta.json"
+        if (data := _done(marker)) is not None:
+            return data
+        results = [records.eval_from_dict(_done(ctx.dir / f"aa_{i}.json")) for i in range(repeats)]
+        value = float(deps.calibrate_delta(results, hyper))
+        data = {"delta": value, "means": [records.mean_score(r) for r in results],
+                "tokens": sum(records.tokens(r) for r in results)}
+        records.write_json(marker, data)
+        return data
+
+    def record() -> dict[str, Any]:
+        marker = ctx.dir / "record.done"
+        if (data := _done(marker)) is not None:
+            return data
+        cal = _done(ctx.dir / "delta.json")
+        existing = deps.ledger.read_json(env.rel("calibration.json"))
+        if existing is not None and existing["delta"] != cal["delta"]:
+            raise RuntimeError("delta is immutable once calibrated")
+        rec = {"eid": ctx.eid, "campaignId": env.cid, "decision": None, **cal,
+               "repeats": repeats, "pin": _done(ctx.dir / "aa_0.json")["pin"]}
+        deps.ledger.write_json(env.rel("calibration", "envelope.json"), deps.build_envelope("calibration", rec))
+        deps.ledger.write_json(env.rel("calibration.json"), rec)
+        env.commit_ledger(ctx.eid, f"Calibrate {env.cid}: delta={cal['delta']:.4f}",
+                          [env.rel("calibration.json"), env.rel("calibration", "envelope.json")])
+        data = {"delta": cal["delta"]}
+        records.write_json(marker, data)
+        return data
+
+    return {name: step(name, fn) for name, fn in {"aa_runs": aa_runs, "delta": delta, "record": record}.items()}
+
+
+# ------------------------------------------------------------------ confirm.yaml
+
+class HoldoutExhausted(RuntimeError):
+    pass
+
+
+@dataclass
+class ConfirmContext:
+    env: CampaignEnv
+
+    @property
+    def eid(self) -> str:
+        return f"{self.env.cid}-confirm"
+
+    @property
+    def dir(self) -> Path:
+        return self.env.run_root / self.eid
+
+    @property
+    def ckpt(self) -> Path:
+        return self.dir / "ckpt"
+
+
+LOOKS = "holdout-looks.jsonl"  # global, ledger root (C15)
+
+
+def dataset_hash(case_ids: Any) -> str:
+    return hashlib.sha256("\n".join(sorted(str(c) for c in case_ids)).encode()).hexdigest()
+
+
+def confirm_tools(ctx: ConfirmContext) -> dict[str, Callable[..., Awaitable[Any]]]:
+    env = ctx.env
+    deps = env.deps
+    hyper = env.hyper
+
+    def reserve_look(split: str = "heldout") -> dict[str, Any]:
+        marker = ctx.dir / "look.json"
+        if (data := _done(marker)) is not None:
+            return data
+        digest = dataset_hash(deps.domain.splits()[split])
+        key = f"{env.cid}|{digest}"
+        looks = deps.ledger.read_jsonl(LOOKS)
+        if not any(r["key"] == key for r in looks):
+            used = sum(1 for r in looks if r["dataset_hash"] == digest)
+            if used >= int(hyper["holdout_looks"]):
+                raise HoldoutExhausted(f"held-out {digest[:12]} already looked at {used} time(s)")
+            deps.ledger.append_jsonl(LOOKS, {"key": key, "campaign": env.cid, "dataset_hash": digest,
+                                             "split": split, "eid": ctx.eid}, key="key")
+        env.commit_ledger(f"{ctx.eid}-look", f"Reserve held-out look for {env.cid}", [LOOKS])
+        data = {"dataset_hash": digest, "split": split}
+        records.write_json(marker, data)
+        return data
+
+    async def evaluate_heldout(split: str = "heldout") -> dict[str, Any]:
+        if _done(ctx.dir / "look.json") is None:
+            raise RuntimeError("evaluate_heldout before reserve_look")
+        campaign = deps.ledger.read_json(env.rel("campaign.json"))
+        frontier = env.frontier()
+        targets = {"h0": campaign["base_commit"], "final": frontier["incumbent_commit"]}
+        for name, commit in targets.items():
+            path = ctx.dir / f"{name}.json"
+            if path.exists():
+                continue
+            if name == "final" and commit == targets["h0"]:
+                records.write_json(path, _done(ctx.dir / "h0.json"))
+                continue
+            worktree = deps.provision_slot(ctx.eid, name, commit)
+            result = await deps.domain.evaluate(worktree, split, int(hyper["k"]),
+                                                experiment_id=ctx.eid, variant=name)
+            records.write_json(path, records.eval_to_dict(result))
+        return {"evaluated": sorted(targets)}
+
+    def decide() -> dict[str, Any]:
+        marker = ctx.dir / "decision.json"
+        if (data := _done(marker)) is not None:
+            return data
+        h0 = records.eval_from_dict(_done(ctx.dir / "h0.json"))
+        final = records.eval_from_dict(_done(ctx.dir / "final.json"))
+        data = dict(deps.confirm_test(h0, final, hyper))
+        if data.get("decision") not in ("ship", "do_not_ship"):
+            raise ValueError(f"bad confirm decision {data!r}")
+        records.write_json(marker, data)
+        return data
+
+    def record() -> dict[str, Any]:
+        marker = ctx.dir / "record.done"
+        if (data := _done(marker)) is not None:
+            return data
+        decision = _done(ctx.dir / "decision.json")
+        rec = {"eid": ctx.eid, "campaignId": env.cid, **decision, "look": _done(ctx.dir / "look.json"),
+               "h0": _done(ctx.dir / "h0.json"), "final": _done(ctx.dir / "final.json")}
+        deps.ledger.write_json(env.rel("confirm", "envelope.json"), deps.build_envelope("confirm", rec))
+        deps.ledger.write_json(env.rel("confirm.json"), {"eid": ctx.eid, **decision})
+        env.commit_ledger(ctx.eid, f"Confirm {env.cid}: {decision['decision']}",
+                          [env.rel("confirm.json"), env.rel("confirm", "envelope.json")])
+        data = {"decision": decision["decision"]}
+        records.write_json(marker, data)
+        return data
+
+    return {name: step(name, fn) for name, fn in {
+        "reserve_look": reserve_look, "evaluate_heldout": evaluate_heldout, "decide": decide,
+        "record": record}.items()}

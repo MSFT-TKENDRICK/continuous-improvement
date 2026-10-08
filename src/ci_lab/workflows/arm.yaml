@@ -1,0 +1,53 @@
+# One RRSI arm (C5): repairs unrolled declaratively; every gate is an idempotent
+# Python function that is a no-op once its durable marker exists.
+kind: Workflow
+trigger:
+  kind: OnConversationStart
+  id: rrsi_arm
+  actions:
+    - kind: InvokeFunctionTool
+      id: provision_slot
+      functionName: provision_slot
+      arguments:
+        step: provision_slot
+    - kind: InvokeAzureAgent
+      id: proposer
+      agent:
+        name: Proposer
+      input:
+        messages: "Read your brief and directive with your tools, make your tagged edits, then call submit_proposal."
+    - kind: InvokeFunctionTool
+      id: critique_1
+      functionName: critique
+      arguments:
+        attempt: 1
+    - kind: InvokeFunctionTool
+      id: repair_1
+      functionName: repair
+      arguments:
+        attempt: 1
+    - kind: InvokeFunctionTool
+      id: critique_2
+      functionName: critique
+      arguments:
+        attempt: 2
+    - kind: InvokeFunctionTool
+      id: repair_2
+      functionName: repair
+      arguments:
+        attempt: 2
+    - kind: InvokeFunctionTool
+      id: critique_final
+      functionName: critique
+      arguments:
+        attempt: 3
+    - kind: InvokeFunctionTool
+      id: evaluate
+      functionName: evaluate
+      arguments:
+        split: evolve
+    - kind: InvokeFunctionTool
+      id: finalize_arm
+      functionName: finalize_arm
+      arguments:
+        step: finalize_arm

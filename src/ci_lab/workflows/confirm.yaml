@@ -1,0 +1,27 @@
+# Final confirmation H0 vs H_final on the sealed held-out split: one look,
+# reserved in the global look ledger before any evaluation (C15).
+kind: Workflow
+trigger:
+  kind: OnConversationStart
+  id: rrsi_confirm
+  actions:
+    - kind: InvokeFunctionTool
+      id: reserve_look
+      functionName: reserve_look
+      arguments:
+        split: heldout
+    - kind: InvokeFunctionTool
+      id: evaluate_heldout
+      functionName: evaluate_heldout
+      arguments:
+        split: heldout
+    - kind: InvokeFunctionTool
+      id: decide
+      functionName: decide
+      arguments:
+        step: decide
+    - kind: InvokeFunctionTool
+      id: record
+      functionName: record
+      arguments:
+        step: record
