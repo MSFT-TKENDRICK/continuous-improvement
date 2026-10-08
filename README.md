@@ -240,6 +240,9 @@ issues found while building this:
    source to confirm all patched names are still looked up at call time.
    `inference.tool_timeout_s` is left alone: it bounds a whole callable *turn* (up to 8 agent model
    calls plus tools) and is unbounded by default, so it never cuts a single slow call.
+   The agent's own LiteLLM calls get an explicit `timeout`: `ORDER_AGENT_TIMEOUT_S`, else the
+   model timeout (the wrapper exports `ORDER_EVALS_MODEL_TIMEOUT_S` for the in-process agent),
+   else 600 s. The wrapper loads the project `.env` before reading these variables.
 3. **Judge-only runs fail in the viewer step.** The step expects `run_root/inference_set.jsonl`
    to exist, even though the judge reads the configured path. The wrapper copies the committed
    inference set there first.

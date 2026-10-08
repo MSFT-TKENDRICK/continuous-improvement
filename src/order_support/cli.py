@@ -113,15 +113,32 @@ def stage_replay_inference_set(config: Path, passthrough: list[str]) -> Path | N
     return dest
 
 
+def _load_dotenv() -> None:
+    """Load the project ``.env`` now, as assert_ai.runner does on import, so it sets our env vars too."""
+    from dotenv import find_dotenv, load_dotenv
+
+    load_dotenv(find_dotenv(usecwd=True))
+
+
+def resolve_model_timeout(cli_value: float | None) -> float | None:
+    if cli_value is not None:
+        return float(cli_value)
+    raw = os.environ.get(TIMEOUT_ENV, "").strip()
+    return float(raw) if raw else None
+
+
 def cmd_run(args: argparse.Namespace, passthrough: list[str]) -> int:
     config = Path(args.config).resolve()
     if config == REPLAY_CONFIG.resolve() and not replay.is_current():
         print("inference_set.jsonl is stale; run 'order-support-evals replay build'", file=sys.stderr)
         return 2
+    _load_dotenv()
     passthrough = with_artifacts_root(passthrough)
-    timeout = args.model_timeout or os.environ.get(TIMEOUT_ENV)
-    if timeout:
-        set_model_timeout(float(timeout))
+    timeout = resolve_model_timeout(args.model_timeout)
+    if timeout is not None:
+        set_model_timeout(timeout)
+        # The in-process callable agent reads this per call (order_support.agent.agent_timeout).
+        os.environ[TIMEOUT_ENV] = str(timeout)
     stage_replay_inference_set(config, passthrough)
     from assert_ai.cli import cli
 

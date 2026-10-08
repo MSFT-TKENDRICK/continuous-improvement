@@ -6,7 +6,8 @@ TOOL spans from :mod:`order_support.tools`) to build the judged transcript.
 
 Model routing is LiteLLM's: ``ORDER_AGENT_MODEL`` (default ``openai/local``)
 plus the usual provider env vars, e.g. ``OPENAI_API_BASE`` for a local
-OpenAI-compatible server such as llama-server.
+OpenAI-compatible server such as llama-server. Each model call is bounded by
+:func:`agent_timeout`.
 """
 
 from __future__ import annotations
@@ -35,10 +36,26 @@ _tracer = trace.get_tracer("order_support.agent")
 
 MAX_TOOL_LOOP_ITERATIONS = 8
 SYSTEM_PROMPT = data.load_policy() + f"\nToday's date is {data.TODAY.isoformat()}."
+TIMEOUT_ENV = "ORDER_AGENT_TIMEOUT_S"
+# Set by ``order-support-evals run --model-timeout`` so the agent follows the eval timeout.
+EVALS_TIMEOUT_ENV = "ORDER_EVALS_MODEL_TIMEOUT_S"
+# LiteLLM's implicit completion() deadline, made explicit.
+DEFAULT_TIMEOUT_S = 600.0
 
 
 def agent_model() -> str:
     return os.environ.get("ORDER_AGENT_MODEL", "openai/local")
+
+
+def agent_timeout() -> float:
+    """Per-call LiteLLM timeout: ``ORDER_AGENT_TIMEOUT_S``, else the eval model timeout, else 600 s."""
+    for name in (TIMEOUT_ENV, EVALS_TIMEOUT_ENV):
+        if raw := os.environ.get(name, "").strip():
+            value = float(raw)
+            if value <= 0:
+                raise ValueError(f"{name} must be > 0, got {raw!r}")
+            return value
+    return DEFAULT_TIMEOUT_S
 
 
 def _seed_messages(message: str, history: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
@@ -63,7 +80,7 @@ def chat(message: str, history: list[dict[str, Any]] | None = None) -> str:
     """Run one support turn and return the assistant's reply."""
     model = agent_model()
     messages = _seed_messages(message, history)
-    kwargs: dict[str, Any] = {}
+    kwargs: dict[str, Any] = {"timeout": agent_timeout()}
     if (temp := os.environ.get("ORDER_AGENT_TEMPERATURE")) is not None:
         kwargs["temperature"] = float(temp)
 

@@ -98,6 +98,47 @@ def test_timeout_is_read_at_call_time():
         assert not any(id(u) in defaults for u in uses), f"{name} binds the timeout as a default arg"
 
 
+GROUNDING = replay.REPO_ROOT / "evals" / "assert" / "grounding" / "eval_config.yaml"
+
+
+@pytest.fixture
+def fake_assert_run(monkeypatch, restore_timeouts):
+    """Run cmd_run up to the assert-ai call without running ASSERT; record its argv."""
+    from assert_ai.cli import cli as assert_cli
+
+    calls: list[list[str]] = []
+    monkeypatch.setattr(cli, "stage_replay_inference_set", lambda *a, **k: None)
+    monkeypatch.setattr(assert_cli, "main", lambda args, **_: calls.append(list(args)))
+    monkeypatch.delenv(cli.TIMEOUT_ENV, raising=False)
+    return calls
+
+
+def test_run_propagates_model_timeout_to_agent_env(fake_assert_run, monkeypatch):
+    import os
+
+    from order_support import agent
+
+    monkeypatch.setattr(cli, "_load_dotenv", lambda: None)
+    monkeypatch.delenv(agent.TIMEOUT_ENV, raising=False)
+    assert cli.main(["run", str(GROUNDING), "--model-timeout", "1500"]) == 0
+    assert fake_assert_run and os.environ[cli.TIMEOUT_ENV] == "1500.0"
+    assert agent.agent_timeout() == 1500.0
+
+
+def test_run_reads_model_timeout_from_dotenv(fake_assert_run, monkeypatch, tmp_path, restore_timeouts):
+    (tmp_path / ".env").write_text(f"{cli.TIMEOUT_ENV}=777\n", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    assert cli.main(["run", str(GROUNDING)]) == 0
+    assert all(m.DEFAULT_MODEL_TIMEOUT_S == 777.0 for m in restore_timeouts)
+
+
+def test_run_without_model_timeout_leaves_assert_defaults(fake_assert_run, monkeypatch, restore_timeouts):
+    monkeypatch.setattr(cli, "_load_dotenv", lambda: None)
+    before = [m.DEFAULT_MODEL_TIMEOUT_S for m in restore_timeouts]
+    assert cli.main(["run", str(GROUNDING)]) == 0
+    assert [m.DEFAULT_MODEL_TIMEOUT_S for m in restore_timeouts] == before
+
+
 def test_replay_inference_set_is_staged_into_run_root(tmp_path):
     passthrough = cli.with_artifacts_root([], tmp_path)
     dest = cli.stage_replay_inference_set(cli.REPLAY_CONFIG, passthrough)

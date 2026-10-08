@@ -1,6 +1,8 @@
 import json
 from types import SimpleNamespace
 
+import pytest
+
 from order_support import agent
 
 
@@ -59,3 +61,35 @@ def test_tool_loop_is_bounded(monkeypatch):
     monkeypatch.setattr(agent.litellm, "completion", fake_completion)
     assert agent.chat("loop forever") == "[agent: tool loop exceeded]"
     assert len(calls) == agent.MAX_TOOL_LOOP_ITERATIONS
+
+
+@pytest.mark.parametrize(("agent_env", "evals_env", "expected"), [
+    (None, None, agent.DEFAULT_TIMEOUT_S),
+    (None, "1800", 1800.0),
+    ("90", "1800", 90.0),
+    ("  ", "45.5", 45.5),
+])
+def test_every_model_call_gets_an_explicit_timeout(monkeypatch, agent_env, evals_env, expected):
+    for name, value in ((agent.TIMEOUT_ENV, agent_env), (agent.EVALS_TIMEOUT_ENV, evals_env)):
+        if value is None:
+            monkeypatch.delenv(name, raising=False)
+        else:
+            monkeypatch.setenv(name, value)
+    timeouts = []
+    replies = iter([_response(tool_calls=[_call("t1", "search_kb", {"query": "returns"})]),
+                    _response(content="done")])
+
+    def fake_completion(**kwargs):
+        timeouts.append(kwargs.get("timeout"))
+        return next(replies)
+
+    monkeypatch.setattr(agent.litellm, "completion", fake_completion)
+    agent.chat("returns?")
+    assert timeouts == [expected, expected]
+
+
+@pytest.mark.parametrize("bad", ["0", "-5", "soon"])
+def test_invalid_agent_timeout_is_rejected(monkeypatch, bad):
+    monkeypatch.setenv(agent.TIMEOUT_ENV, bad)
+    with pytest.raises(ValueError):
+        agent.agent_timeout()
