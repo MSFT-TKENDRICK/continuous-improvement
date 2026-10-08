@@ -1,0 +1,34 @@
+# Measurement-boundary lessons (design §13.6 B2/B7, §9 C15). Interpreted by `ci-lab lint` (rung R5).
+schema_version: 1
+rules:
+  - id: b2.guards-rules-closed-view
+    kind: banned_import
+    modules: [order_support.oracle, assert_ai, ci_lab.judge, datasets]
+    include: ["src/ci_lab/guards/**/*.py", "src/ci_lab/rules/**/*.py"]
+    message: Guard/rule engine imports evaluator, oracle or dataset code (guards must only see the closed GuardView).
+    fix: Use only ci_lab.rulespec types (GuardView/TrajectoryStep); measurement stays in ASSERT + the frozen oracle.
+    see: design §13.6 B2
+
+  - id: b2.guards-rules-no-eval-paths
+    kind: banned_text
+    pattern: "evals/(?:datasets|assert)|(?:heldout|ood|confirm)(?:_split|_set|/|\\.jsonl|\\.ya?ml)"
+    include: ["src/ci_lab/guards/**", "src/ci_lab/rules/**"]
+    message: Guard/rule engine references eval dataset or split paths.
+    fix: Guards never read datasets; pass data through GuardView only.
+    see: design §13.6 B2
+
+  - id: c15.lessons-no-sealed-splits
+    kind: banned_text
+    pattern: "(?:heldout|ood|confirm)(?:_split|_set|/|\\.jsonl|\\.ya?ml)|split\\s*[=:]\\s*[\"'](?:heldout|ood|confirm)[\"']"
+    include: ["src/ci_lab/lessons/**"]
+    message: Lessons pipeline references heldout/ood/confirm data (every look spends the holdout budget).
+    fix: Mine evolve-split trajectories only (Trajectory.split is evolve|usage).
+    see: design §9 C15, §13.6 B2
+
+  - id: b7.rules-re2-only
+    kind: banned_call
+    names: [re.compile, re.match, re.search, re.fullmatch, re.finditer, re.findall, re.sub, re.subn, re.split]
+    include: ["src/ci_lab/rules/**/*.py"]
+    message: Stdlib `re` used in the rule engine (backtracking ReDoS on attacker-influenced text).
+    fix: Compile with RE2 (`import re2`) and reject unsupported constructs at load; no fallback to `re`.
+    see: design §13.6 B7
