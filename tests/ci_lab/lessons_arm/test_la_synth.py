@@ -31,6 +31,12 @@ from ci_lab.rulespec import (
     TemplateSpec,
 )
 
+EXTRACTORS = """schema_version: 1
+extractors:
+  - {flag: identity_verified, tool: verify_identity, result_path: result.verified, equals: true,
+     subject: args.order_id}
+"""
+
 
 def cluster(rule: str, cid: str = "c-refund-1", **kw: object) -> LessonCluster:
     return LessonCluster(id=cid, fingerprint=Fingerprint(pin="p1", oracle_rules=(rule,)),
@@ -105,7 +111,9 @@ def test_seed_oracles_synthesize_shadow_template_rules(oracle: str, tmp_path: Pa
     p = tmp_path / "g.yaml"
     p.write_text(dump_rule_file([rule]), encoding="utf-8")
     assert read_rule_file(p).rules == [rule]
-    loaded = load_rules([p])
+    ex = tmp_path / "extractors.yaml"
+    ex.write_text(EXTRACTORS, encoding="utf-8")
+    loaded = load_rules([p], [ex])
     assert [r.id for r in loaded.rules] == [rule.id]
 
 

@@ -77,6 +77,17 @@ def load_rules(rule_paths: Sequence[Path], extractor_paths: Sequence[Path] = (),
     return _fallback(rule_paths, templates if templates is not None else trusted_templates()[0])
 
 
+def subset_bundle(loaded: LoadedRules, rules: Sequence[RuleSpec], *,
+                  templates: Mapping[str, TemplateSpec] | None = None) -> Any:
+    """``rules`` compiled with the full bundle's extractors (for per-lesson replay), or the bare rule
+    list when the engine is unavailable."""
+    if loaded.bundle is None:
+        return list(rules)
+    from ci_lab import rules as engine  # type: ignore[attr-defined]
+
+    return engine.build_bundle(list(rules), loaded.bundle.extractors, templates=templates)
+
+
 def _patterns(p: Any) -> list[str]:
     if isinstance(p, (AllPred, AnyPred)):
         return [x for c in p.of for x in _patterns(c)]

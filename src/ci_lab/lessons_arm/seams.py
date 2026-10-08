@@ -13,10 +13,12 @@ from typing import Any
 
 import yaml
 
-from ci_lab.rulespec import GUARDS_DIR, LessonCluster, LessonEntry, RuleSpec
+from ci_lab.rulespec import GUARDS_DIR, LessonCluster, LessonEntry
 
-ReplayFn = Callable[[Sequence[RuleSpec], LessonCluster, Path], tuple[bool, list[str]]]
-"""``(rules, cluster, work_dir) -> (ok, reasons)``; ``ok`` means *pass to closed loop*, never accept."""
+ReplayFn = Callable[[Any, LessonCluster, Path], tuple[bool, list[str]]]
+"""``(rules_or_bundle, cluster, work_dir) -> (ok, reasons)``; ``ok`` means *pass to closed loop*, never
+accept. The first argument is a ``ci_lab.rules.Bundle`` (candidate rule + the frozen extractors) when
+the engine is installed, else a ``list[RuleSpec]``."""
 
 
 def load_registry(path: Path | None) -> list[LessonEntry]:
@@ -30,7 +32,7 @@ def load_registry(path: Path | None) -> list[LessonEntry]:
     if Registry is not None:
         reg = Registry.load(Path(path))
         return [LessonEntry.model_validate(e) if not isinstance(e, LessonEntry) else e
-                for e in getattr(reg, "lessons", [])]
+                for e in getattr(reg, "entries", None) or getattr(reg, "lessons", [])]
     doc = yaml.safe_load(Path(path).read_text(encoding="utf-8")) or {}
     return [LessonEntry.model_validate(e) for e in doc.get("lessons") or []]
 
@@ -65,7 +67,7 @@ def default_replay(trajectories: Any = None, *, dataset_texts: Sequence[str] = (
         return None
     corpus: list[Any] | None = None
 
-    def replay(rules: Sequence[RuleSpec], cluster: LessonCluster, work_dir: Path) -> tuple[bool, list[str]]:
+    def replay(rules: Any, cluster: LessonCluster, work_dir: Path) -> tuple[bool, list[str]]:
         nonlocal corpus
         if corpus is None:
             if isinstance(trajectories, (str, Path)):
@@ -74,7 +76,8 @@ def default_replay(trajectories: Any = None, *, dataset_texts: Sequence[str] = (
                 corpus = list(load_trajectories(Path(trajectories)))
             else:
                 corpus = list(trajectories)
-        ok, reasons = validate_ok(list(rules), corpus, cluster=cluster, dataset_texts=list(dataset_texts),
+        subject = rules if hasattr(rules, "rules") and not isinstance(rules, (list, tuple)) else list(rules)
+        ok, reasons = validate_ok(subject, corpus, cluster=cluster, dataset_texts=list(dataset_texts),
                                   work_dir=work_dir)
         return bool(ok), [str(r) for r in reasons]
 

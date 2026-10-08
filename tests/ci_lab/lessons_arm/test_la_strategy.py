@@ -138,7 +138,7 @@ def test_replay_rejection_leaves_no_trace(env):
     seen = []
 
     def replay(rules, cl, work_dir):
-        seen.append((rules[0].id, cl.id, work_dir.is_dir()))
+        seen.append((next(iter(rules.rules if hasattr(rules, "rules") else rules)).id, cl.id, work_dir.is_dir()))
         return False, ["fp_ucb 0.2 > 0.02"]
 
     edits = asyncio.run(GuardStrategy(replay=replay).propose(ctx(wt, base, run_dir)))
@@ -156,6 +156,16 @@ def test_replay_rejection_leaves_no_trace(env):
     strat = GuardStrategy(require_replay=True)
     strat.replay = None
     assert asyncio.run(strat.propose(ctx(wt, base, run_dir))) == []
+
+
+def test_real_m16_replay_rejects_without_evidence(env):
+    pytest.importorskip("ci_lab.lessons.replay")
+    wt, base, round_dir, run_dir = env
+    write_candidates(round_dir, cluster("refund.ineligible_order", "c-elig"))
+    edits = asyncio.run(GuardStrategy(trajectories=[]).propose(ctx(wt, base, run_dir)))
+    assert edits == [] and git(wt, "rev-parse", "HEAD") == base
+    rep = json.loads((run_dir / "optimizer" / "arm-g-guard.json").read_text(encoding="utf-8"))
+    assert rep["rejected"]["c-elig"][0] == "replay" and len(rep["rejected"]["c-elig"]) > 1
 
 
 def test_bundle_failure_reverts(env):

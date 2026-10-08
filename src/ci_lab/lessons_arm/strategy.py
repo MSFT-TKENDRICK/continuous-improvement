@@ -41,7 +41,7 @@ from ci_lab.contracts import (
 )
 from ci_lab.rulespec import GUARD_BUNDLE_LOCK, GUARDS_DIR, LESSON_REGISTRY, LessonCluster, RuleSpec
 
-from .bundle import BundleError, dump_rule_file, load_rules, rule_files
+from .bundle import BundleError, dump_rule_file, load_rules, rule_files, subset_bundle
 from .features import Candidate, LessonFeatures, derive_features, is_injection, read_candidates
 from .seams import ReplayFn, default_replay, lessons_touching, load_registry
 from .synth import SynthesisError, lesson_id_for, synthesize
@@ -307,7 +307,7 @@ class GuardStrategy:
         if self.replay is not None:
             work = Path(ctx.run_dir) / "replay" / prop.lesson_id
             work.mkdir(parents=True, exist_ok=True)
-            ok, reasons = self.replay([rule], prop.cluster, work)
+            ok, reasons = self.replay(subset_bundle(loaded, [rule], templates=self.templates), prop.cluster, work)
             if not ok:
                 undo("replay", reasons)
                 return None
