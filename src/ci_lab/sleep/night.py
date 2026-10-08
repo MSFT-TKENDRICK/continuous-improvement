@@ -406,7 +406,7 @@ def _consolidate(night: _Night, gate_mode: str) -> dict[str, Any]:
                     gate_mixed_weight=cfg.gate_mixed_weight, gate_mode=gate_mode, evolve_skill=True,
                     evolve_memory=cfg.evolve_memory, night=night.night_no)
                 s.set_attribute("skillopt.accepted", bool(res.accepted))
-                s.set_attribute("skillopt.gate_action", str(res.gate_action))
+                s.set_attribute("skillopt.gate_action", res.gate_action)
         run.consolidation = res
         run.candidate_skill, run.candidate_memory = res.new_skill, res.new_memory
         out[run.name] = {"accepted": bool(res.accepted), "gate_action": str(res.gate_action)}
