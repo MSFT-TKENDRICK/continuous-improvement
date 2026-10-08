@@ -107,7 +107,11 @@ trigger:
 
 ## Observability
 
-maf-core opens no spans of its own: MAF emits the GenAI spans. `run_or_resume` and agent runs execute in the caller's OTel context, and async tasks inherit it. Open a `ci.case` or `ci.step` span with `ci_lab.obs.span(...)` before calling them, and MAF's spans and tool calls will nest under it. `run_or_resume(..., rollout=RolloutKey)` and `record_rollout(rollout, **attrs)` tag the current span with `agl.rollout_id` and `oes.variant`. If no span is recording, they do nothing. This module never installs a tracer provider.
+maf-core opens no spans of its own: MAF emits the GenAI spans. `run_or_resume` and agent runs execute in the caller's OTel context, and async tasks inherit it. Open a `ci.case` or `ci.step` span with `ci_lab.obs.span(...)` before calling them, and MAF's spans and tool calls will nest under it. `run_or_resume(..., rollout=RolloutKey)` and `record_rollout(rollout, **attrs)` tag the current span with `agl.rollout_id` and `oes.variant` via `obs.annotate`, which keeps only bounded scalars. If no span is recording, they do nothing. This module never installs a tracer provider.
+
+Durable context: a fresh run saves `obs.carrier()` (only `traceparent`/`tracestate`) to `otel-carrier-<hash>.w3c` next to its checkpoints. The file isn't `*.json`, because MAF reads every `*.json` file there as a checkpoint. On resume:
+- If the caller has an active span, the caller's context wins. Open a new-trace span with `links=obs.previous_link(...)` for resumed rounds.
+- Otherwise the run continues under the stored context via `obs.use_carrier`.
 
 **Trust boundary:** checkpoints contain **pickle** data.
 - Keep a checkpoint dir private to one run on one machine (under `CI_RUN_DIR`).

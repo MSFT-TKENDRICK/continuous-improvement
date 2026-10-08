@@ -18,9 +18,12 @@ superstep, so side-effecting tools must be idempotent.
 
 from __future__ import annotations
 
+import hashlib
 import inspect
+import json
 import os
 from collections.abc import Callable, Collection, Mapping
+from contextlib import nullcontext
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -28,6 +31,7 @@ from typing import Any
 import yaml
 from agent_framework import FileCheckpointStorage, Workflow, WorkflowCheckpoint
 
+from ci_lab import obs
 from ci_lab.contracts import RolloutKey
 from ci_lab.maf.loader import experimental_features, record_rollout
 from ci_lab.maf.specs import iter_strings
@@ -155,21 +159,53 @@ async def run_or_resume(yaml_path: str | Path, message: Any, *, agents: Mapping[
 
     Runs in the caller's OTel context (open a ``ci.case``/``ci.step`` span with
     ``obs.span`` first); MAF's GenAI spans and tool calls nest under it. ``rollout``
-    tags that current span with ``agl.rollout_id`` / ``oes.variant``."""
+    tags that current span with ``agl.rollout_id`` / ``oes.variant``. A fresh run stores
+    ``obs.carrier()`` next to its checkpoints; a resume with no active span of its own
+    continues under that stored trace context (``obs.use_carrier``)."""
     record_rollout(rollout)
     workflow, storage = build_workflow(yaml_path, agents=agents, tools=tools, checkpoint_dir=checkpoint_dir,
                                        max_iterations=max_iterations, checkpoint_types=checkpoint_types)
     before = {cp.checkpoint_id for cp in await storage.list_checkpoints(workflow_name=workflow.name)}
     latest = await latest_checkpoint(storage, workflow.name)
+    carrier_file = _carrier_path(checkpoint_dir, workflow.name)
     if latest is not None:
-        result = await workflow.run(checkpoint_id=latest.checkpoint_id, checkpoint_storage=storage)
+        saved = None if obs.current_ids() is not None else _read_carrier(carrier_file)
+        with obs.use_carrier(saved) if saved else nullcontext():
+            result = await workflow.run(checkpoint_id=latest.checkpoint_id, checkpoint_storage=storage)
     else:
+        _write_carrier(carrier_file, obs.carrier())
         result = await workflow.run(message)
     written = {cp.iteration_count for cp in await storage.list_checkpoints(workflow_name=workflow.name)
                if cp.checkpoint_id not in before}
     _assert_checkpoints_written(workflow.name, written, 0 if latest is None else latest.iteration_count + 1,
                                 checkpoint_dir)
     return list(result.get_outputs())
+
+
+def _carrier_path(checkpoint_dir: str | Path, workflow_name: str) -> Path:
+    digest = hashlib.sha256(workflow_name.encode()).hexdigest()[:16]
+    # Not *.json: FileCheckpointStorage treats every *.json in the dir as a checkpoint.
+    return Path(checkpoint_dir) / f"otel-carrier-{digest}.w3c"
+
+
+def _write_carrier(path: Path, carrier: Mapping[str, str]) -> None:
+    if carrier:
+        path.write_text(json.dumps(dict(carrier), sort_keys=True), encoding="utf-8")
+    else:
+        path.unlink(missing_ok=True)
+
+
+def _read_carrier(path: Path) -> dict[str, str] | None:
+    # Only W3C trace-context keys with short string values; anything else is ignored.
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    if not isinstance(data, dict):
+        return None
+    out = {k: v for k, v in data.items()
+           if k in ("traceparent", "tracestate") and isinstance(v, str) and len(v) <= 512}
+    return out if "traceparent" in out else None
 
 
 def _assert_checkpoints_written(name: str, iterations: set[int], first: int, where: str | Path) -> None:
