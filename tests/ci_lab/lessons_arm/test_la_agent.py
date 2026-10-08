@@ -13,6 +13,7 @@ from ci_lab.lessons_arm.agent import (
     NoSkeletonFits,
     SubmitRuleArgs,
     SynthesizerError,
+    default_builder,
     lesson_view,
     load_spec,
     local_builder,
@@ -138,3 +139,17 @@ def test_lesson_view_has_no_text():
     view = lesson_view(leftover(), None, ["issue_refund"])
     assert view["lesson"]["error_class"] is None
     assert view["lesson"]["n_members"] == 3 and "members" not in view["lesson"]
+
+
+def test_default_builder_uses_maf_loader_under_meta_allowlist(recwarn: pytest.WarningsRecorder):
+    syn = LessonSynthesizer(client=FakeChatClient([[Call("submit_rule", GOOD)], "done"]), builder=default_builder())
+    rule = asyncio.run(syn.synthesize(leftover()))
+    assert rule.target == "issue_refund"
+    assert not [w for w in recwarn if issubclass(w.category, RuntimeWarning)]
+
+
+def test_default_builder_rejects_model_outside_allowlist():
+    build = default_builder(allowed_models=("not-a-model",))
+    spec, _ = load_spec()
+    with pytest.raises(SynthesizerError, match="lesson_synthesizer"):
+        build(spec, FakeChatClient(["x"]), {"submit_rule": lambda **_: "ok"})

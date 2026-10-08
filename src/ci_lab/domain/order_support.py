@@ -341,7 +341,7 @@ class AssertCaseRunner:
     async def __call__(self, case: TestCase, *, harness_dir: Path, key: RolloutKey,
                        env: Mapping[str, str]) -> CaseOutcome:
         cfg_path, run_root, _ = self.prepare(case, key)
-        # HOOK(M11): ci_lab.judge.provider.register() runs inside the ASSERT child before the judge stage.
+        # M11: the child (order_support.cli.cmd_run) calls ci_lab.judge.provider.register() before judging.
         cmd = self.command(cfg_path, cfg_path.parent / "artifacts")
         # The child (order_support.cli) joins this trace via obs.attach_from_env() (M3).
         full_env = obs.child_env({**os.environ, **env})

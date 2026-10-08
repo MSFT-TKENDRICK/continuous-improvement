@@ -177,18 +177,29 @@ def local_builder(spec: dict[str, Any], client: Any, bindings: Mapping[str, Call
         return factory.create_agent_from_dict(doc)
 
 
-def default_builder() -> AgentBuilder:
-    """``ci_lab.maf.loader.build_agent`` when importable (HOOK(M1)), else :func:`local_builder`."""
+def default_builder(*, allowed_models: Iterable[str] | None = None) -> AgentBuilder:
+    """Validate with ``ci_lab.maf.specs`` under the meta-agent model allowlist and build with
+    ``ci_lab.maf.loader.build_agent_from_spec`` (HOOK(M1)); :func:`local_builder` only when
+    ``ci_lab.maf`` is unavailable. The strict ``x-ci`` schema has no ``purpose``/``terminal_tool``,
+    so ``x-ci`` is validated by :func:`load_spec` and dropped here. A disallowed spec raises
+    :class:`SynthesizerError` (fail closed, no fallback)."""
     try:
-        from ci_lab.maf.loader import build_agent  # type: ignore[import-not-found]
-    except Exception:  # noqa: BLE001 - optional parallel module
+        from ci_lab.maf.loader import build_agent_from_spec
+        from ci_lab.maf.specs import SpecError as MafSpecError
+        from ci_lab.maf.specs import parse_agent_spec
+        from ci_lab.meta.spec_loader import manifest_allowed_models
+    except ImportError:
         return local_builder
+    models = tuple(allowed_models) if allowed_models is not None else manifest_allowed_models()
 
     def build(spec: dict[str, Any], client: Any, bindings: Mapping[str, Callable[..., Any]]) -> Any:
+        doc = {k: v for k, v in spec.items() if k != "x-ci"}
         try:
-            return build_agent(SPEC_PATH, client=client, bindings=dict(bindings))
-        except Exception:  # noqa: BLE001 - loader contract still settling; building has no side effects
-            return local_builder(spec, client, bindings)
+            loaded = parse_agent_spec(doc, base_dir=SPEC_PATH.parent, allowed_models=models,
+                                      allowed_bindings=set(bindings))
+        except MafSpecError as exc:
+            raise SynthesizerError(f"{SPEC_PATH.name}: {exc}") from exc
+        return build_agent_from_spec(loaded, client=client, bindings=dict(bindings))
 
     return build
 
