@@ -54,7 +54,7 @@ class Profile(str, Enum):
     FAKE = "fake"        # ci_lab.testing.FakeChatClient (unit tests)
 
 
-Purpose = Literal["target", "proposer", "critic", "analyst", "reflector", "judge"]
+Purpose = Literal["target", "proposer", "critic", "analyst", "reflector", "judge", "optimizer"]
 
 
 @dataclass(frozen=True)
@@ -197,6 +197,83 @@ class CriticVerdict:
     repairs: int = 0
 
 
+# v2.2 (§11): heterogeneous arm strategies. Every strategy only edits the evolvable
+# surface of its arm worktree and commits typed Edits; critique, ASSERT evaluation and
+# RRSI/OES selection are strategy-agnostic and authoritative (an optimizer's internal
+# acceptance gate is diagnostic only).
+STRATEGIES = ("agent", "gepa", "skillopt")
+
+
+@dataclass(frozen=True)
+class ArmDirective:
+    arm: str
+    strategy: str = "agent"
+    component_focus: tuple[str, ...] = ()
+    edit_budget: int = 1
+    explore: bool = False
+
+
+@dataclass
+class ArmContext:
+    experiment_id: str
+    directive: ArmDirective
+    worktree: Path
+    base_commit: str
+    failures: Sequence[FailureRecord]
+    profile: Profile
+    run_dir: Path
+    budget_tokens: int | None = None
+
+
+class ArmStrategy(Protocol):
+    name: str
+
+    async def propose(self, ctx: ArmContext) -> list[Edit]: ...
+
+
+# ---------------------------------------------------------------- telemetry (v2.3 §12)
+# One OTel trace per round / night / calibration / evaluator experiment (never one
+# campaign-long span: spans export only on end). Resumed work starts a new trace with a
+# span link to the trace recorded in the run dir (``trace.json``). MAF's built-in GenAI
+# spans (workflow / executor / invoke_agent / chat / execute_tool) nest under these.
+
+SPAN_CAMPAIGN_ROUND = "ci.round"
+SPAN_ARM = "ci.arm"
+SPAN_STEP = "ci.step"            # attr ci.phase = propose|critique|repair|evaluate|select|publish|...
+SPAN_CASE = "ci.case"            # one ASSERT case x trial (= one AGL rollout)
+SPAN_CALIBRATE = "ci.calibrate"
+SPAN_CONFIRM = "ci.confirm"
+SPAN_SLEEP_NIGHT = "ci.sleep.night"
+SPAN_OPTIMIZER = "ci.optimizer"  # attr ci.strategy = gepa|skillopt|agent
+SPAN_EVALUATOR_EXPERIMENT = "ci.evaluator"
+
+ATTR_CAMPAIGN = "ci.campaign_id"
+ATTR_EXPERIMENT = "oes.experiment_id"
+ATTR_VARIANT = "oes.variant"
+ATTR_DECISION = "oes.decision"
+ATTR_ROUND = "rrsi.round"
+ATTR_COMPONENT = "rrsi.component"
+ATTR_STRATEGY = "ci.strategy"
+ATTR_PHASE = "ci.phase"
+ATTR_PROFILE = "ci.profile"
+ATTR_PURPOSE = "ci.purpose"
+ATTR_SPLIT = "ci.split"
+ATTR_CASE = "ci.case_id"
+ATTR_TRIAL = "ci.trial"
+ATTR_ROLLOUT = "agl.rollout_id"
+ATTR_ATTEMPT = "agl.attempt_id"
+ATTR_NIGHT = "sleep.night"
+ATTR_SCORE = "ci.score"
+ATTR_DELTA_S = "rrsi.delta_s"
+ATTR_DELTA_C = "rrsi.delta_c"
+
+# Run-dir progress markers the dashboard canvas reads live (spans arrive only on end):
+# <run_dir>/<experiment_id>/status.json  {"phase", "arms": {arm: {"strategy", "state",
+#   "phase", "updated"}}, "trace_id", "updated"}  — written atomically by step functions.
+RUN_STATUS_FILE = "status.json"
+DASHBOARD_STATE_ENV = "CI_DASHBOARD_STATE"  # default ~/.ci-lab/dashboard.json
+
+
 @dataclass
 class ArmResult:
     arm: str
@@ -207,6 +284,7 @@ class ArmResult:
     critic: CriticVerdict | None = None
     eval: EvalResult | None = None
     status: Literal["pending", "proposed", "rejected", "evaluated", "failed"] = "pending"
+    strategy: str = "agent"
 
 
 # ---------------------------------------------------------------- durability

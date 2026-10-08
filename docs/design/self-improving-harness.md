@@ -112,3 +112,87 @@ L4 Self-improvement: meta agents/tools, workflows, campaign driver, publish, ci-
 L5 SkillOpt-Sleep + nightly Actions + docs + e2e smoke.
 Fleet modules (disjoint ownership): M1 maf-core, M2 copilot-provider, M3 order-support-maf, M4 oes, M5 agl, M6 ledger-gitops-cache, M7 rrsi, M8 self-improve (agents/tools/workflows/driver/publish/cli), M9 sleep+actions.
 
+
+## 11. v2.2 — framework role map, DSPy, System-1 judges, usage-driven scheduling
+
+### 11.1 One owner per concern (no framework does another's job)
+| Concern | Owner | Owns | Must NOT |
+|---|---|---|---|
+| Agent/subagent runtime, workflows, checkpoints | **MAF 1.x (Python)** | target agent, analyst/proposer/critic/reflector/sleep-reflector (declarative YAML, harness runtime), round/arm/calibrate/confirm/sleep/evaluator workflows | optimise anything |
+| Evaluation of the target | **ASSERT** | every score that drives selection (+ deterministic safety oracle as guardrail) | — no second eval framework |
+| Rubric judging inside ASSERT | **System-1 decision models** | ASSERT judge = S1 model via LiteLLM: `openai/local` (Qwen3.5-4B no-think on llama-server) or `s1/<backend>` custom LiteLLM provider porting s1eval backends (llama.cpp logprob decisions, TypeSafe `/v1/systemone` Jev, OpenAI `/v1/decisions`) | share a model family with the proposer (C16) |
+| Programmable prompts | **DSPy 3.4 (GEPA)** | (a) `gepa` arm strategy over surface text components; (b) judge-alignment program vs human labels → new *evaluator version*; (c) meta-prompt compilation (critic/analyst instructions) from ledger outcomes | run the production target; write outside the surface; decide adoption |
+| Skill text | **SkillOpt 0.2.0** | nightly SkillOpt-Sleep (order-support SKILL.md + registry of further targets); `skillopt` arm strategy inside campaigns (dream_consolidate, evolve split) | adopt on its own gate (diagnostic only, C3) |
+| Trace/reward data plane | **Agent Lightning 1.0.2** | every LLM call of every agent/optimizer/judge is an AGL rollout event (proxy for OpenAI-compatible clients incl. DSPy LM + ASSERT judge `api_base`; `on_model_request` mirror for CopilotChatClient); exports to GEPA reflective datasets, SkillOpt TaskRecords, RRSI history, usage harvest; data RL-ready (token ids on llama path) — verl/GPU training is a documented exit, out of scope | be the selection authority (rewards are telemetry, C2) |
+| Electing checkpoints | **OES 0.1.0** | every adoption decision is an OES envelope: harness round, confirm, sleep night, evaluator version, meta-prompt version → `ship` ⇒ frontier CAS ⇒ stacked PR | — |
+| Scheduling | **GitHub Actions** | `sleep-nightly` (cron + usage gate), `usage-harvest` (traces → redacted pending tasks PR), `campaign-weekly` (dispatchable, budgeted) | hold secrets beyond `GITHUB_TOKEN`/`copilot-requests` |
+
+ax-llm is TypeScript; the single-runtime (Python-only, no .NET/Node in the harness) constraint excludes it. DSPy is the programmable-prompt layer.
+
+### 11.2 Arm strategies (contracts v2.2)
+`ArmDirective(arm, strategy, component_focus, edit_budget, explore)`; `ArmStrategy.propose(ArmContext) -> [Edit]`; `ArmResult.strategy`. Strategies: `agent` (MAF Proposer), `gepa` (DSPy GEPA with a custom `GEPAAdapter` whose evaluate = MAF target + ASSERT/oracle on an evolve *sub*-split, reflective dataset = FailureRecords), `skillopt` (dream_consolidate on evolve). One declarative arm workflow per strategy (`arm_agent.yaml`, `arm_gepa.yaml`, `arm_skillopt.yaml`) sharing critique→evaluate→finalize steps; driver picks by directive. RRSI schedule allocates strategies: exploitation arms by per-strategy success rate (Beta prior), exploration slots rotate untried strategies; caps per strategy.
+
+### 11.3 Usage-driven improvement
+`TraceSource` protocol (AGL journal dir, OTLP-JSONL file). `usage-harvest` workflow: pull traces → redact (PII regex + data.py identities) → drop injection-suspect traces (oracle `injection.*`, tool-output instruction heuristics) → cluster to intents → candidate TaskRecords with `reviewed:false` → draft PR `exp/usage-<date>/tasks` editing `experiments/sleep/tasks.pending.jsonl`. Human merge flips to `reviewed:true` (moved into tasks.jsonl). `sleep-nightly` job `gate` computes new reviewed tasks + new trace volume since `state.json` watermark; skips below thresholds unless dispatched. No raw traces in git.
+
+### 11.4 Critiques C17–C26 (adversarial pass)
+- **C17 Goodhart via judge alignment.** Optimising the judge on 30 human labels then optimising the harness against it double-dips. Evaluator changes only through a separate OES *evaluator experiment* (k-fold CV over labels, held-out labels, metamorphic/adversarial probes from s1eval); a new evaluator pin starts a new campaign *epoch* (δ recalibrated, incumbent re-baselined); never in the same round/night.
+- **C18 GEPA cost.** `max_metric_calls` hard cap from the arm token budget; GEPA's train/val carved from evolve only; GEPA cost is counted in ΔC; its Pareto acceptance is diagnostic.
+- **C19 DSPy caching.** DSPy caches by request incl. temperature; Copilot ignores temperature → cache would fake determinism and poison A/A. `dspy.configure_cache(enable_disk_cache=False, enable_memory_cache=False)` for campaigns/judging; dev-only cache otherwise.
+- **C20 Optimiser text leakage.** GEPA/SkillOpt reflection sees feedback; outputs pass the same critic checks (n-gram leak screen, denylist, size, no new bindings) as agent edits. Reflective datasets are FailureRecords only (C12).
+- **C21 S1 judges on ordinal scales.** Decision models are categorical; ordinal dims map to categorical choices; per-dimension agreement is reported in the evaluator experiment; dims below the agreement floor are `diagnostic` metrics (excluded from the primary composite) for that evaluator version.
+- **C22 Usage traces are untrusted.** Never auto-adopted into tasks; redaction + injection filter + human review; reviewers author references/rule judges; pending tasks never reach reflection prompts.
+- **C23 Strategy confounding.** Per-strategy stats tracked separately from per-component stats; selection is strategy-blind.
+- **C24 DSPy LM routing.** DSPy LM = LiteLLM `openai/<model>` → AGL proxy → copilot-serve (C7, tool-less, json_schema) or llama-server. Structured outputs via JSONAdapter; no tool calling needed.
+- **C25 S1 provider in ASSERT.** `s1/` is registered via `litellm.custom_provider_map` in the ASSERT wrapper process; it must reproduce ASSERT's expected judge JSON exactly (parse ASSERT's per-dimension prompt or use ASSERT's judge extension point if one exists); fall back to `openai/local` chat judging if not reliably parseable.
+- **C26 Dependency surface.** dspy 3.4.0 + gepa 0.1.4 resolve with the pinned set (122 pkgs, litellm 1.103.1, pydantic 2.13.5); dspy imported lazily so the publish job and sleep path never import it.
+
+
+## 12. v2.3 — Observability: MAF OTel → Aspire dashboard → GHCP canvas
+
+*Request: "use the Aspire dashboard built into [M]AF so we can trace the harness workflow/loops/interactions … build the dashboard into a GHCP custom canvas app so I can monitor through the native GHCP Desktop App."* ("WAF" interpreted as MAF: MAF's Python observability docs use the standalone Aspire dashboard as the OTLP viewer.)
+
+### 12.1 Spike facts (this machine, ARM64)
+- `Aspire.Dashboard.Sdk.win-arm64` 13.6.1 (NuGet, via feed proxy; nuget.org TLS-blocked here) ships a single-file self-contained `Aspire.Dashboard.exe` — no Docker, no .NET SDK, no runtime install.
+- OTLP/HTTP `:4318` with `Dashboard__Otlp__AuthMode=ApiKey` → 401 without / 200 with `x-otlp-api-key`. Python `OTLPSpanExporter` (http/protobuf) round-trips.
+- `Dashboard__Api__Enabled=true` + `Dashboard__Api__AuthMode=ApiKey` exposes **`/api/telemetry/{traces,spans,logs,resources}`** returning **OTLP-JSON** (`{"data":{"resourceSpans":[…]},"totalCount","returnedCount"}`; resources: `[{name,instanceId,displayName,hasTraces,…}]`) with header `x-api-key`.
+- UI is BrowserToken-gated (`/login?t=`; SameSite=Lax HttpOnly cookie) and sends `frame-ancestors 'self'` ⇒ **not iframe-embeddable** in the canvas.
+- MAF: `agent_framework.observability.configure_otel_providers(exporters=[…], enable_sensitive_data=…)`, `enable_instrumentation`, `get_tracer`, `create_workflow_span`. Workflow/executor/`invoke_agent`/`chat`/`execute_tool` GenAI spans come for free.
+
+### 12.2 Architecture
+```
+ MAF agents/workflows ─┐  (GenAI spans)
+ ci_lab.obs.span(...) ─┼─► OTel SDK (ci_lab.telemetry.setup) ─┬─► OTLP/HTTP ─► Aspire.Dashboard.exe (loopback, keys)
+ AGL rollouts/ASSERT ──┘     W3C TRACEPARENT to subprocesses    └─► JSONL spans  <run_dir>/telemetry/spans-<pid>.jsonl
+ step functions ─► ci_lab.obs.write_status() ─► <run_dir>/<exp>/status.json   (live, pre-span-end)
+                                                     │
+ GHCP Desktop ◄─ iframe ◄─ canvas extension (.github/extensions/ci-harness-dashboard, Node, no deps)
+                           reads: ledger experiments/**, status.json, spans JSONL, AGL journal, ASSERT results,
+                                  Aspire /api/telemetry (key held in extension process only)
+                           SSE /events → native views; "Open in Aspire" button for the full UI
+```
+- **`ci_lab.obs`** (contracts layer, OTel *API* only): `span()`, `current_ids()`, `link_to()`, `child_env()`/`attach_from_env()` (TRACEPARENT), `write_status()` (atomic, Windows-retry). Safe no-op when no SDK provider is installed → all modules use it now.
+- **`ci_lab.telemetry`** (M12): `setup(component, *, profile, run_dir, aspire="auto"|"on"|"off", jsonl=True, sensitive=False)` → MAF `configure_otel_providers(exporters=[OTLPSpanExporter(http), JsonlSpanExporter])`, `enable_instrumentation(...)`, resource `service.name=ci-lab.<component>`, `ci.campaign_id`, `ci.profile`, `vcs.ref`. Idempotent; `shutdown()` flushes. `JsonlSpanExporter`: one OTLP-JSON-shaped object per line (`traceId, spanId, parentSpanId, name, kind, startTimeUnixNano, endTimeUnixNano, status, attributes{}, events[], links[], resource{}`), size-rotated, flushed per batch. `ci-lab telemetry import <jsonl>` replays JSONL (e.g. GitHub Actions artifacts from `sleep-nightly`) into a running Aspire via OTLP preserving timestamps.
+- **`ci-lab dashboard up|down|status|url|open`** (M12): resolves RID (`win-arm64|win-x64|linux-x64|linux-arm64|osx-arm64|osx-x64`), downloads `Aspire.Dashboard.Sdk.<rid>` pinned **13.6.1** from `CI_NUGET_FLAT` (default feed proxy flat2; fallback `api.nuget.org/v3-flatcontainer`), verifies sha256 against `src/ci_lab/telemetry/aspire.lock.json` (TOFU-record with explicit `--trust-new` for RIDs not yet pinned), extracts under `%LOCALAPPDATA%/ci-lab/aspire-dashboard/<ver>/`. Launches detached on free loopback ports (`ASPNETCORE_URLS`, `ASPIRE_DASHBOARD_OTLP_HTTP_ENDPOINT_URL`, gRPC off by default) with fresh random BrowserToken / OTLP key / API key, `ASPIRE_ALLOW_UNSECURED_TRANSPORT=true` (loopback only), `AllowedHosts=127.0.0.1;localhost`, `Dashboard__TelemetryLimits__*` caps. Writes `~/.ci-lab/dashboard.json` (`pid, version, ui_url, otlp_url, api_url, browser_token, otlp_key, api_key, started`) with owner-only ACL (`icacls /inheritance:r /grant:r %USERNAME%:F` / chmod 600). `telemetry.setup(aspire="auto")` reads that file to find endpoint+key; never logs secrets.
+- **Canvas** (M13): project-scope extension `ci-harness-dashboard` (committed; whole team gets it). `extension.mjs` (wiring) + `lib/{server,sources,model,aspire,security}.mjs` + `ui/{index.html,app.js,app.css}` + `test/*.test.mjs` (`node --test`, pure-function tests of `model`/`sources`/`security`). One data hub per repo root (shared fs watchers, debounced 250 ms, 5 s poll fallback); one loopback server per instance (scaffold pattern). SSE `/events` pushes model diffs; JSON `/api/*` endpoints; static UI with strict CSP (`default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; frame-ancestors *`), DOM built with `textContent` only.
+  - **Views**: *Overview* (campaigns, frontier/incumbent, latest round, OES decisions, ΔS/ΔC trend, budget burn) · *Live* (running experiments from `status.json`: phase, arms × strategy × state, staleness badge) · *Experiment* (OES envelope, variants/arms, per-split scores, CIs, decision + rationale, PR/branch refs) · *Traces* (span tree: round → arm → step → MAF workflow → executor → invoke_agent → chat/tool, durations, errors; from JSONL, else Aspire API) · *Evals* (ASSERT suite results, per-dimension S1 judge scores, judge agreement/diagnostic flags) · *Sleep* (nights, harvested usage counts, skills updated, pending-review PRs) · *Aspire* (status, "Open in Aspire" → `ui_url/login?t=` opened top-level by a user click; deep-link `/traces/detail/<traceId>`).
+  - **Open input** `{repoRoot?, view?, campaignId?, experimentId?, traceId?}` (all optional; repoRoot defaults to `ctx.session.workingDirectory` → git toplevel). **Actions**: `refresh`, `show_view{view}`, `select_campaign{campaignId}`, `focus_experiment{experimentId}`, `focus_trace{traceId}`, `get_summary` (compact JSON for the agent), `dashboard_status` (no secrets). Panel-only UI state per instance; everything durable lives in the repo/run dirs.
+
+### 12.3 Span/attribute conventions (contracts §telemetry)
+One trace per **round / night / calibration / confirm / evaluator experiment** (`ci.round`, `ci.sleep.night`, `ci.calibrate`, `ci.confirm`, `ci.evaluator`); children `ci.arm` → `ci.step{ci.phase}` → `ci.case` (= one AGL rollout; `agl.rollout_id`, `agl.attempt_id`) → MAF GenAI spans; `ci.optimizer{ci.strategy}` around GEPA/SkillOpt calls. Attributes: `ci.campaign_id, oes.experiment_id, oes.variant, oes.decision, rrsi.round, rrsi.component, ci.strategy, ci.phase, ci.profile, ci.purpose, ci.split, ci.case_id, ci.trial, ci.score, rrsi.delta_s, rrsi.delta_c, sleep.night`. Resumed work: new trace + `link_to(prev)` from `status.json.trace_id`. Subprocesses (`assert` wrapper, sleep, copilot-serve) get `obs.child_env()` and call `obs.attach_from_env()` after `telemetry.setup`.
+
+### 12.4 Adversarial critique (C27–C38)
+| # | Attack / failure | Resolution |
+|---|---|---|
+| C27 | A campaign-long root span never exports (spans export on end) → dashboard blind for hours; crash loses the whole tree | One trace per round/night; `status.json` markers for live progress; resume links to prior trace |
+| C28 | Two TracerProviders (AGL tracer, MAF `configure_otel_providers`, ours) → `set_tracer_provider` "override not allowed", split traces | `telemetry.setup` is the single owner, idempotent; AGL integration (M5) attaches our exporters as span processors to AGL's provider or reuses the global; tested |
+| C29 | PII/secret leakage: GenAI spans carry prompts/completions; customer orders in usage traces | `enable_sensitive_data=False` default (spans carry metadata only); `--sensitive` only for fake/local profiles; JSONL from CI artifacts passes the C22 redactor before upload; canvas never renders `gen_ai.*.content` unless the span says sensitive mode was explicitly on |
+| C30 | Aspire secrets exposed (token in logs, model context, URL history) | Secrets only in owner-ACL state file; canvas server holds API key, proxies only whitelisted read endpoints; `dashboard_status`/`get_summary` never return tokens; login URL handed only to a user-clicked button; `ASPIRE_DASHBOARD_SUPPRESS_BROWSER_TOKEN_IN_OUTPUT` |
+| C31 | DNS rebinding / cross-origin calls to loopback servers (canvas + Aspire) | Canvas checks `Host` ∈ {`127.0.0.1:<port>`,`localhost:<port>`}, rejects otherwise; mutating POSTs require per-instance random header token; Aspire `AllowedHosts`; all binds 127.0.0.1 |
+| C32 | Aspire UI can't be iframed (`frame-ancestors 'self'`); a reverse proxy stripping CSP would need Blazor websocket + cookie rewriting and widens attack surface | Rejected proxy. Canvas renders native harness views from OTLP-JSON (same shape from Aspire API and JSONL) and opens full Aspire top-level on click |
+| C33 | Aspire is .NET — violates "Python-only harness" | It is an external, optional dev viewer downloaded on demand (like a browser), not a harness dependency; harness works with `aspire=off` + JSONL; canvas works without Aspire |
+| C34 | Supply chain: downloading an executable | Pinned version + sha256 lockfile per RID, feed proxy, no auto-upgrade; TOFU only with explicit flag |
+| C35 | Canvas reads attacker-controlled files (usage traces, PR branches) → path traversal, XSS, huge files | realpath containment under repoRoot/run dirs; symlink rejection; per-file size caps & line caps for JSONL tail; JSON parse in try; `textContent` only + strict CSP |
+| C36 | Stale/crashed runs look "running" forever | `status.json.updated` age > 2× heartbeat ⇒ "stale"; process liveness via pid where recorded |
+| C37 | fs.watch unreliable (Windows recursive limits, network drives, CoW worktrees) | Watch only known dirs, debounce, periodic poll fallback, manual `refresh` |
+| C38 | Canvas Node code vs "no second language" | Runs inside the GHCP host (Node is the only supported extension runtime), zero deps, read-only; Python remains the only harness language |
