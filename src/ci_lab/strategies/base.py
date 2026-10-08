@@ -24,6 +24,8 @@ from ci_lab.contracts import (
 COMMIT_TRAILER = "Co-authored-by: Copilot App <223556219+Copilot@users.noreply.github.com>"
 FALLBACK_IDENTITY = ("ci-lab arm", "ci-lab-arm@localhost")
 OPTIMIZER_DIR = "optimizer"
+GUARD_GLOBS = ("**/harness/guards/**",)
+"""v2.4 §13 (B2): guard rule bundles are writable only by the ``guard`` strategy."""
 
 Committer = Callable[[Path, Sequence[str], str], str]
 """``(worktree, files, message) -> commit sha``."""

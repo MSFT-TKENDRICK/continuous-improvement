@@ -13,6 +13,11 @@ only the keyword arguments its constructor accepts.
 
 - An unknown name raises `UnknownStrategy` (a `KeyError`).
 - A missing required dependency raises `TypeError`.
+- `guard` (contracts v2.4, §13) is in `STRATEGIES` but is provided by `ci_lab.lessons`.
+  That module calls `register_strategy("guard", factory)`. Until it registers,
+  `get_strategy("guard")` raises `UnknownStrategy`.
+- Text strategies treat `**/harness/guards/**` as frozen (§13 B2), so only the `guard`
+  strategy can write guard rule bundles.
 
 Importing the package does not import dspy, gepa or skillopt_sleep (C26).
 

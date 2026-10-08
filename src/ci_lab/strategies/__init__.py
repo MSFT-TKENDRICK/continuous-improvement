@@ -23,11 +23,18 @@ _FACTORIES: dict[str, Callable[..., ArmStrategy]] = {
     "gepa": GepaStrategy,
     "skillopt": SkillOptStrategy,
 }
-assert set(_FACTORIES) == set(STRATEGIES)
+EXTERNAL = {"guard": "ci_lab.lessons"}  # v2.4 §13: provided by another module via register_strategy
 
 
 class UnknownStrategy(KeyError):
     pass
+
+
+def register_strategy(name: str, factory: Callable[..., ArmStrategy]) -> None:
+    """Register a factory for a strategy named in ``contracts.STRATEGIES`` (e.g. ``guard``)."""
+    if name not in STRATEGIES:
+        raise UnknownStrategy(f"{name!r} is not in contracts.STRATEGIES {STRATEGIES}")
+    _FACTORIES[name] = factory
 
 
 def _accepted(factory: Callable[..., Any]) -> set[str] | None:
@@ -50,10 +57,13 @@ def get_strategy(name: str, **deps: Any) -> ArmStrategy:
     try:
         factory = _FACTORIES[name]
     except KeyError:
+        if name in STRATEGIES:
+            raise UnknownStrategy(f"arm strategy {name!r} is not registered (provided by "
+                                  f"{EXTERNAL.get(name, 'another module')} via register_strategy)") from None
         raise UnknownStrategy(f"unknown arm strategy {name!r}; expected one of {STRATEGIES}") from None
     accepted = _accepted(factory)
     return factory(**{k: v for k, v in deps.items() if accepted is None or k in accepted})
 
 
 __all__ = ["AgentStrategy", "EditBudgetExceeded", "GepaStrategy", "STRATEGIES", "SkillOptStrategy",
-           "UnknownStrategy", "get_strategy", "git_commit"]
+           "UnknownStrategy", "get_strategy", "git_commit", "register_strategy"]

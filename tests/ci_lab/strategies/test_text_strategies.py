@@ -92,9 +92,13 @@ def test_gepa_edit_budget_caps_targets(worktree, domain, tmp_path):
 
 def test_gepa_rejects_off_surface_focus(worktree, domain, tmp_path):
     (worktree / "README.md").write_text("x")
+    guards = worktree / "src/order_support/harness/guards/rules.yaml"
+    guards.parent.mkdir(parents=True)
+    guards.write_text("rules: []\n")
     s = GepaStrategy(domain=domain, lm=gepa_lm())
-    with pytest.raises(TargetError):
-        asyncio.run(s.propose(mkctx(worktree, tmp_path, "gepa", focus=("README.md",))))
+    for focus in ("README.md", "src/order_support/harness/guards/rules.yaml"):
+        with pytest.raises(TargetError):
+            asyncio.run(s.propose(mkctx(worktree, tmp_path, "gepa", focus=(focus,))))
 
 
 def test_gepa_zero_budget_and_non_text_focus(worktree, domain, tmp_path):

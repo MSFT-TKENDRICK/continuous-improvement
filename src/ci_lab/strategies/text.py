@@ -17,6 +17,7 @@ from ci_lab.optim.gepa import TextOptimization
 from ci_lab.optim.scoring import DomainEvolveScorer, EvolveScorer
 from ci_lab.optim.targets import TextTarget, resolve_targets
 from ci_lab.strategies.base import (
+    GUARD_GLOBS,
     Committer,
     check_edit_budget,
     evolve_cases_for,
@@ -43,7 +44,8 @@ class TextOptimizerStrategy:
         self.component_globs = component_globs if component_globs is not None else \
             getattr(domain, "component_globs", None)
         self.surface_globs = surface_globs if surface_globs is not None else getattr(domain, "surface_globs", None)
-        self.frozen_globs = frozen_globs if frozen_globs is not None else getattr(domain, "frozen_globs", ())
+        self.frozen_globs = (*(frozen_globs if frozen_globs is not None else getattr(domain, "frozen_globs", ())),
+                             *GUARD_GLOBS)
         self.last: list[TextOptimization] = []
 
     # -- hooks -------------------------------------------------------------------------

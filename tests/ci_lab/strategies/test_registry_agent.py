@@ -26,6 +26,7 @@ from ci_lab.strategies import (
     SkillOptStrategy,
     UnknownStrategy,
     get_strategy,
+    register_strategy,
 )
 
 
@@ -52,11 +53,31 @@ def test_registry_builds_each_strategy_from_shared_deps(domain):
         return []
 
     deps = {"proposer": proposer, "domain": domain, "lm": object(), "committer": lambda *a: "x"}
-    built = {n: get_strategy(n, **deps) for n in STRATEGIES}
+    built = {n: get_strategy(n, **deps) for n in ("agent", "gepa", "skillopt")}
     assert isinstance(built["agent"], AgentStrategy) and built["agent"].proposer is proposer
     assert isinstance(built["gepa"], GepaStrategy) and built["gepa"].domain is domain
     assert isinstance(built["skillopt"], SkillOptStrategy) and built["skillopt"].lm is deps["lm"]
-    assert {n: s.name for n, s in built.items()} == {n: n for n in STRATEGIES}
+    assert {n: s.name for n, s in built.items()} == {n: n for n in built}
+
+
+def test_registry_external_guard_strategy(monkeypatch):
+    import ci_lab.strategies as reg
+
+    monkeypatch.setattr(reg, "_FACTORIES", dict(reg._FACTORIES))
+    assert "guard" in STRATEGIES
+    with pytest.raises(UnknownStrategy, match="ci_lab.lessons"):
+        get_strategy("guard")
+
+    class Guard:
+        name = "guard"
+
+        def __init__(self, *, bundle):
+            self.bundle = bundle
+
+    register_strategy("guard", Guard)
+    assert get_strategy("guard", bundle="b", proposer=None).bundle == "b"
+    with pytest.raises(UnknownStrategy):
+        register_strategy("evolution", Guard)
 
 
 def test_registry_errors():
