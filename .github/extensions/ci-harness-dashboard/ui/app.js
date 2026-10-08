@@ -337,3 +337,353 @@ function importsCard(imports) {
 const expLink = (id) => (id ? linkBtn(id, () => navigate({ view: "experiment", experimentId: id }), "Open experiment") : "—");
 const traceLink = (id, label) => (id ? linkBtn(label ?? `${id.slice(0, 8)}…`, () => navigate({ view: "traces", traceId: id }), "Open trace") : "—");
 
+function viewLive() {
+    const d = got("live");
+    if (!d) return loading();
+    if (d.error) return errorBox(d.error);
+    const { live, heartbeatSec, rollouts } = d.value;
+    if (!live.length) {
+        return empty(
+            "No run directories with live status.",
+            "Rounds write ",
+            code("<run_dir>/<experiment>/status.d/<writer>.json"),
+            " while they run (",
+            code("CI_RUN_DIR"),
+            ", default ",
+            code("artifacts/ci-runs"),
+            "). Start one with ",
+            code("ci-lab campaign run --profile fake"),
+            ".",
+        );
+    }
+    const out = [h("p", { class: "muted small", text: `Stale = no update for more than 2 × heartbeat (${heartbeatSec}s default).` })];
+    for (const r of live) {
+        out.push(
+            h(
+                "section",
+                { class: `card run ${r.state}` },
+                h("h2", {}, expLink(r.experimentId), " ", badge(r.state, stateKind(r.state)), r.stopped ? badge("STOP", "warn") : null),
+                kv([
+                    ["Phase", r.phase],
+                    ["Round", r.round === null ? null : String(r.round)],
+                    ["Updated", ageEl(r.updated)],
+                    ["Writers", r.writers.length ? r.writers.join(", ") : null],
+                    ["Decision", r.decision ? h("span", {}, badge(r.decision, stateKind(r.decision)), r.winner ? ` → ${r.winner}` : "") : null],
+                    ["PR", r.pr === null ? null : `#${r.pr}`],
+                    ["Trace", r.traceId ? traceLink(r.traceId) : null],
+                ]),
+                r.arms.length
+                    ? table(
+                          ["Arm", "Strategy", "State", "Phase", "Updated", "Score"],
+                          r.arms.map((a) => [
+                              a.arm,
+                              a.strategy ?? "—",
+                              h("span", {}, badge(a.state ?? "?", stateKind(a.state)), a.stale ? badge("stale", "warn") : null),
+                              a.phase ?? "—",
+                              a.ageSec === null ? "—" : fmtAge(a.ageSec),
+                              fmtNum(a.score),
+                          ]),
+                      )
+                    : null,
+            ),
+        );
+    }
+    if (rollouts?.total) {
+        out.push(
+            section(
+                "AGL rollouts",
+                kv([
+                    ["Total", fmtInt(rollouts.total)],
+                    ["By status", Object.entries(rollouts.byStatus).map(([k, n]) => badge(`${k} ${n}`, stateKind(k)))],
+                    ["Mean score", fmtNum(rollouts.meanScore)],
+                ]),
+                table(
+                    ["Rollout", "Status", "Events", "Score", "Last"],
+                    rollouts.recent.slice(0, 15).map((r) => [h("span", { class: "mono", text: r.rolloutId }), badge(r.status, stateKind(r.status)), String(r.events), fmtNum(r.score), ageEl(r.lastTs)]),
+                ),
+            ),
+        );
+    }
+    return out;
+}
+
+function viewExperiment() {
+    const d = got("experiments");
+    if (!d) return loading();
+    if (d.error) return errorBox(d.error);
+    const { campaigns, experiments } = d.value;
+    const out = [];
+    const cid = state.ui.campaignId ?? (state.ui.experimentId ? null : campaigns[0]?.campaignId ?? null);
+    if (state.ui.experimentId) {
+        out.push(h("p", {}, linkBtn("← all experiments", () => navigate({ experimentId: null }))));
+        out.push(experimentDetailView());
+        return out;
+    }
+    if (!campaigns.length && !experiments.length) {
+        return empty("No experiments recorded yet.", "The ledger lives under ", code("experiments/"), " (OES envelopes). Run ", code("ci-lab campaign run --profile fake"), " to produce one.");
+    }
+    if (campaigns.length) {
+        const sel = h(
+            "select",
+            { "aria-label": "Campaign", on: { change: (e) => navigate({ campaignId: e.target.value || null }) } },
+            campaigns.map((c) => {
+                const o = h("option", { value: c.campaignId, text: c.campaignId });
+                o.selected = c.campaignId === cid;
+                return o;
+            }),
+        );
+        out.push(h("div", { class: "toolbar" }, h("label", {}, "Campaign ", sel)));
+        const c = campaigns.find((x) => x.campaignId === cid);
+        if (c) {
+            out.push(campaignCard(c));
+            out.push(
+                section(
+                    "Rounds",
+                    c.rounds.length
+                        ? table(
+                              ["#", "Experiment", "Decision", "Winner", "Score", "ΔS", "ΔC", "CI lb", "Arms"],
+                              c.rounds.map((r) => [
+                                  r.round === null ? "—" : String(r.round),
+                                  expLink(r.eid),
+                                  r.decision ? badge(r.decision, stateKind(r.decision)) : "—",
+                                  r.winner ?? "—",
+                                  fmtNum(r.score),
+                                  fmtSigned(r.deltaS),
+                                  fmtSigned(r.deltaC),
+                                  fmtNum(r.ciLowerBound),
+                                  `${r.accepted ?? 0}/${r.arms ?? 0}`,
+                              ]),
+                          )
+                        : empty("No rounds yet."),
+                ),
+            );
+        }
+    }
+    const list = cid ? experiments.filter((e) => e.campaignId === cid || !e.campaignId) : experiments;
+    if (list.length) {
+        out.push(
+            section(
+                "Experiments",
+                table(
+                    ["Experiment", "Kind", "Outcome", "Winner", "ΔS", "ΔC", "CI lb"],
+                    list.map((e) => [expLink(e.id), e.kind ?? "—", e.outcome ? badge(e.outcome, stateKind(e.outcome)) : "—", e.winner ?? "—", fmtSigned(e.deltaS), fmtSigned(e.deltaC), fmtNum(e.ciLowerBound)]),
+                ),
+            ),
+        );
+    }
+    return out;
+}
+
+function experimentDetailView() {
+    const d = got("experiment", `/api/experiment/${encodeURIComponent(state.ui.experimentId)}`);
+    if (!d) return loading();
+    if (d.error) return d.status === 404 ? empty(`Experiment ${state.ui.experimentId} not found.`, "It may not have been written yet; this view updates automatically.") : errorBox(d.error);
+    const { envelope: e, run, traceIds } = d.value;
+    const out = [];
+    if (e) {
+        out.push(
+            h(
+                "section",
+                { class: "card" },
+                h("h2", {}, e.id, " ", badge(e.kind ?? "experiment"), e.decision.outcome ? badge(e.decision.outcome, stateKind(e.decision.outcome)) : null),
+                e.title ? h("p", { text: e.title }) : null,
+                e.hypothesis ? h("p", { class: "muted", text: e.hypothesis }) : null,
+                kv([
+                    ["Campaign", e.campaignId],
+                    ["Round", e.round === null ? null : String(e.round)],
+                    ["Split", e.split],
+                    ["Status", e.status],
+                    ["δ", fmtNum(e.delta, 4)],
+                    ["CI lower bound", fmtNum(e.ciLowerBound)],
+                    ["Judge", e.judgeModel],
+                    ["Incumbent", e.incumbentCommit ? code(shortSha(e.incumbentCommit)) : null],
+                    ["Recommended", e.scorecard.recommendedAction],
+                    ["Decided", e.decision.decidedAt],
+                ]),
+                e.decision.rationale ? h("p", { class: "rationale", text: e.decision.rationale }) : null,
+            ),
+        );
+        if (e.selection) {
+            out.push(
+                section(
+                    "Selection",
+                    table(
+                        ["Variant", "Admissible", "ΔS", "ΔC", "CI lb", "Rule"],
+                        e.selection.candidates.map((c) => [
+                            h("span", {}, c.variantId, c.variantId === e.selection.winner ? badge("winner", "ok") : null),
+                            c.admissible ? "yes" : h("span", { title: c.reasons.join("; ") }, "no"),
+                            fmtSigned(c.deltaS),
+                            fmtSigned(c.deltaC),
+                            fmtNum(c.ciLowerBound),
+                            c.rule ?? "—",
+                        ]),
+                    ),
+                ),
+            );
+        }
+        if (e.variants.length) {
+            out.push(
+                section(
+                    "Variants",
+                    ...e.variants.map((v) =>
+                        h(
+                            "details",
+                            { class: "variant" },
+                            h("summary", {}, `${v.id} `, v.role ? badge(v.role) : null, v.status ? badge(v.status, stateKind(v.status)) : null),
+                            v.description ? h("p", { text: v.description }) : null,
+                            kv([
+                                ["Head", v.headCommit ? code(shortSha(v.headCommit)) : null],
+                                ["Tree", v.harnessTree ? code(shortSha(v.harnessTree)) : null],
+                                ["Critic", v.critic ? (v.critic.passed ? badge("passed", "ok") : h("span", {}, badge("failed", "bad"), ` ${v.critic.reasons.join("; ")}`)) : null],
+                            ]),
+                            v.edits.length ? table(["Component", "Hypothesis", "Commit"], v.edits.map((x) => [x.component ?? "—", x.hypothesis ?? "—", x.commit ? code(shortSha(x.commit)) : "—"])) : null,
+                        ),
+                    ),
+                ),
+            );
+        }
+        if (e.results.length) {
+            out.push(
+                section(
+                    "Metric results",
+                    table(
+                        ["Metric", "Variant", "Baseline", "Value", "Diff", "CI", "Status"],
+                        e.results.map((r) => [
+                            r.metricId ?? "—",
+                            r.variantId ?? "—",
+                            fmtNum(r.baselineValue),
+                            fmtNum(r.variantValue),
+                            fmtSigned(r.diff),
+                            r.ci ? `[${fmtNum(r.ci.lower)}, ${fmtNum(r.ci.upper)}]` : "—",
+                            r.status ?? "—",
+                        ]),
+                    ),
+                ),
+            );
+        }
+        if (e.quality.length) {
+            out.push(section("Quality checks", table(["Check", "Status", "Severity", "Message"], e.quality.map((q) => [q.checkType ?? "—", badge(q.status ?? "?", q.status === "passed" ? "ok" : q.status === "failed" ? "bad" : ""), q.severity ?? "—", q.message ?? "—"]))));
+        }
+        if (e.sleep) out.push(sleepNightCard(e));
+        if (e.source) out.push(h("p", { class: "muted small" }, "Source: ", code(e.source)));
+    }
+    if (run) {
+        out.push(
+            section(
+                "Run status",
+                kv([
+                    ["State", badge(run.state, stateKind(run.state))],
+                    ["Phase", run.phase],
+                    ["Updated", ageEl(run.updated)],
+                    ["Writers", run.writers.join(", ") || null],
+                ]),
+                run.arms.length ? table(["Arm", "Strategy", "State", "Phase"], run.arms.map((a) => [a.arm, a.strategy ?? "—", badge(a.state ?? "?", stateKind(a.state)), a.phase ?? "—"])) : null,
+            ),
+        );
+    }
+    if (traceIds.length) out.push(section("Traces", h("ul", {}, traceIds.map((t) => h("li", {}, traceLink(t, t))))));
+    return out;
+}
+
+function viewTraces() {
+    const d = got("traces");
+    if (!d) return loading();
+    if (d.error) return errorBox(d.error);
+    const v = d.value;
+    const out = [];
+    if (state.ui.traceId) {
+        out.push(h("p", {}, linkBtn("← all traces", () => navigate({ traceId: null }))));
+        out.push(traceDetailView());
+        return out;
+    }
+    const notes = [];
+    if (v.aspire.included) notes.push(`includes ${v.aspire.spans} span(s) from the Aspire Dashboard`);
+    else if (v.aspire.error && v.aspire.error !== "no dashboard state") notes.push(`Aspire: ${v.aspire.error}`);
+    if (v.rejectedSpans) notes.push(`${v.rejectedSpans} span record(s) rejected (unknown schemaVersion)`);
+    if (!v.traces.length) {
+        return empty(
+            "No traces yet.",
+            "Spans are written to ",
+            code("<run_dir>/telemetry/spans-<pid>.jsonl"),
+            " and, when running, to the Aspire Dashboard (",
+            code("ci-lab dashboard up"),
+            "). CI runs can be imported with ",
+            code("ci-lab telemetry pull --run <id>"),
+            ".",
+        );
+    }
+    const filter = h("input", {
+        type: "search",
+        placeholder: "Filter by name, campaign, experiment…",
+        "aria-label": "Filter traces",
+        value: state.traceFilter,
+        on: {
+            input: (e) => {
+                state.traceFilter = e.target.value;
+                render();
+                const el = document.querySelector('input[type="search"]');
+                el?.focus();
+                el?.setSelectionRange(el.value.length, el.value.length);
+            },
+        },
+    });
+    const q = state.traceFilter.trim().toLowerCase();
+    const list = q ? v.traces.filter((t) => [t.name, t.campaignId, t.experimentId, t.traceId, t.night, ...(t.services ?? [])].some((x) => String(x ?? "").toLowerCase().includes(q))) : v.traces;
+    out.push(h("div", { class: "toolbar" }, filter, h("span", { class: "muted small", text: `${list.length} of ${v.traces.length}` })));
+    if (notes.length) out.push(h("p", { class: "muted small", text: notes.join(" · ") }));
+    out.push(
+        table(
+            ["Trace", "Started", "Duration", "Spans", "Errors", "Context"],
+            list.slice(0, 200).map((t) => [
+                h("span", {}, traceLink(t.traceId, t.name), t.incomplete ? badge("partial", "warn") : null, t.origin.includes("import") ? badge("CI", "info") : null),
+                fmtTime(t.startMs),
+                fmtDur(t.durationMs),
+                `${t.spans}${t.genai ? ` (${t.genai} GenAI)` : ""}`,
+                t.errors ? badge(String(t.errors), "bad") : "0",
+                [t.campaignId, t.experimentId, t.round !== null && t.round !== undefined ? `round ${t.round}` : null, t.night].filter(Boolean).join(" · ") || "—",
+            ]),
+            { cls: "traces" },
+        ),
+    );
+    return out;
+}
+
+function traceDetailView() {
+    const d = got("trace", `/api/trace/${state.ui.traceId}`);
+    if (!d) return loading();
+    if (d.error) return d.status === 404 ? empty(`Trace ${state.ui.traceId} not found.`, "Spans are exported when they end; long-running rounds appear after their first step finishes.") : errorBox(d.error);
+    const { trace: t, aspireUrl } = d.value;
+    const total = t.durationMs || 1;
+    const header = h(
+        "section",
+        { class: "card" },
+        h("h2", {}, t.name, " ", t.errors ? badge(`${t.errors} error(s)`, "bad") : badge("ok", "ok")),
+        kv([
+            ["Trace id", code(t.traceId)],
+            ["Started", fmtTime(t.startMs)],
+            ["Duration", fmtDur(t.durationMs)],
+            ["Spans", `${t.spans} (${t.genai} GenAI)`],
+            ["Context", [t.campaignId, t.experimentId, t.night].filter(Boolean).join(" · ") || null],
+            ["Services", t.services.join(", ") || null],
+        ]),
+        h(
+            "div",
+            { class: "toolbar" },
+            h("button", { type: "button", class: "btn", on: { click: () => expandAll(t.roots, true) } }, "Expand all"),
+            h("button", { type: "button", class: "btn", on: { click: () => expandAll(t.roots, false) } }, "Collapse all"),
+            aspireUrl ? h("button", { type: "button", class: "btn primary", title: "Sign in to the Aspire Dashboard and open this trace", on: { click: () => openAspire(t.traceId) } }, "Open in Aspire") : null,
+        ),
+        loginFallback(),
+    );
+    const tree = h("ul", { class: "tree", role: "tree" }, t.roots.map((n) => spanNode(n, total)));
+    return [header, h("section", { class: "card" }, tree)];
+}
+function expandAll(nodes, open) {
+    const walk = (n) => {
+        if (open) state.openSpans.add(n.spanId);
+        else state.openSpans.delete(n.spanId);
+        n.children.forEach(walk);
+    };
+    nodes.forEach(walk);
+    render();
+}
