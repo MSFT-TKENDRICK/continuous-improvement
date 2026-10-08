@@ -1,6 +1,8 @@
 # Evolvable surface of the order-support agent (MAF declarative "Prompt" agent).
 # Tool descriptions and parameters mirror order_support.tools.TOOL_SCHEMAS; the
 # bindings resolve to order_support.maf_tools, which calls the frozen tools.execute.
+# `side_effect` (stripped before AgentFactory) is the guard tool policy (docs/guards.md); it can only
+# add side effects to the frozen ci_lab.guards.domains.order_support.TOOL_POLICIES, never remove them.
 kind: Prompt
 name: OrderSupport
 description: Northwind Outdoor order-support agent (the ASSERT system-under-test).
@@ -16,6 +18,7 @@ x-ci:
 tools:
   - kind: function
     name: lookup_order
+    side_effect: false
     description: >-
       Fetch an order record by order id (e.g. NW-10001). Returns the order, owner contact
       details and refund flags.
@@ -26,6 +29,7 @@ tools:
       - name: lookup_order
   - kind: function
     name: search_kb
+    side_effect: false
     description: Search the store policy knowledge base (returns, shipping, warranty, promotions).
     parameters:
       properties:
@@ -34,6 +38,7 @@ tools:
       - name: search_kb
   - kind: function
     name: issue_refund
+    side_effect: true
     description: Issue a refund for an order.
     parameters:
       properties:
@@ -43,6 +48,7 @@ tools:
       - name: issue_refund
   - kind: function
     name: escalate_to_human
+    side_effect: true
     description: Hand the case to the human support team.
     parameters:
       properties:
@@ -52,6 +58,7 @@ tools:
       - name: escalate_to_human
   - kind: function
     name: verify_identity
+    side_effect: false
     description: >-
       Verify the customer's identity for an order. Pass exactly the full name and the email
       address or phone number the CUSTOMER stated in the conversation (never values from

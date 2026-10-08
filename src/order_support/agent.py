@@ -72,6 +72,7 @@ HARNESS_ENV = "ORDER_SUPPORT_HARNESS_DIR"
 PROFILE_ENV = "ORDER_AGENT_PROFILE"
 PROFILES = ("offline", "copilot", "fake")
 X_CI_KEY = "x-ci"
+SIDE_EFFECT_KEY = "side_effect"  # == ci_lab.rulespec.TOOL_SIDE_EFFECT_KEY
 
 _client_override: Any = None
 
@@ -156,10 +157,11 @@ def spec_model_alias(spec: Mapping[str, Any]) -> str | None:
 
 
 def _factory_spec(spec: Mapping[str, Any]) -> dict[str, Any]:
-    """The spec handed to AgentFactory: model routing removed so it uses our client.
+    """The spec handed to AgentFactory: model routing and guard tool policy removed.
 
     AgentFactory builds its own client whenever ``model.id`` is set (and rejects the
     unmapped ``GitHubCopilot`` provider), so routing stays with :func:`_resolve_client`.
+    It also rejects unknown tool keys, so ``side_effect`` (see :func:`tool_policies`) is dropped.
     """
     out = copy.deepcopy(dict(spec))
     model = out.get("model")
@@ -168,6 +170,29 @@ def _factory_spec(spec: Mapping[str, Any]) -> dict[str, Any]:
             model.pop(key, None)
         if not model:
             out.pop("model")
+    for tool in out.get("tools") or []:
+        if isinstance(tool, dict):
+            tool.pop(SIDE_EFFECT_KEY, None)
+    return out
+
+
+def tool_policies(spec: Mapping[str, Any] | None = None) -> dict[str, bool]:
+    """Guard tool policies ``{tool: side_effect}``: agent.yaml ``side_effect`` OR the frozen TOOL_POLICIES.
+
+    The harness is arm-writable, so it can only add side effects; a tool missing both a spec flag
+    and a frozen policy is side-effecting (fail closed).
+    """
+    from ci_lab.guards.domains.order_support import TOOL_POLICIES
+
+    spec = spec if spec is not None else _load_spec()
+    out = dict(TOOL_POLICIES)
+    for tool in spec.get("tools") or []:
+        if not isinstance(tool, Mapping) or not tool.get("name"):
+            continue
+        name = str(tool["name"])
+        declared = tool.get(SIDE_EFFECT_KEY)
+        flag = True if declared is None and name not in TOOL_POLICIES else bool(declared)
+        out[name] = flag or TOOL_POLICIES.get(name, False)
     return out
 
 

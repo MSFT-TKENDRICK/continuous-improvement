@@ -60,6 +60,31 @@ def test_verify_identity_is_declared_and_instructed():
     assert text.index("verify_identity") > text.index(data.load_policy()) + len(data.load_policy()) - 1
 
 
+def test_side_effect_flags_are_guard_policy_not_factory_input():
+    from ci_lab.guards.domains.order_support import TOOL_POLICIES
+    from ci_lab.rulespec import TOOL_SIDE_EFFECT_KEY
+
+    assert agent.SIDE_EFFECT_KEY == TOOL_SIDE_EFFECT_KEY
+    spec = agent._load_spec()
+    flags = {t["name"]: t[agent.SIDE_EFFECT_KEY] for t in spec["tools"]}
+    assert flags == {"lookup_order": False, "search_kb": False, "issue_refund": True,
+                     "escalate_to_human": True, "verify_identity": False}
+    assert all(agent.SIDE_EFFECT_KEY not in t for t in agent._factory_spec(spec)["tools"])
+    assert all(agent.SIDE_EFFECT_KEY in t for t in spec["tools"])  # caller's spec untouched
+    assert agent.tool_policies(spec) == TOOL_POLICIES == flags
+
+
+def test_tool_policies_can_only_add_side_effects():
+    spec = agent._load_spec()
+    for t in spec["tools"]:
+        t[agent.SIDE_EFFECT_KEY] = t["name"] == "search_kb"  # arm tries to flip every flag
+    spec["tools"].append({"kind": "function", "name": "new_tool"})
+    policies = agent.tool_policies(spec)
+    assert policies["issue_refund"] is policies["escalate_to_human"] is True  # frozen wins
+    assert policies["search_kb"] is True and policies["lookup_order"] is False
+    assert policies["new_tool"] is True  # undeclared, unknown -> side-effecting
+
+
 def test_model_routing_stays_out_of_the_factory():
     spec = agent._load_spec()
     factory_spec = agent._factory_spec(spec)
