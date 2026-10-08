@@ -18,6 +18,7 @@ Code lives in `src/ci_lab/oes/`, schemas in `schemas/oes/` (provenance in
 | `openexperiment-0.1.0.schema.json` | Official OES 0.1.0 schema, vendored byte-exact. The sha256 is pinned in SOURCE.md and a test. |
 | `ext-com.microsoft.ci.rrsi.schema.json` | `extensions["com.microsoft.ci.rrsi"]` (closed). |
 | `ext-com.microsoft.ci.sleep.schema.json` | `extensions["com.microsoft.ci.sleep"]` (closed). |
+| `ext-com.microsoft.ci.guard.schema.json` | `extensions["com.microsoft.ci.guard"]` (closed; v2.4 §13 guard arms). |
 
 ### rrsi extension
 
@@ -54,6 +55,17 @@ The sleep extension records:
 - `candidateDigest`;
 - `adoptionPr` (`exp/sleep-<yyyymmdd>-<n>/cand`, or null);
 - `evaluatorPin`.
+
+### guard extension
+
+Built by `ci_lab.lessons_arm.envelope.guard_extension` (key `oes.GUARD_EXT` ==
+`rulespec.OES_GUARD_EXT`). It records one paired guard-off/guard-on evaluation (B1/B4):
+- `kind: guard_eval`, `split`, `bundleDigest`, `paired`, `trials`;
+- the `GuardMetrics` rates (`attemptedViolationRate`, `deliveredViolationRate`, `taskCompletion`,
+  `falseDenialRate`, `blockRate`, `recall`, `fpRate`, `fpUcb`) and counts;
+- `agentSafetyRate` (the guard-off attempted rate; guards are never credited to the agent);
+- optional `arm`, `ruleIds`, `lessonIds`, `incumbentBundleDigest`, `ship {ok, reasons}`;
+- `holdoutLook`, and `holdout {datasetHash, plannedLooks, looksUsed}` iff it is a held-out look (C15).
 
 ## Concept mapping
 
@@ -158,6 +170,7 @@ is valid. Each error starts with its rule id:
 | `holdout-looks` | `looksUsed ≤ plannedLooks`; a confirm uses ≥ 1 look; the global look ledger count (`look_counts`) ≤ planned. |
 | `confirm` | `design.alpha` = pre-registered alpha; `fixed_horizon`; ship ⇒ `pValue < alpha` and `ciLower > 0`. |
 | `sleep` | See below. |
+| `guard` | ship ⇒ the guard eval is paired and its `ship.ok` (B1) is not false. Its `holdout` block gets the `holdout-looks` checks (a held-out guard eval uses ≥ 1 look). |
 
 The `decision` rule requires:
 - experiment decided ⇔ decision decided, and decided ⇒ outcome;
@@ -184,7 +197,7 @@ The `sleep` rule checks:
 - ship ⇒ both gates passed and `candidateDigest` is set;
 - not ship ⇒ `adoptionPr` is null.
 
-Schema errors short-circuit the semantic rules. rrsi and sleep rules only run when their
+Schema errors short-circuit the semantic rules. rrsi, sleep and guard rules only run when their
 extension is schema-valid.
 
 ### CLI

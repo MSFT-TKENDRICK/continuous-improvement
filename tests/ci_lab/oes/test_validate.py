@@ -6,7 +6,7 @@ import json
 import pytest
 
 from ci_lab.oes import validate_envelope
-from ci_lab.oes.models import RRSI_EXT, SLEEP_EXT
+from ci_lab.oes.models import GUARD_EXT, RRSI_EXT, SLEEP_EXT
 from ci_lab.oes.validate import iter_rule_ids, read_look_ledger, validate_file
 
 
@@ -322,3 +322,72 @@ def test_sleep_adoption_pr_requires_ship(fx):
     doc = mutate(fx, fx.build_sleep(assert_passed=False),
                  lambda d: d["extensions"][SLEEP_EXT].update(adoptionPr=pr))
     assert rules(doc) == {"sleep"}
+
+
+# ---------------------------------------------------------------- guard extension (v2.4 §13)
+
+def _guard_ext(split="evolve", ship=(True, []), **kw):
+    from ci_lab.lessons_arm.envelope import guard_extension
+    from ci_lab.rulespec import GuardMetrics
+
+    metrics = GuardMetrics(bundle_digest="sha256:" + "ab" * 32, paired=True, trials=3,
+                           attempted_violation_rate=0.25, delivered_violation_rate=0.0, task_completion=0.9,
+                           false_denial_rate=0.0, block_rate=0.25, opportunities=4, fires=1, recall=1.0,
+                           fp_rate=0.0, fp_ucb=0.52, substitutions=0)
+    return guard_extension(metrics, split=split, arm="v2", rule_ids=["r.b", "r.a"], lesson_ids=["l1"],
+                           ship=ship, incumbent_digest="sha256:" + "cd" * 32, **kw)
+
+
+def test_guard_extension_validates(fx, envelopes):
+    doc = mutate(fx, envelopes["round"], lambda d: d["extensions"].update(_guard_ext()))
+    assert validate_envelope(doc) == []
+    ext = doc["extensions"][GUARD_EXT]
+    assert ext["ruleIds"] == ["r.a", "r.b"] and ext["holdoutLook"] is False and "holdout" not in ext
+
+
+def test_guard_extension_heldout_look(fx, envelopes):
+    ext = _guard_ext("heldout", dataset_hash="sha256:" + "ef" * 32, looks_used=1, planned_looks=1)
+    doc = mutate(fx, envelopes["confirm"], lambda d: d["extensions"].update(ext))
+    assert validate_envelope(doc) == []
+    h = ext[GUARD_EXT]["holdout"]["datasetHash"]
+    assert rules(doc, look_counts={h: 2}) == {"holdout-looks"}
+
+
+@pytest.mark.parametrize(("fn", "path"), [
+    (lambda e: e.update(extra=1), "extra"),
+    (lambda e: e.pop("bundleDigest"), "bundleDigest"),
+    (lambda e: e.update(deliveredViolationRate=1.5), "deliveredViolationRate"),
+    (lambda e: e.update(kind="round"), "kind"),
+    (lambda e: e.update(holdoutLook=True), "holdout"),
+    (lambda e: e.update(holdout={"datasetHash": "sha256:" + "ef" * 32, "plannedLooks": 1, "looksUsed": 1}),
+     "holdout"),
+    (lambda e: e.update(ship={"ok": True}), "reasons"),
+])
+def test_guard_extension_schema_violations(fx, envelopes, fn, path):
+    def apply(d):
+        d["extensions"].update(_guard_ext())
+        fn(d["extensions"][GUARD_EXT])
+
+    errs = validate_envelope(mutate(fx, envelopes["round"], apply))
+    assert iter_rule_ids(errs) == {"extension-schema"}, errs
+    assert any(path in e or "holdout" in e for e in errs), errs
+
+
+def test_guard_ship_requires_ship_rule(fx, envelopes):
+    assert envelopes["round"]["decision"]["outcome"] == "ship"
+    bad = _guard_ext(ship=(False, ["delivered_violation_rate 0 not below incumbent 0"]))
+    doc = mutate(fx, envelopes["round"], lambda d: d["extensions"].update(bad))
+    errs = validate_envelope(doc)
+    assert iter_rule_ids(errs) == {"guard"} and "delivered_violation_rate" in errs[0]
+
+    def unpaired(d):
+        d["extensions"].update(_guard_ext())
+        d["extensions"][GUARD_EXT]["paired"] = False
+
+    assert rules(mutate(fx, envelopes["round"], unpaired)) == {"guard"}
+
+
+def test_guard_ext_key_matches_rulespec():
+    from ci_lab.rulespec import OES_GUARD_EXT
+
+    assert GUARD_EXT == OES_GUARD_EXT

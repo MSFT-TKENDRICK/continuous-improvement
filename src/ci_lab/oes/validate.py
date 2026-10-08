@@ -3,11 +3,12 @@
 ``validate_envelope(doc)`` returns a list of human-readable errors (empty = valid):
 
 1. ``[schema]`` the vendored official OES 0.1.0 JSON Schema (draft 2020-12, formats checked);
-2. ``[extension-schema]`` our extension schemas for ``extensions["com.microsoft.ci.rrsi"|"com.microsoft.ci.sleep"]``
+2. ``[extension-schema]`` our extension schemas for
+   ``extensions["com.microsoft.ci.rrsi"|"com.microsoft.ci.sleep"|"com.microsoft.ci.guard"]``
    (unknown extension keys are ignored, as OES requires);
 3. ci_lab semantic rules (each error is prefixed with its rule id in brackets):
    ``schema-version``, ``content-hash``, ``result-hash``, ``baseline``, ``references``,
-   ``decision``, ``non-compensatory``, ``rrsi``, ``holdout-looks``, ``confirm``, ``sleep``.
+   ``decision``, ``non-compensatory``, ``rrsi``, ``holdout-looks``, ``confirm``, ``sleep``, ``guard``.
 """
 
 from __future__ import annotations
@@ -24,11 +25,12 @@ from jsonschema import Draft202012Validator, FormatChecker
 from jsonschema.exceptions import ValidationError
 
 from . import canonical
-from .models import NON_COMPENSATORY, OES_VERSION, RRSI_EXT, SLEEP_EXT
+from .models import GUARD_EXT, NON_COMPENSATORY, OES_VERSION, RRSI_EXT, SLEEP_EXT
 
 CORE_SCHEMA = "openexperiment-0.1.0.schema.json"
 EXTENSION_SCHEMAS = {RRSI_EXT: "ext-com.microsoft.ci.rrsi.schema.json",
-                     SLEEP_EXT: "ext-com.microsoft.ci.sleep.schema.json"}
+                     SLEEP_EXT: "ext-com.microsoft.ci.sleep.schema.json",
+                     GUARD_EXT: "ext-com.microsoft.ci.guard.schema.json"}
 OUR_OUTCOMES = ("ship", "do_not_ship", "rerun")
 _ACTION = {"rollback": "roll_back"}
 
@@ -251,16 +253,7 @@ def _rule_rrsi(doc: Mapping[str, Any], look_counts: Mapping[str, int] | None) ->
             if outcome == "ship" and ext.get("ciLowerBound") != cands.get(winner, {}).get("ciLowerBound"):
                 errs.append("[rrsi] ciLowerBound must equal the winner candidate's ciLowerBound")
     holdout = _dict(ext.get("holdout"))
-    if holdout:
-        used, planned = holdout.get("looksUsed", 0), holdout.get("plannedLooks", 1)
-        if used > planned:
-            errs.append(f"[holdout-looks] held-out looks {used} exceed planned {planned}")
-        if kind == "confirm" and used < 1:
-            errs.append("[holdout-looks] a confirmation is itself a look (looksUsed >= 1)")
-        ledger = (look_counts or {}).get(holdout.get("datasetHash", ""))
-        if ledger is not None and ledger > planned:
-            errs.append(f"[holdout-looks] look ledger records {ledger} looks at {holdout.get('datasetHash')} "
-                        f"(planned {planned})")
+    errs += _holdout_errors(holdout, look_counts, confirm=kind == "confirm")
     if kind == "confirm":
         pre = _dict(ext.get("preRegistration"))
         stats = _dict(pre.get("stats"))
@@ -274,6 +267,39 @@ def _rule_rrsi(doc: Mapping[str, Any], look_counts: Mapping[str, int] | None) ->
                 errs.append(f"[confirm] ship requires pValue < alpha ({p!r} vs {pre.get('alpha')!r})")
             if not isinstance(lo, (int, float)) or lo <= 0:
                 errs.append(f"[confirm] ship requires a positive CI lower bound (got {lo!r})")
+    return errs
+
+
+def _holdout_errors(holdout: Mapping[str, Any], look_counts: Mapping[str, int] | None, *,
+                    confirm: bool) -> list[str]:
+    if not holdout:
+        return []
+    errs = []
+    used, planned = holdout.get("looksUsed", 0), holdout.get("plannedLooks", 1)
+    if used > planned:
+        errs.append(f"[holdout-looks] held-out looks {used} exceed planned {planned}")
+    if confirm and used < 1:
+        errs.append("[holdout-looks] a confirmation is itself a look (looksUsed >= 1)")
+    ledger = (look_counts or {}).get(holdout.get("datasetHash", ""))
+    if ledger is not None and ledger > planned:
+        errs.append(f"[holdout-looks] look ledger records {ledger} looks at {holdout.get('datasetHash')} "
+                    f"(planned {planned})")
+    return errs
+
+
+def _rule_guard(doc: Mapping[str, Any], look_counts: Mapping[str, int] | None) -> list[str]:
+    """v2.4 §13: a shipped guard bundle must have passed its paired ship rule (B1); guard
+    evals off the evolve split are C15 held-out looks and share the global look budget."""
+    ext = _dict(doc.get("extensions")).get(GUARD_EXT)
+    if not isinstance(ext, dict):
+        return []
+    errs = _holdout_errors(_dict(ext.get("holdout")), look_counts, confirm=bool(ext.get("holdoutLook")))
+    if _dict(doc.get("decision")).get("outcome") == "ship":
+        if not ext.get("paired"):
+            errs.append("[guard] ship requires a paired guard-off/on evaluation")
+        ship = ext.get("ship")
+        if isinstance(ship, dict) and not ship.get("ok"):
+            errs.append(f"[guard] ship contradicts the guard ship rule: {'; '.join(ship.get('reasons') or ())}")
     return errs
 
 
@@ -330,6 +356,8 @@ def validate_envelope(doc: Any, *, look_counts: Mapping[str, int] | None = None)
         errors += _rule_rrsi(doc, look_counts)
     if ext_ok.get(SLEEP_EXT):
         errors += _rule_sleep(doc)
+    if ext_ok.get(GUARD_EXT):
+        errors += _rule_guard(doc, look_counts)
     return errors
 
 

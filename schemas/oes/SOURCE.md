@@ -26,6 +26,7 @@ type and no supersedes/lineage field — those live in our extensions below.
 |---|---|---|
 | `ext-com.microsoft.ci.rrsi.schema.json` | `extensions["com.microsoft.ci.rrsi"]` | RRSI campaign/round/calibration/confirmation record |
 | `ext-com.microsoft.ci.sleep.schema.json` | `extensions["com.microsoft.ci.sleep"]` | SkillOpt-Sleep nightly consolidation record |
+| `ext-com.microsoft.ci.guard.schema.json` | `extensions["com.microsoft.ci.guard"]` | Paired guard-off/on eval of a guard rule bundle (v2.4 §13; `lessons_arm.envelope.guard_extension`) |
 
-Both are draft 2020-12, versioned by their required `version` field (currently `0.1.0`), closed
+All are draft 2020-12, versioned by their required `version` field (currently `0.1.0`), closed
 (`additionalProperties: false`) so typos are caught by `ci-lab oes validate`.

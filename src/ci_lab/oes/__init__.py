@@ -12,10 +12,18 @@ from .build import (
                     summarize,
 )
 from .canonical import canonical_json, content_hash, seal
-from .models import NON_COMPENSATORY, OES_VERSION, RRSI_EXT, SLEEP_EXT, Envelope
+from .models import (
+                    GUARD_EXT,
+                    NON_COMPENSATORY,
+                    OES_VERSION,
+                    RRSI_EXT,
+                    SLEEP_EXT,
+                    Envelope,
+)
 from .validate import validate_envelope, validate_file
 
 __all__ = [
+                    "GUARD_EXT",
                     "NON_COMPENSATORY",
                     "OES_VERSION",
                     "RRSI_EXT",

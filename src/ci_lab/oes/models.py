@@ -19,6 +19,7 @@ from pydantic.alias_generators import to_camel
 OES_VERSION = "0.1.0"
 RRSI_EXT = "com.microsoft.ci.rrsi"
 SLEEP_EXT = "com.microsoft.ci.sleep"
+GUARD_EXT = "com.microsoft.ci.guard"  # == rulespec.OES_GUARD_EXT (v2.4 §13; built by lessons_arm.envelope)
 EXT_VERSION = "0.1.0"
 # Metric-level vendor flag (OES items are open objects; namespaced like `growthbook:*`).
 NON_COMPENSATORY = "com.microsoft.ci:nonCompensatory"
