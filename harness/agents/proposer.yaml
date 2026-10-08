@@ -56,7 +56,7 @@ x-ci:
   instructions_files: [../prompts/common.md, ../prompts/proposer.md]
   terminal_tool: submit_proposal_done
   documents: [brief, analysis, history, critique]
-  skills_paths: [third_party/agent-lightning-skill/skills]
+  skills_paths: [third_party/agent-lightning-skill/skills, ../skills]
   subagents: [failure_analyst]
   subagent_instructions: |
     ## Background agents (read-only)
