@@ -121,8 +121,8 @@ class DspyReflectionLM:
     def __call__(self, prompt: str | list[dict[str, Any]], **call_kwargs: Any) -> str:
         kw: dict[str, Any] = {"messages": prompt} if isinstance(prompt, list) else {"prompt": prompt}
         kw.update(call_kwargs)
-        if headers := obs.carrier():
-            kw["extra_headers"] = headers  # per-request trace propagation (§12.5)
+        if (headers := obs.carrier()) and isinstance(getattr(self.lm, "_engine_spec", None), str):
+            kw["extra_headers"] = headers  # per-request trace propagation (§12.5); HTTP engines only
         out = self.lm(**kw)
         self.calls += 1
         first = out[0] if out else ""

@@ -133,3 +133,24 @@ def test_async_scorer_runs_on_caller_loop():
 
     res, loop = run(go())
     assert loops and all(lp is loop for lp in loops)
+
+
+def test_reflection_lm_propagates_trace_headers_only_to_http_engines(monkeypatch):
+    from ci_lab import obs
+    from ci_lab.optim.gepa import DspyReflectionLM
+
+    class HttpLM:
+        _engine_spec = "litellm"
+
+        def __init__(self):
+            self.kw = []
+
+        def __call__(self, **kw):
+            self.kw.append(kw)
+            return ["ok"]
+
+    monkeypatch.setattr(obs, "carrier", lambda: {"traceparent": "00-abc-def-01"})
+    http = HttpLM()
+    assert DspyReflectionLM(http)("p") == "ok"
+    assert http.kw == [{"prompt": "p", "extra_headers": {"traceparent": "00-abc-def-01"}}]
+    assert isinstance(DspyReflectionLM(fake_lm("z"))("p"), str)  # DummyEngine: client kwargs withheld
