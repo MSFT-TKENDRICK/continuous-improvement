@@ -1,13 +1,16 @@
 """Arm strategy registry (design §11.2): ``get_strategy(directive.strategy, **deps)``.
 
-Strategies: ``agent`` (MAF meta-agent proposer), ``gepa`` (GEPA over text components),
-``skillopt`` (SkillOpt-Sleep on skill markdown). Every strategy emits a ``ci.optimizer``
-span, honours ``ArmDirective.edit_budget`` and returns plain :class:`~ci_lab.contracts.Edit`
-commits that go through the same critic/ASSERT/RRSI/OES gates. Importing this package
-does not import dspy/gepa/skillopt_sleep (C26).
+Strategies: ``agent`` (MAF meta-agent proposer), ``gepa`` (DSPy GEPA over text components,
+``ci_lab.optim``), ``skillopt`` (SkillOpt-Sleep on skill markdown) and ``guard`` (v2.4 §13,
+``ci_lab.lessons_arm``; registered lazily on first use). Every strategy emits a
+``ci.optimizer`` span, honours ``ArmDirective.edit_budget`` and returns plain
+:class:`~ci_lab.contracts.Edit` commits that go through the same critic/ASSERT/RRSI/OES
+gates. Importing this package does not import dspy/gepa/skillopt_sleep (C26) or the guard
+arm.
 """
 from __future__ import annotations
 
+import importlib
 import inspect
 from collections.abc import Callable
 from typing import Any
@@ -23,7 +26,8 @@ _FACTORIES: dict[str, Callable[..., ArmStrategy]] = {
     "gepa": GepaStrategy,
     "skillopt": SkillOptStrategy,
 }
-EXTERNAL = {"guard": "ci_lab.lessons"}  # v2.4 §13: provided by another module via register_strategy
+# Strategies provided by another module: ``<module>.register()`` calls ``register_strategy``.
+EXTERNAL = {"guard": "ci_lab.lessons_arm.strategy"}  # v2.4 §13 (writes harness/guards/*.yaml only)
 
 
 class UnknownStrategy(KeyError):
@@ -50,10 +54,34 @@ def _accepted(factory: Callable[..., Any]) -> set[str] | None:
     return {n for n, p in params.items() if p.kind in (p.KEYWORD_ONLY, p.POSITIONAL_OR_KEYWORD)} - {"self"}
 
 
+def _load_external(name: str) -> None:
+    module = EXTERNAL.get(name)
+    if module is None or name in _FACTORIES:
+        return
+    try:
+        mod = importlib.import_module(module)
+    except ImportError as exc:
+        raise UnknownStrategy(f"arm strategy {name!r}: cannot import {module} ({exc})") from exc
+    mod.register()
+
+
+def available() -> tuple[str, ...]:
+    """Strategy names that resolve now (registering every importable ``EXTERNAL`` one)."""
+    for name in EXTERNAL:
+        try:
+            _load_external(name)
+        except UnknownStrategy:
+            continue
+    return tuple(n for n in STRATEGIES if n in _FACTORIES)
+
+
 def get_strategy(name: str, **deps: Any) -> ArmStrategy:
     """Build strategy ``name``. ``deps`` may be a shared superset (e.g. ``proposer``,
     ``domain``, ``scorer``, ``lm``, ``committer``); each strategy takes what it accepts.
-    Missing required deps raise ``TypeError``."""
+    ``EXTERNAL`` strategies are imported and registered on first use. Missing required deps
+    raise ``TypeError``."""
+    if name in STRATEGIES:
+        _load_external(name)
     try:
         factory = _FACTORIES[name]
     except KeyError:
@@ -65,5 +93,5 @@ def get_strategy(name: str, **deps: Any) -> ArmStrategy:
     return factory(**{k: v for k, v in deps.items() if accepted is None or k in accepted})
 
 
-__all__ = ["AgentStrategy", "EditBudgetExceeded", "GepaStrategy", "STRATEGIES", "SkillOptStrategy",
-           "UnknownStrategy", "get_strategy", "git_commit", "register_strategy"]
+__all__ = ["EXTERNAL", "AgentStrategy", "EditBudgetExceeded", "GepaStrategy", "STRATEGIES", "SkillOptStrategy",
+           "UnknownStrategy", "available", "get_strategy", "git_commit", "register_strategy"]

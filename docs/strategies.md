@@ -13,9 +13,12 @@ only the keyword arguments its constructor accepts.
 
 - An unknown name raises `UnknownStrategy` (a `KeyError`).
 - A missing required dependency raises `TypeError`.
-- `guard` (contracts v2.4, §13) is in `STRATEGIES` but is provided by `ci_lab.lessons`.
-  That module calls `register_strategy("guard", factory)`. Until it registers,
-  `get_strategy("guard")` raises `UnknownStrategy`.
+- `guard` (contracts v2.4, §13) is provided by `ci_lab.lessons_arm.strategy`
+  (`EXTERNAL["guard"]`). The first `get_strategy("guard", ...)` imports that module and
+  calls its `register()`, which calls `register_strategy("guard", GuardStrategy)`. If the
+  import fails, `get_strategy("guard")` raises `UnknownStrategy`. `available()` lists the
+  names that resolve. `gepa` is the DSPy-based strategy (`ci_lab.optim`); there is no
+  separate `dspy` name.
 - Text strategies treat `**/harness/guards/**` as frozen (§13 B2), so only the `guard`
   strategy can write guard rule bundles.
 

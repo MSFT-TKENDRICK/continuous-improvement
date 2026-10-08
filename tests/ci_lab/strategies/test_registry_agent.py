@@ -62,11 +62,15 @@ def test_registry_builds_each_strategy_from_shared_deps(domain):
 
 def test_registry_external_guard_strategy(monkeypatch):
     import ci_lab.strategies as reg
+    from ci_lab.lessons_arm.strategy import GuardStrategy
 
     monkeypatch.setattr(reg, "_FACTORIES", dict(reg._FACTORIES))
-    assert "guard" in STRATEGIES
-    with pytest.raises(UnknownStrategy, match="ci_lab.lessons"):
-        get_strategy("guard")
+    reg._FACTORIES.pop("guard", None)
+    assert "guard" in STRATEGIES and reg.EXTERNAL["guard"] == "ci_lab.lessons_arm.strategy"
+    built = get_strategy("guard", write_mode="shadow", proposer=None, lm=object())
+    assert isinstance(built, GuardStrategy) and built.name == "guard"
+    assert reg._FACTORIES["guard"] is GuardStrategy
+    assert set(reg.available()) == set(STRATEGIES)
 
     class Guard:
         name = "guard"
@@ -78,6 +82,16 @@ def test_registry_external_guard_strategy(monkeypatch):
     assert get_strategy("guard", bundle="b", proposer=None).bundle == "b"
     with pytest.raises(UnknownStrategy):
         register_strategy("evolution", Guard)
+
+
+def test_registry_external_import_failure(monkeypatch):
+    import ci_lab.strategies as reg
+
+    monkeypatch.setattr(reg, "_FACTORIES", {k: v for k, v in reg._FACTORIES.items() if k != "guard"})
+    monkeypatch.setitem(reg.EXTERNAL, "guard", "ci_lab.no_such_module_xyz")
+    with pytest.raises(UnknownStrategy, match="no_such_module_xyz"):
+        get_strategy("guard")
+    assert "guard" not in reg.available()
 
 
 def test_registry_errors():

@@ -82,7 +82,7 @@ The lesson stays in the registry.
 - `# HOOK(M14)`: `default_templates()` must contain `precondition.prior_call`, `precondition.state_flag`, `arg.constraint`, `amount.not_exceed_prior` and `response.redact_pattern` (see `templates.catalog_gaps`).
 - `# HOOK(integration)`:
   - add `"lessons_arm"` to `ci_lab.cli.COMMAND_MODULES`, which adds the CLI group `lessons-arm`;
-  - map `ci_lab.strategies` `EXTERNAL["guard"]` to `ci_lab.lessons_arm.strategy`, whose `register()` calls `register_strategy("guard", factory)`.
+  - done (21b): `ci_lab.strategies.EXTERNAL["guard"]` is `ci_lab.lessons_arm.strategy`; `get_strategy("guard")` imports it lazily and calls `register()`.
 
 ## Contract change requests
 

@@ -376,10 +376,9 @@ def write_report(ctx: ArmContext, report: GuardReport) -> Path:
 
 
 def register() -> bool:
-    """Register ``guard`` with M10's ``ci_lab.strategies`` registry when it is installed.
+    """Register ``guard`` with M10's ``ci_lab.strategies`` registry.
 
-    # HOOK(integration): ``ci_lab.strategies`` should call this lazily (its ``EXTERNAL`` map
-    # points ``guard`` at ``ci_lab.lessons``; it should be ``ci_lab.lessons_arm.strategy``).
+    ``ci_lab.strategies.get_strategy("guard")`` calls this lazily (``EXTERNAL["guard"]``).
     """
     try:
         from ci_lab.strategies import register_strategy  # type: ignore[import-not-found]
