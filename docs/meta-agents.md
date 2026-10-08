@@ -31,7 +31,8 @@ frozen in `src/ci_lab/meta/specs/` (the critic reads a frozen copy of the common
 - `runtime: harness`;
 - the model alias, which is resolved by `contracts.ChatClientFactory`;
 - the harness options (todo, mode, file-memory and web-search disabled);
-- `max_nudges` re-prompts if an agent stops without submitting.
+- `max_nudges` re-prompts if an agent stops without submitting. For the evolvable agents, `harness/loops/loops.yaml`
+  overrides it and adds `max_tool_calls`/`max_turns` (clamped to frozen caps; see [harness-tree.md](harness-tree.md)).
 
 Each spec uses provider `GitHubCopilot`. Its `tools[].bindings` names are resolved against the per-run binding dict.
 
