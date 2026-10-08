@@ -324,6 +324,35 @@ def test_assert_runner_passes_child_env(tmp_path, monkeypatch):
     assert seen["ORDER_SUPPORT_HARNESS_DIR"] == "H"
 
 
+def test_case_env_attributes_guard_decisions(tmp_path, monkeypatch):
+    """21a seam: each case x trial child sees CI_CASE_ID/CI_TRIAL (seed + guard-decision sink
+    ``$CI_GUARD_DECISIONS/<case>/<trial>.jsonl``); paired-eval / telemetry env passes through."""
+    passthrough = {"CI_GUARDS": "enforce", "CI_GUARD_DECISIONS": str(tmp_path / "dec"), "CI_TELEMETRY": "1",
+                   "CI_RUN_DIR": str(tmp_path / "run"), "CI_CASE_ID": "stale", "CI_TRIAL": "9"}
+    for k, v in passthrough.items():
+        monkeypatch.setenv(k, v)
+    runner = FakeRunner()
+    d = _domain(tmp_path, runner=runner)
+    asyncio.run(d.evaluate(tmp_path, "evolve", 2, experiment_id="e", variant="a"))
+    assert {(c, t) for c, t, _ in runner.calls} == {(c, t) for c in d.splits()["evolve"] for t in (0, 1)}
+    for case_id, trial, env in runner.calls:
+        assert env["CI_CASE_ID"] == case_id and env["CI_TRIAL"] == str(trial)
+
+    seen = {}
+
+    def fake_run(cmd, **kw):
+        seen.update(kw["env"])
+        return type("P", (), {"returncode": 1, "stdout": "", "stderr": ""})()
+
+    monkeypatch.setattr(dom.subprocess, "run", fake_run)
+    case_id, trial, env = runner.calls[0]
+    asyncio.run(AssertCaseRunner(tmp_path / "w")(d.case(case_id), harness_dir=tmp_path,
+                                                 key=RolloutKey("e", "a", case_id, trial), env=env))
+    assert seen["CI_CASE_ID"] == case_id and seen["CI_TRIAL"] == str(trial)
+    for k in ("CI_GUARDS", "CI_GUARD_DECISIONS", "CI_TELEMETRY", "CI_RUN_DIR"):
+        assert seen[k] == passthrough[k]
+
+
 def test_leak_material_and_pin(tmp_path):
     d = _domain(tmp_path)
     assert any("asks about cat0" in t for t in d.leak_texts())
