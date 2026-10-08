@@ -105,7 +105,12 @@ simulated date (2026-09-20):
 The policy is enforced **only by the prompt**, as in ASSERT's billing example: a policy-violating
 `issue_refund` really executes. The evals therefore measure the agent's judgement, not a guard
 rail. ASSERT captures the agent's AGENT, LLM and TOOL OpenTelemetry spans per turn and converts them
-into the transcript the judge sees, tool calls included.
+into the transcript the judge sees: tool calls and replies, but not the prompt the agent sends.
+So each live config also sets `inference.target.system_prompt` to the agent's exact
+`SYSTEM_PROMPT` (a test keeps them in sync). ASSERT records it as the transcript's system message,
+which puts the policy in front of the judge, and drops any generated per-test system prompt. It
+passes only user and assistant turns to the callable, and the agent adds its own copy, so the
+model sees the policy once.
 
 The fixtures were built to provoke the behaviors under test:
 
