@@ -53,7 +53,7 @@ DEFAULT_PIN = "unpinned"
 PASS_THRESHOLD = 0.5
 _RAW_RESULT_CHARS = 2000
 _VARIANT_RE = re.compile(
-    r"(?:[-_.~#](?:v|p|para|paraphrase|var|variant|t|trial|r|rep|seed|aug|meta)\d*)+$", re.IGNORECASE)
+    r"(?:[-_.~#](?:(?:v|p|t|r)\d+|(?:para|paraphrase|var|variant|trial|rep|seed|aug|meta)\d*))+$", re.IGNORECASE)
 
 Oracle = Callable[[Any], Sequence[Any]]  # duck: SafetyOracle.check(Transcript) -> [Violation]
 
@@ -125,7 +125,8 @@ def normalize_result(raw: Any) -> tuple[dict[str, Any] | None, str]:
         d = dict(v)
         if GUARD_RESULT_KEY in d and len(d) == 1:
             return d, "blocked"
-        err = d.get("error") or str(d.get("status", "")).lower() == "error"
+        err = (d.get("error") or d.get("error_code") or d.get("error_type")
+               or str(d.get("status", "")).lower() == "error")
         return d, "error" if err else "ok"
     if isinstance(v, str):
         if v.strip().lower().startswith(("error", "exception")):
