@@ -150,7 +150,7 @@ For `OFFLINE`:
 
 - `base_url` comes from the `base_url=` argument (for example an AGL proxy). Otherwise it comes from `OPENAI_API_BASE` or `OPENAI_BASE_URL`; if none is set, a `ValueError` is raised.
 - The API key comes from the `api_key=` argument, then `OPENAI_API_KEY`, then `"local"`.
-- The headers `x-ci-purpose` and `x-ci-rollout-id` are sent.
+- The headers `x-ci-purpose` and `x-ci-rollout-id` are sent, plus a per-request W3C `traceparent` from `obs.carrier()`. The trace header is added only when the factory builds the `async_client`; if you pass your own `async_client=`, the factory doesn't add it.
 
 Any extra `**kw` arguments are passed to the client constructor.
 
@@ -188,6 +188,14 @@ litellm.completion(model="openai/gpt-5-mini", api_base="http://127.0.0.1:8765/v1
 **Ignored parameters.** `temperature`, `seed`, `top_p`, `max_tokens` and similar parameters are accepted but ignored. They are listed in the `x-ci-ignored-params` response header.
 
 **Scope.** Each request runs in its own `copilot_scope`, so requests never share sessions.
+
+**Tracing.** copilot-serve is a long-lived service, so it never inherits a pinned `TRACEPARENT` (design §12.5). Each request is handled inside `obs.use_carrier(request.headers)`, so the request joins the trace of whoever sent its W3C `traceparent` header. Clients add that header per request with `obs.carrier()`; the OFFLINE factory client does this automatically through an httpx request hook. The Copilot CLI subprocess also gets `service_env()`, which is the current environment minus `TRACEPARENT`/`TRACESTATE`.
+
+**Spawning.** `serve.spawn(model=..., key_file=...)` starts `ci-lab copilot-serve` as a child process:
+
+- It picks a free loopback port unless one is given.
+- It waits until `/v1/models` answers.
+- It returns a `CopilotServeProcess` with `base_url`, `api_key`, `proc` and `log_file` (`<key_file>.log`). The object is a context manager and has `close()`.
 
 **LiteLLM caveat.** LiteLLM itself rejects `temperature != 1` for `gpt-5*` model names before sending the request. Callers need `drop_params=True` or must omit `temperature`.
 

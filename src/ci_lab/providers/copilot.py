@@ -28,6 +28,7 @@ import contextlib
 import hashlib
 import json
 import logging
+import os
 import re
 import shutil
 import tempfile
@@ -52,6 +53,8 @@ from agent_framework import (
 from agent_framework.exceptions import ChatClientException, ChatClientInvalidResponseException
 from agent_framework.observability import ChatTelemetryLayer
 
+from ci_lab import obs
+
 logger = logging.getLogger(__name__)
 
 __all__ = [
@@ -60,6 +63,7 @@ __all__ = [
     "CopilotTimeoutError",
     "IGNORED_OPTIONS",
     "copilot_scope",
+    "service_env",
     "session_scope",
 ]
 
@@ -75,6 +79,11 @@ def copilot_scope(scope_id: str) -> Iterator[str]:
         yield str(scope_id)
     finally:
         session_scope.reset(token)
+
+
+def service_env() -> dict[str, str]:
+    """Environment for a long-lived child service: the current env minus any pinned W3C trace context."""
+    return {k: v for k, v in os.environ.items() if k not in (obs.TRACEPARENT_ENV, "TRACESTATE")}
 
 
 IGNORED_OPTIONS = ("temperature", "top_p", "seed", "frequency_penalty", "presence_penalty", "max_tokens",
@@ -321,7 +330,9 @@ class CopilotChatClient(FunctionInvocationLayer, ChatMiddlewareLayer, ChatTeleme
             if not self._base_directory:
                 self._base_directory = tempfile.mkdtemp(prefix="ci-lab-copilot-")
                 self._owns_base_dir = True
-            self._sdk = CopilotClient(mode="empty", base_directory=self._base_directory, log_level="error")
+            # The Copilot CLI is a long-lived child: never pin a startup TRACEPARENT on it (design §12.5).
+            self._sdk = CopilotClient(mode="empty", base_directory=self._base_directory, log_level="error",
+                                      env=service_env())
             self._owns_sdk = True
         if not self._sdk_started:
             start = getattr(self._sdk, "start", None)

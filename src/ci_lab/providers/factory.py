@@ -34,6 +34,7 @@ def make_chat_client(*, profile: Profile | str, model: str, purpose: Purpose,
         return CopilotChatClient(model=model, **kw)
     if profile is Profile.OFFLINE:
         from agent_framework_openai import OpenAIChatCompletionClient
+        from openai import AsyncOpenAI, DefaultAsyncHttpxClient
 
         base_url = kw.pop("base_url", None) or os.environ.get("OPENAI_API_BASE") or os.environ.get("OPENAI_BASE_URL")
         if not base_url:
@@ -42,6 +43,11 @@ def make_chat_client(*, profile: Profile | str, model: str, purpose: Purpose,
         headers = {"x-ci-purpose": str(purpose), **(kw.pop("default_headers", None) or {})}
         if rollout is not None:
             headers.setdefault("x-ci-rollout-id", rollout.rollout_id)
+        if kw.get("async_client") is None:
+            # Per-request W3C trace context so long-lived servers (AGL proxy, copilot-serve) join our trace.
+            kw["async_client"] = AsyncOpenAI(api_key=api_key, base_url=base_url, default_headers=headers,
+                                             http_client=DefaultAsyncHttpxClient(
+                                                 event_hooks={"request": [_inject_trace_context]}))
         return OpenAIChatCompletionClient(model=model, api_key=api_key, base_url=base_url, default_headers=headers,
                                           **kw)
     if profile is Profile.FAKE:
@@ -52,3 +58,10 @@ def make_chat_client(*, profile: Profile | str, model: str, purpose: Purpose,
 
 
 _: ChatClientFactory = make_chat_client
+
+
+async def _inject_trace_context(request: Any) -> None:
+    from ci_lab import obs
+
+    for k, v in obs.carrier().items():
+        request.headers[k] = v

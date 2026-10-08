@@ -27,6 +27,8 @@ def _run(args: argparse.Namespace) -> int:
     except ValueError as exc:
         print(f"error: {exc}")
         return 2
+    # Long-lived service: trace context arrives per request (obs.use_carrier in serve.py), not via
+    # TRACEPARENT at startup. Exporters come from ci_lab.telemetry.setup (M12) when installed.
     serve(host=args.host, port=args.port, model=args.model, key_file=args.key_file,
           reasoning_effort=args.reasoning_effort, timeout_s=args.timeout_s)
     return 0

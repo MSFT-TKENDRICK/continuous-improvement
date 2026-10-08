@@ -12,7 +12,7 @@ os.environ.setdefault("LITELLM_LOCAL_MODEL_COST_MAP", "True")
 
 from fastapi.testclient import TestClient  # noqa: E402
 
-from ci_lab import cli  # noqa: E402
+from ci_lab import cli, obs  # noqa: E402
 from ci_lab.providers.copilot import CopilotChatClient  # noqa: E402
 from ci_lab.providers.fake_sdk import FakeCopilotClient, Hang  # noqa: E402
 from ci_lab.providers.serve import check_loopback, create_app, write_key_file  # noqa: E402
@@ -199,3 +199,65 @@ def test_offline_profile_client_talks_to_copilot_serve():
                                   api_key=KEY)
         resp = asyncio.run(client.get_response("hi"))
     assert resp.text == "via openai client"
+
+class _RecordingClient:
+    model = "gpt-5-mini"
+
+    def __init__(self):
+        self.seen = []
+
+    async def get_response(self, messages, options=None):
+        from agent_framework import ChatResponse, Message
+
+        self.seen.append(obs.current_ids())
+        return ChatResponse(messages=[Message("assistant", ["ok"])], model="served")
+
+
+def test_trace_context_propagates_per_request():
+    from opentelemetry.sdk.trace import TracerProvider
+
+    from ci_lab.providers.factory import make_chat_client
+
+    stub = _RecordingClient()
+    app = create_app(stub, api_key=KEY)
+    tracer = TracerProvider().get_tracer("test")
+    with running(app) as base:
+        client = make_chat_client(profile="offline", model="gpt-5-mini", purpose="judge", base_url=base, api_key=KEY)
+
+        async def call(name):
+            with tracer.start_as_current_span(name) as s:
+                await client.get_response("hi")
+                return format(s.get_span_context().trace_id, "032x")
+
+        t1 = asyncio.run(call("a"))
+        t2 = asyncio.run(call("b"))
+        asyncio.run(client.get_response("no span"))
+    assert t1 != t2
+    assert [ids[0] if ids else None for ids in stub.seen] == [t1, t2, None]
+
+
+def test_service_env_strips_pinned_trace_context(monkeypatch):
+    from ci_lab.providers.copilot import service_env
+
+    monkeypatch.setenv("TRACEPARENT", "00-" + "1" * 32 + "-" + "2" * 16 + "-01")
+    monkeypatch.setenv("TRACESTATE", "x=y")
+    env = service_env()
+    assert "TRACEPARENT" not in env and "TRACESTATE" not in env and env["PATH"] == os.environ["PATH"]
+
+
+def test_spawn_starts_loopback_child(tmp_path, monkeypatch):
+    from ci_lab.providers.serve import spawn
+
+    import httpx
+
+    monkeypatch.setenv("TRACEPARENT", "00-" + "1" * 32 + "-" + "2" * 16 + "-01")
+    with pytest.raises(ValueError):
+        spawn(model="gpt-5-mini", key_file=tmp_path / "k", host="0.0.0.0")
+    with spawn(model="gpt-5-mini", key_file=tmp_path / "key", ready_timeout_s=180) as srv:
+        assert srv.base_url.startswith("http://127.0.0.1:") and srv.proc.poll() is None
+        assert srv.api_key == (tmp_path / "key").read_text()
+        r = httpx.get(f"{srv.base_url}/models", headers={"Authorization": "Bearer " + srv.api_key})
+        assert r.json()["data"][0]["id"] == "gpt-5-mini"
+        assert httpx.get(f"{srv.base_url}/models").status_code == 401
+    assert srv.proc.poll() is not None
+    assert srv.api_key not in srv.log_file.read_text(errors="replace")

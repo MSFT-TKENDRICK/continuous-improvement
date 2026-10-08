@@ -19,9 +19,13 @@ from __future__ import annotations
 import ipaddress
 import os
 import secrets
+import socket
+import subprocess
+import sys
 import time
 import uuid
 from contextlib import asynccontextmanager
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -30,9 +34,10 @@ from agent_framework.exceptions import ChatClientException, ChatClientInvalidRes
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
-from ci_lab.providers.copilot import CopilotChatClient, CopilotTimeoutError, copilot_scope
+from ci_lab import obs
+from ci_lab.providers.copilot import CopilotChatClient, CopilotTimeoutError, copilot_scope, service_env
 
-__all__ = ["IGNORED_PARAMS", "check_loopback", "create_app", "serve"]
+__all__ = ["IGNORED_PARAMS", "CopilotServeProcess", "check_loopback", "create_app", "serve", "spawn"]
 
 IGNORED_PARAMS = frozenset({
     "temperature", "top_p", "seed", "frequency_penalty", "presence_penalty", "max_tokens",
@@ -164,7 +169,8 @@ def create_app(client: Any, *, api_key: str, close_client: bool = False) -> Any:
         headers = {"x-ci-ignored-params": ",".join(ignored)} if ignored else {}
 
         try:
-            with copilot_scope(f"copilot-serve-{uuid.uuid4().hex}"):
+            # Long-lived service: join the caller's trace per request (W3C traceparent header).
+            with obs.use_carrier(request.headers), copilot_scope(f"copilot-serve-{uuid.uuid4().hex}"):
                 response = await client.get_response(messages, options=options)
         except (CopilotTimeoutError, TimeoutError) as exc:
             return _error(504, f"Upstream Copilot timeout: {exc}", type_="timeout_error", code="timeout",
@@ -216,3 +222,85 @@ def serve(*, host: str = "127.0.0.1", port: int, model: str, key_file: str | os.
     app = create_app(client, api_key=key, close_client=owned)
     print(f"copilot-serve: http://{host}:{port}/v1 model={model} key-file={Path(key_file).resolve()}", flush=True)
     uvicorn.run(app, host=host, port=port, log_level="warning", access_log=False)
+
+
+@dataclass
+class CopilotServeProcess:
+    """A copilot-serve child process started by :func:`spawn`. ``api_key`` is read from the key file."""
+
+    proc: subprocess.Popen[bytes]
+    base_url: str
+    api_key: str
+    key_file: Path
+    log_file: Path
+
+    def close(self, timeout_s: float = 10.0) -> None:
+        if self.proc.poll() is None:
+            self.proc.terminate()
+            try:
+                self.proc.wait(timeout_s)
+            except subprocess.TimeoutExpired:
+                self.proc.kill()
+                self.proc.wait(timeout_s)
+
+    def __enter__(self) -> CopilotServeProcess:
+        return self
+
+    def __exit__(self, *exc: Any) -> None:
+        self.close()
+
+
+def _free_port(host: str) -> int:
+    family = socket.AF_INET6 if ":" in host else socket.AF_INET
+    with socket.socket(family) as s:
+        s.bind((host, 0))
+        return int(s.getsockname()[1])
+
+
+def spawn(*, model: str, key_file: str | os.PathLike[str], host: str = "127.0.0.1", port: int | None = None,
+          reasoning_effort: str | None = None, timeout_s: float = 300.0, ready_timeout_s: float = 60.0,
+          python: str = sys.executable) -> CopilotServeProcess:
+    """Start ``ci-lab copilot-serve`` in a child process and wait until it answers ``/v1/models``.
+
+    copilot-serve is long-lived, so it does not inherit a pinned ``TRACEPARENT``; callers
+    propagate trace context per request with ``obs.carrier()`` headers. Child output goes to
+    ``<key_file>.log``.
+    """
+    import httpx
+
+    check_loopback(host)
+    port = port or _free_port("127.0.0.1" if host == "localhost" else host.strip("[]"))
+    key_path = Path(key_file).resolve()
+    key_path.unlink(missing_ok=True)
+    args = [python, "-c", "import sys; from ci_lab.cli import main; sys.exit(main())", "copilot-serve",
+            "--host", host, "--port", str(port), "--model", model, "--key-file", str(key_path),
+            "--timeout-s", str(timeout_s)]
+    if reasoning_effort:
+        args += ["--reasoning-effort", reasoning_effort]
+    log_path = key_path.with_name(key_path.name + ".log")
+    with open(log_path, "wb") as log:
+        proc = subprocess.Popen(args, env=service_env(), stdout=log, stderr=subprocess.STDOUT)
+    url_host = f"[{host.strip('[]')}]" if ":" in host else host
+    base_url = f"http://{url_host}:{port}/v1"
+    deadline = time.monotonic() + ready_timeout_s
+    try:
+        while True:
+            if proc.poll() is not None:
+                tail = log_path.read_text(encoding="utf-8", errors="replace")[-2000:]
+                raise RuntimeError(f"copilot-serve exited with code {proc.returncode}: {tail}")
+            if time.monotonic() > deadline:
+                raise TimeoutError(f"copilot-serve did not become ready within {ready_timeout_s}s")
+            key = key_path.read_text(encoding="utf-8").strip() if key_path.exists() else ""
+            if key:
+                try:
+                    r = httpx.get(f"{base_url}/models", headers={"Authorization": f"Bearer {key}"}, timeout=2)
+                    if r.status_code == 200:
+                        return CopilotServeProcess(proc, base_url, key, key_path, log_path)
+                except httpx.HTTPError:
+                    pass
+            time.sleep(0.2)
+    except BaseException:
+        if proc.poll() is None:
+            proc.kill()
+            proc.wait(10)
+        raise
