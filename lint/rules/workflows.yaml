@@ -1,0 +1,17 @@
+# Workflow hardening lessons (design §0 I4, C9). Interpreted by `ci-lab lint` (rung R5).
+schema_version: 1
+rules:
+  - id: gha.no-pull-request-target
+    kind: gha_banned_trigger
+    triggers: [pull_request_target]
+    include: [".github/workflows/*.{yml,yaml}"]
+    message: Workflow triggered by pull_request_target (runs fork code with base-repo secrets/permissions).
+    fix: "Use `pull_request` with `permissions: contents: read`; publish from a separate trusted workflow."
+    see: design §0 I4
+
+  - id: gha.pin-actions-by-sha
+    kind: gha_pinned_sha
+    include: [".github/workflows/*.{yml,yaml}", ".github/actions/**/action.{yml,yaml}"]
+    message: Action referenced by a mutable tag/branch instead of a full commit SHA.
+    fix: "Pin `uses: owner/repo@<40-hex-sha>  # vX.Y.Z` (resolve with `gh api repos/<owner>/<repo>/git/ref/tags/<tag>`)."
+    see: design §9 C9

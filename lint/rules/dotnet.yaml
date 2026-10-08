@@ -1,0 +1,17 @@
+# No-.NET lessons (design §0 I3): declarative MAF YAML stays expression-free; no PowerFx bridges.
+schema_version: 1
+rules:
+  - id: maf.declarative-expression-free
+    kind: declarative_yaml_expression_free
+    include: ["src/**/*.{yaml,yml}", "harness/**/*.{yaml,yml}"]
+    message: Declarative workflow/agent YAML contains a PowerFx expression or control-flow action (needs .NET powerfx).
+    fix: Move branching/computation into a Python function tool (InvokeFunctionTool) and keep YAML values literal.
+    see: design §0 I3, §5
+
+  - id: dotnet.no-powerfx-imports
+    kind: banned_import
+    modules: [powerfx, pythonnet, clr, clr_loader]
+    include: ["**/*.py"]
+    message: .NET bridge imported (powerfx/pythonnet); the harness is Python-only.
+    fix: Remove the import; express the logic in Python (see `ci-lab doctor` no_dotnet).
+    see: design §0 I3
