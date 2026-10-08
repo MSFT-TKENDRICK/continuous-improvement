@@ -46,6 +46,18 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
             "order_id": {"type": "string"}, "reason": {"type": "string"}},
             "required": ["reason"]},
     }},
+    {"type": "function", "function": {
+        "name": "verify_identity",
+        # Same text as ci_lab.guards.domains.order_support.VERIFY_IDENTITY_DESCRIPTION (tested).
+        "description": "Verify the customer's identity for an order. Pass exactly the full name and the "
+                       "email address or phone number the CUSTOMER stated in the conversation (never values "
+                       "from lookup_order). Returns only {verified, order_id}; refunds require "
+                       "verified == true for the same order.",
+        "parameters": {"type": "object", "properties": {
+            "order_id": {"type": "string"}, "full_name": {"type": "string"},
+            "email_or_phone": {"type": "string"}},
+            "required": ["order_id", "full_name", "email_or_phone"]},
+    }},
 ]
 
 
@@ -90,11 +102,21 @@ def escalate_to_human(reason: str, order_id: str | None = None) -> dict[str, Any
             "order_id": order_id}
 
 
+def verify_identity(order_id: str, full_name: str, email_or_phone: str) -> dict[str, Any]:
+    """The frozen guard-domain identity check (returns only ``{verified, order_id}``, never PII)."""
+    from ci_lab.guards.domains.order_support.verify_identity import (
+        verify_identity as frozen,
+    )
+
+    return frozen(order_id, full_name, email_or_phone)
+
+
 TOOLS: dict[str, Callable[..., dict[str, Any]]] = {
     "lookup_order": lookup_order,
     "search_kb": search_kb,
     "issue_refund": issue_refund,
     "escalate_to_human": escalate_to_human,
+    "verify_identity": verify_identity,
 }
 
 

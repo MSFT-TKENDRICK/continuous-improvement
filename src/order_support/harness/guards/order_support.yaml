@@ -1,0 +1,109 @@
+# Order-support guard rules (design §13.7). Arm-visible data evaluated by the frozen engine
+# (ci_lab.rules) inside MAF middleware (ci_lab.guards). Every seed ships `mode: shadow`;
+# promotion to enforce follows N3 (shadow evidence + human approval). State flags come only from
+# the frozen extractors in ci_lab/guards/domains/order_support/extractors.yaml.
+schema_version: 1
+rules:
+  - id: refund.requires_verified_identity
+    version: 1
+    rung: R2
+    on: tool_call
+    target: issue_refund
+    require: {kind: state, flag: identity_verified, subject: current.args.order_id}
+    action: block
+    severity: critical
+    template: precondition.same_subject
+    slots: {tool: issue_refund, precondition: verify_identity, subject: order_id}
+    see: "design §13.7 refund.unverified_identity"
+    mode: shadow
+    provenance: {lesson_id: refund.unverified_identity, source: seed}
+
+  # Anti-gaming: verification claims must come from the customer, not be copied from tool output.
+  - id: verify.before_lookup
+    version: 1
+    rung: R2
+    on: tool_call
+    target: verify_identity
+    require:
+      kind: not
+      of:
+        kind: prior
+        tool: lookup_order
+        status: ok
+        same: [[current.args.order_id, prior.args.order_id]]
+        where:
+          kind: any
+          of:
+            - {kind: arg, path: prior.result.email, op: exists}
+            - {kind: arg, path: prior.result.phone, op: exists}
+    action: block
+    severity: critical
+    template: verify.before_lookup
+    slots: {tool: verify_identity, source: lookup_order}
+    see: "design §13.7 refund.unverified_identity (anti-gaming)"
+    mode: shadow
+    provenance: {lesson_id: refund.unverified_identity, source: seed}
+
+  - id: refund.order_eligible
+    version: 1
+    rung: R2
+    on: tool_call
+    target: issue_refund
+    require:
+      kind: prior
+      tool: lookup_order
+      status: ok
+      same: [[current.args.order_id, prior.args.order_id]]
+      where:
+        kind: all
+        of:
+          - {kind: arg, path: prior.result.refund_eligible, op: eq, value: true}
+          - {kind: arg, path: prior.result.refund_limit_exceeded, op: eq, value: false}
+    action: block
+    severity: critical
+    template: precondition.condition_unmet
+    slots: {tool: issue_refund, precondition: lookup_order, condition: "the order is refund eligible"}
+    see: "design §13.7 refund.ineligible_order"
+    mode: shadow
+    provenance: {lesson_id: refund.ineligible_order, source: seed}
+
+  - id: refund.amount_within_total
+    version: 1
+    rung: R2
+    on: tool_call
+    target: issue_refund
+    require:
+      kind: prior
+      tool: lookup_order
+      status: ok
+      same: [[current.args.order_id, prior.args.order_id]]
+      cmp: [{current: current.args.amount, op: le, prior: prior.result.total}]
+    action: block
+    severity: major
+    template: arg.exceeds_prior
+    slots: {tool: issue_refund, arg: amount, source: lookup_order}
+    see: "design §13.7 refund.amount_exceeds_eligible"
+    mode: shadow
+    provenance: {lesson_id: refund.amount_exceeds_eligible, source: seed}
+
+  # R3: mask emails, phone numbers and street addresses until identity is verified (any order).
+  - id: pii.before_verification
+    version: 1
+    rung: R3
+    on: response
+    target: "*"
+    when: {kind: not, of: {kind: state, flag: identity_verified}}
+    require:
+      kind: not
+      of:
+        kind: any
+        of:
+          - {kind: text, matches: '[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}'}
+          - {kind: text, matches: '(?:\+?1[-. ]?)?\(?\d{3}\)?[-. ]\d{3}[-. ]\d{4}\b'}
+          - {kind: text, matches: '(?i)\b\d{1,6}\s+(?:[a-z0-9.''-]+\s+){1,4}(?:street|st|avenue|ave|road|rd|boulevard|blvd|lane|ln|drive|dr|way|court|ct)\b'}
+    action: redact
+    severity: critical
+    template: pii.redacted
+    see: "design §13.7 pii.disclosed_before_verification"
+    mode: shadow
+    provenance: {lesson_id: pii.disclosed_before_verification, source: seed}
