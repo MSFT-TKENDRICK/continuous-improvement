@@ -10,32 +10,47 @@ declarative runner stops at the failing superstep (it swallows ``Exception``).
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import functools
 import hashlib
 import inspect
 import random
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
+from ci_lab import obs
 from ci_lab.campaign import records
 from ci_lab.campaign.deps import CampaignDeps
 from ci_lab.contracts import (
     ARM_RE,
+    ATTR_CAMPAIGN,
+    ATTR_DECISION,
+    ATTR_EXPERIMENT,
+    ATTR_SCORE,
+    ATTR_STRATEGY,
+    ATTR_VARIANT,
+    SPAN_ARM,
+    STRATEGIES,
+    ArmDirective,
     ArmResult,
     CriticVerdict,
     Edit,
     EvalResult,
+    FailureRecord,
     Profile,
     arm_branch,
     op_id,
     round_experiment_id,
 )
-from ci_lab.workflows import ARM_YAML
+from ci_lab.contracts import ArmContext as StrategyContext
+from ci_lab.workflows import ARM_YAMLS
+from ci_lab.workflows.progress import HEARTBEAT_S, Progress, Tracker
 from ci_lab.workflows.runtime import GatedAgent, StepAborted
 
 INCUMBENT = "inc"
+INCUMBENT_STRATEGY = "incumbent"  # status.json label only; not an arm strategy
 FINAL_CRITIQUE = 3  # critique_1, critique_2, critique_final
 
 
@@ -55,6 +70,13 @@ class CampaignEnv:
 
     def rel(self, *parts: str) -> str:
         return "/".join(("campaigns", self.cid, *parts))
+
+    def progress(self, eid: str, writer: str, **base: Any) -> Progress:
+        return Progress(self.run_root, eid, writer=writer, campaign_id=self.cid,
+                        heartbeat_s=float(self.hyper.get("heartbeat_s") or HEARTBEAT_S), **base)
+
+    def span_attrs(self, eid: str) -> dict[str, Any]:
+        return {ATTR_CAMPAIGN: self.cid, ATTR_EXPERIMENT: eid}
 
     def frontier(self) -> dict[str, Any]:
         frontier = self.deps.ledger.read_json(self.rel("frontier.json"))
@@ -113,25 +135,64 @@ class RoundContext:
                 "failures": begin["failures"], "history": begin["history"],
                 "analysis": records.read_json(self.analysis_path)}
 
-    def arm(self, name: str) -> ArmContext:
+    def arm(self, name: str) -> ArmRun:
         directive = next((d for d in self.begin()["directives"] if d["arm"] == name), {"arm": name})
-        return ArmContext(self, name, directive)
+        return ArmRun(self, name, directive)
 
     def arm_result(self, name: str) -> ArmResult | None:
         data = records.read_json(self.dir / name / "arm.done")
         return records.arm_from_dict(data["result"]) if data else None
 
+    @functools.cached_property
+    def progress(self) -> Progress:
+        return self.env.progress(self.eid, "round", round=self.round_no)
+
+    @property
+    def tracker(self) -> Tracker:
+        return Tracker(self.progress, self.env.span_attrs(self.eid))
+
+    def arm_state(self, arm: str, strategy: str, state: str, phase: str | None) -> None:
+        """Arm workers write their own marker (``status.d/<arm>.json``)."""
+        self.progress.as_writer(arm).write(arms={arm: {"strategy": strategy, "state": state, "phase": phase}})
+
+
+def normalize_directive(raw: Any) -> dict[str, Any]:
+    """Schedule output (``contracts.ArmDirective`` or mapping) -> JSON-able directive dict."""
+    d = asdict(raw) if isinstance(raw, ArmDirective) else dict(raw)
+    d.setdefault("strategy", "agent")
+    if d["strategy"] not in STRATEGIES:
+        raise ValueError(f"unknown arm strategy {d['strategy']!r} (expected one of {STRATEGIES})")
+    if "component_focus" in d:
+        d["component_focus"] = list(d["component_focus"] or ())
+        if not d.get("component") and d["component_focus"]:
+            d["component"] = d["component_focus"][0]
+    return d
+
+
+def directive_of(d: Mapping[str, Any]) -> ArmDirective:
+    focus = d.get("component_focus") or ([d["component"]] if d.get("component") else [])
+    return ArmDirective(arm=d["arm"], strategy=d.get("strategy", "agent"), component_focus=tuple(focus),
+                        edit_budget=int(d.get("edit_budget", d.get("budget", 1))), explore=bool(d.get("explore")))
+
 
 @dataclass
-class ArmContext:
+class ArmRun:
+    """Run-dir view of one arm of a round (not to be confused with ``contracts.ArmContext``,
+    the read-only view handed to an :class:`~ci_lab.contracts.ArmStrategy`)."""
+
     round: RoundContext
     arm: str
     directive: Mapping[str, Any]
-    reinvoke_proposer: Callable[[str], Awaitable[Any]] | None = field(default=None, repr=False)
+    reinvoke_proposer: Callable[[str, list[str]], Awaitable[Any]] | None = field(default=None, repr=False)
+    strategy_impl: Any = field(default=None, repr=False)
 
     @property
     def eid(self) -> str:
         return self.round.eid
+
+    @property
+    def strategy(self) -> str:
+        return str(self.directive.get("strategy", "agent"))
 
     @property
     def dir(self) -> Path:
@@ -143,7 +204,7 @@ class ArmContext:
 
     @property
     def proposal_path(self) -> Path:
-        """Written by the Proposer's terminal ``submit_proposal`` tool (M8a)."""
+        """Written by the Proposer's terminal ``submit_proposal`` tool (M8a) or the ``propose`` step."""
         return self.dir / "proposal.json"
 
     @property
@@ -161,20 +222,62 @@ class ArmContext:
         data = records.read_json(self.dir / f"critique_{attempt}.json")
         return records.verdict_from_dict(data) if data else None
 
+    @property
+    def span_attrs(self) -> dict[str, Any]:
+        return {**self.round.env.span_attrs(self.eid), ATTR_VARIANT: self.arm, ATTR_STRATEGY: self.strategy}
+
+    @property
+    def tracker(self) -> Tracker:
+        def fields(phase: str) -> Mapping[str, Any]:
+            return {"arms": {self.arm: {"strategy": self.strategy, "state": "running", "phase": phase}}}
+
+        return Tracker(self.round.progress.as_writer(self.arm), self.span_attrs, fields)
+
+    def state(self, state: str, phase: str | None) -> None:
+        self.round.arm_state(self.arm, self.strategy, state, phase)
+
+    def strategy_context(self, feedback: Sequence[str] = ()) -> StrategyContext:
+        env = self.round.env
+        failures = [records.failure_from_dict(f) for f in self.round.begin()["failures"]]
+        failures += [FailureRecord("critic", "critic", "critic_rejected", (), {}, reason[:500])
+                     for reason in feedback]
+        budget = env.hyper.get("arm_budget_tokens")
+        return StrategyContext(experiment_id=self.eid, directive=directive_of(self.directive),
+                               worktree=self.worktree, base_commit=self.base_commit, failures=failures,
+                               profile=env.profile, run_dir=self.dir,
+                               budget_tokens=int(budget) if budget is not None else None)
+
+    async def run_strategy(self, feedback: Sequence[str] = ()) -> list[Edit]:
+        """Run the arm's :class:`~ci_lab.contracts.ArmStrategy` and record its edits
+        exactly like the Proposer's ``submit_proposal`` would."""
+        if self.strategy_impl is None:
+            raise RuntimeError(f"{self.eid}/{self.arm}: no strategy bound for {self.strategy!r}")
+        edits = list(await self.strategy_impl.propose(self.strategy_context(list(feedback))))
+        for e in edits:
+            if not isinstance(e, Edit):
+                raise TypeError(f"strategy {self.strategy!r} returned {type(e).__name__}, expected Edit")
+        records.write_json(self.proposal_path, {"strategy": self.strategy, "edits": [
+            {"component": e.component, "hypothesis": e.hypothesis, "files": list(e.files), "commit": e.commit}
+            for e in edits]})
+        return edits
+
 
 # ------------------------------------------------------------------ step wrapper
 
-def step(name: str, fn: Callable[..., Any]) -> Callable[..., Awaitable[Any]]:
-    """Async tool wrapper: tolerate literal YAML args, abort the workflow on error."""
+def step(name: str, fn: Callable[..., Any], tracker: Tracker | None = None) -> Callable[..., Awaitable[Any]]:
+    """Async tool wrapper: tolerate literal YAML args, abort the workflow on error.
+    With a ``tracker`` the call runs inside a ``ci.step{ci.phase=name}`` span and
+    updates/heartbeats the run's ``status.json``."""
 
     @functools.wraps(fn)
     async def wrapper(**kwargs: Any) -> Any:
         params = inspect.signature(fn).parameters
         kwargs = {k: v for k, v in kwargs.items() if k in params}
         try:
-            result = fn(**kwargs)
-            if inspect.isawaitable(result):
-                result = await result
+            async with (tracker.phase(name) if tracker is not None else contextlib.nullcontext()):
+                result = fn(**kwargs)
+                if inspect.isawaitable(result):
+                    result = await result
             return result
         except Exception as exc:
             raise StepAborted(name, exc) from exc
@@ -188,7 +291,7 @@ def _done(path: Path) -> dict[str, Any] | None:
 
 # ------------------------------------------------------------------ arm.yaml
 
-def arm_tools(ctx: ArmContext) -> dict[str, Callable[..., Awaitable[Any]]]:
+def arm_tools(ctx: ArmRun) -> dict[str, Callable[..., Awaitable[Any]]]:
     deps = ctx.round.env.deps
     hyper = ctx.round.env.hyper
 
@@ -236,7 +339,7 @@ def arm_tools(ctx: ArmContext) -> dict[str, Callable[..., Awaitable[Any]]]:
             reasons = "\n".join(f"- {r}" for r in verdict.reasons) or "- unspecified"
             await ctx.reinvoke_proposer(
                 "The critic rejected your proposal:\n" + reasons +
-                "\nRepair the edits with your tools, then call submit_proposal again.")
+                "\nRepair the edits with your tools, then call submit_proposal again.", list(verdict.reasons))
             data = {"repaired": True, "reasons": verdict.reasons}
         records.write_json(marker, data)
         return data
@@ -276,44 +379,72 @@ def arm_tools(ctx: ArmContext) -> dict[str, Callable[..., Awaitable[Any]]]:
             arm=ctx.arm, base_commit=ctx.base_commit, head_commit=ev.get("head"), harness_tree=ev.get("tree"),
             edits=edits, critic=verdict,
             eval=records.eval_from_dict(ev["eval"]) if ev.get("eval") else None,
-            status="evaluated" if not ev["skipped"] else "rejected")
+            status="evaluated" if not ev["skipped"] else "rejected", strategy=ctx.strategy)
         records.write_json(marker, {"result": records.arm_to_dict(result), "reason": ev.get("reason"),
                                     "directive": dict(ctx.directive)})
         return {"arm": ctx.arm, "status": result.status}
 
-    return {name: step(name, fn) for name, fn in {
-        "provision_slot": provision_slot, "critique": critique, "repair": repair,
+    async def propose(strategy: str = "") -> dict[str, Any]:
+        """Non-agent strategies: run ``ArmStrategy.propose`` once (marker: proposal.json)."""
+        if (data := _done(ctx.proposal_path)) is not None:
+            return {"strategy": data.get("strategy", ctx.strategy), "edits": len(data.get("edits", ()))}
+        if strategy and strategy != ctx.strategy:
+            raise ValueError(f"workflow strategy {strategy!r} != directive strategy {ctx.strategy!r}")
+        edits = await ctx.run_strategy()
+        return {"strategy": ctx.strategy, "edits": len(edits)}
+
+    tracker = ctx.tracker
+    return {name: step(name, fn, tracker) for name, fn in {
+        "provision_slot": provision_slot, "propose": propose, "critique": critique, "repair": repair,
         "evaluate": evaluate, "finalize_arm": finalize_arm}.items()}
 
 
 async def run_arm(rctx: RoundContext, name: str) -> None:
-    """Launch (or resume) one arm.yaml workflow with its own checkpoint dir (C5)."""
+    """Launch (or resume) the arm workflow of the directive's strategy
+    (``arm_<strategy>.yaml``) with its own checkpoint dir (C5, section 11.2)."""
     env = rctx.env
     deps = env.deps
     ctx = rctx.arm(name)
-    proposer = deps.make_agent("proposer", ctx)
+    strategy = ctx.strategy
+    with obs.span(SPAN_ARM, ctx.span_attrs):
+        ctx.state("running", "start")
+        agents: dict[str, Any] = {}
+        if strategy == "agent":
+            proposer = deps.make_agent("proposer", ctx)
 
-    async def reinvoke(message: str) -> Any:
-        return await proposer.run(message)
+            async def reinvoke(message: str, reasons: list[str]) -> Any:
+                async with ctx.tracker.phase("propose"):
+                    return await proposer.run(message)
 
-    ctx.reinvoke_proposer = reinvoke
-    workflow = deps.build_workflow(ARM_YAML, {"Proposer": GatedAgent(proposer, ctx.proposal_path)},
-                                   arm_tools(ctx), ctx.ckpt)
-    try:
-        await deps.run_or_resume(workflow, ctx.ckpt, "start")
-    except Exception as exc:
-        attempts_path = ctx.dir / "attempts.json"
-        attempts = (_done(attempts_path) or {"failures": []})["failures"]
-        attempts.append(f"{type(exc).__name__}: {exc}")
-        records.write_json(attempts_path, {"failures": attempts})
-        if len(attempts) < int(env.hyper["max_arm_attempts"]):
-            raise
-        result = ArmResult(arm=name, base_commit=ctx.base_commit, status="failed")
-        records.write_json(ctx.dir / "arm.done", {"result": records.arm_to_dict(result),
-                                                  "reason": attempts[-1], "directive": dict(ctx.directive)})
-        return
-    if not (ctx.dir / "arm.done").exists():
-        raise RuntimeError(f"{rctx.eid}/{name}: workflow completed without arm.done")
+            agents["Proposer"] = GatedAgent(proposer, ctx.proposal_path, wrap=lambda: ctx.tracker.phase("propose"))
+        else:
+            ctx.strategy_impl = deps.get_strategy(strategy, **dict(deps.strategy_kwargs))
+
+            async def reinvoke(message: str, reasons: list[str]) -> Any:
+                return await ctx.run_strategy(reasons)
+
+        ctx.reinvoke_proposer = reinvoke
+        workflow = deps.build_workflow(ARM_YAMLS[strategy], agents, arm_tools(ctx), ctx.ckpt)
+        try:
+            await deps.run_or_resume(workflow, ctx.ckpt, "start")
+        except Exception as exc:
+            attempts_path = ctx.dir / "attempts.json"
+            attempts = (_done(attempts_path) or {"failures": []})["failures"]
+            attempts.append(f"{type(exc).__name__}: {exc}")
+            records.write_json(attempts_path, {"failures": attempts})
+            if len(attempts) < int(env.hyper["max_arm_attempts"]):
+                ctx.state("error", getattr(exc, "step", None))
+                raise
+            result = ArmResult(arm=name, base_commit=ctx.base_commit, status="failed", strategy=strategy)
+            records.write_json(ctx.dir / "arm.done", {"result": records.arm_to_dict(result),
+                                                      "reason": attempts[-1], "directive": dict(ctx.directive)})
+            ctx.state("failed", "done")
+            return
+        result = rctx.arm_result(name)
+        if result is None:
+            raise RuntimeError(f"{rctx.eid}/{name}: workflow completed without arm.done")
+        obs.annotate({ATTR_SCORE: records.mean_score(result.eval)} if result.eval else {})
+        ctx.state(result.status, "done")
 
 
 async def run_incumbent(rctx: RoundContext) -> None:
@@ -323,17 +454,27 @@ async def run_incumbent(rctx: RoundContext) -> None:
     base, tree = begin["base_commit"], begin["base_tree"]
     cache = env.campaign_dir / "inc-cache" / f"{tree}.json"
     reuse = env.profile is not Profile.COPILOT and env.hyper.get("cache_incumbent", True)
-    if reuse and (cached := _done(cache)) is not None:
-        result = records.eval_from_dict(cached)
-    else:
-        worktree = env.deps.provision_slot(rctx.eid, INCUMBENT, base)
-        result = await env.deps.domain.evaluate(worktree, "evolve", int(env.hyper["k"]),
-                                                experiment_id=rctx.eid, variant=INCUMBENT)
-        env.remember_incumbent(tree, result)
-    arm = ArmResult(arm=INCUMBENT, base_commit=base, head_commit=base, harness_tree=tree, eval=result,
-                    status="evaluated")
-    records.write_json(rctx.dir / INCUMBENT / "arm.done",
-                       {"result": records.arm_to_dict(arm), "reason": None, "directive": {}})
+    with obs.span(SPAN_ARM, {**env.span_attrs(rctx.eid), ATTR_VARIANT: INCUMBENT,
+                             ATTR_STRATEGY: INCUMBENT_STRATEGY}):
+        rctx.arm_state(INCUMBENT, INCUMBENT_STRATEGY, "running", "evaluate")
+        if reuse and (cached := _done(cache)) is not None:
+            result = records.eval_from_dict(cached)
+        else:
+            tracker = Tracker(rctx.progress.as_writer(INCUMBENT),
+                              {**env.span_attrs(rctx.eid), ATTR_VARIANT: INCUMBENT},
+                              lambda p: {"arms": {INCUMBENT: {"strategy": INCUMBENT_STRATEGY, "state": "running",
+                                                              "phase": p}}})
+            async with tracker.phase("evaluate"):
+                worktree = env.deps.provision_slot(rctx.eid, INCUMBENT, base)
+                result = await env.deps.domain.evaluate(worktree, "evolve", int(env.hyper["k"]),
+                                                        experiment_id=rctx.eid, variant=INCUMBENT)
+            env.remember_incumbent(tree, result)
+        arm = ArmResult(arm=INCUMBENT, base_commit=base, head_commit=base, harness_tree=tree, eval=result,
+                        status="evaluated")
+        records.write_json(rctx.dir / INCUMBENT / "arm.done",
+                           {"result": records.arm_to_dict(arm), "reason": None, "directive": {}})
+        obs.annotate({ATTR_SCORE: records.mean_score(result)})
+        rctx.arm_state(INCUMBENT, INCUMBENT_STRATEGY, "evaluated", "done")
 
 
 # ------------------------------------------------------------------ round.yaml
@@ -349,7 +490,7 @@ def round_tools(ctx: RoundContext) -> dict[str, Callable[..., Awaitable[Any]]]:
             return {"eid": data["eid"], "arms": [d["arm"] for d in data["directives"]]}
         frontier = env.frontier()
         history = deps.ledger.read_jsonl(env.rel("history.jsonl"))
-        directives = [dict(d) for d in deps.schedule(ctx.round_no, hyper, history)]
+        directives = [normalize_directive(d) for d in deps.schedule(ctx.round_no, hyper, history)]
         names = [d.get("arm") for d in directives]
         if not names or len(set(names)) != len(names) or INCUMBENT in names or \
                 not all(isinstance(n, str) and ARM_RE.match(n) for n in names):
@@ -360,6 +501,9 @@ def round_tools(ctx: RoundContext) -> dict[str, Callable[..., Awaitable[Any]]]:
                 "base_tree": frontier["incumbent_tree"], "directives": directives, "failures": failures,
                 "history": history}
         records.write_json(marker, data)
+        ctx.progress.write(arms={d["arm"]: {"strategy": d["strategy"], "state": "pending", "phase": None}
+                                 for d in directives}
+                           | {INCUMBENT: {"strategy": INCUMBENT_STRATEGY, "state": "pending", "phase": None}})
         return {"eid": ctx.eid, "arms": names}
 
     async def run_arms() -> dict[str, Any]:
@@ -411,6 +555,7 @@ def round_tools(ctx: RoundContext) -> dict[str, Callable[..., Awaitable[Any]]]:
                 (winner is not None and (winner not in arms or arms[winner].status != "evaluated")):
             raise ValueError(f"inconsistent selection {verdict!r}")
         records.write_json(marker, verdict)
+        obs.annotate({ATTR_DECISION: verdict["decision"]})
         return {"decision": verdict["decision"], "winner": winner}
 
     def record() -> dict[str, Any]:
@@ -494,7 +639,8 @@ def round_tools(ctx: RoundContext) -> dict[str, Callable[..., Awaitable[Any]]]:
         records.write_json(marker, data)
         return {"winner": winner, "layers": data["layers"]}
 
-    return {name: step(name, fn) for name, fn in {
+    tracker = ctx.tracker
+    return {name: step(name, fn, tracker) for name, fn in {
         "begin_round": begin_round, "run_arms": run_arms, "select": select, "record": record,
         "publish": publish}.items()}
 
@@ -504,6 +650,14 @@ def round_tools(ctx: RoundContext) -> dict[str, Callable[..., Awaitable[Any]]]:
 @dataclass
 class CalibrationContext:
     env: CampaignEnv
+
+    @functools.cached_property
+    def progress(self) -> Progress:
+        return self.env.progress(self.eid, "campaign")
+
+    @property
+    def tracker(self) -> Tracker:
+        return Tracker(self.progress, self.env.span_attrs(self.eid))
 
     @property
     def eid(self) -> str:
@@ -577,7 +731,9 @@ def calibrate_tools(ctx: CalibrationContext) -> dict[str, Callable[..., Awaitabl
         records.write_json(marker, data)
         return data
 
-    return {name: step(name, fn) for name, fn in {"aa_runs": aa_runs, "delta": delta, "record": record}.items()}
+    tracker = ctx.tracker
+    return {name: step(name, fn, tracker) for name, fn in {
+        "aa_runs": aa_runs, "delta": delta, "record": record}.items()}
 
 
 # ------------------------------------------------------------------ confirm.yaml
@@ -589,6 +745,14 @@ class HoldoutExhausted(RuntimeError):
 @dataclass
 class ConfirmContext:
     env: CampaignEnv
+
+    @functools.cached_property
+    def progress(self) -> Progress:
+        return self.env.progress(self.eid, "campaign")
+
+    @property
+    def tracker(self) -> Tracker:
+        return Tracker(self.progress, self.env.span_attrs(self.eid))
 
     @property
     def eid(self) -> str:
@@ -679,6 +843,7 @@ def confirm_tools(ctx: ConfirmContext) -> dict[str, Callable[..., Awaitable[Any]
         records.write_json(marker, data)
         return data
 
-    return {name: step(name, fn) for name, fn in {
+    tracker = ctx.tracker
+    return {name: step(name, fn, tracker) for name, fn in {
         "reserve_look": reserve_look, "evaluate_heldout": evaluate_heldout, "decide": decide,
         "record": record}.items()}

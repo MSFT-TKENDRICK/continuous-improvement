@@ -1,21 +1,23 @@
-# One RRSI arm (C5): repairs unrolled declaratively; every gate is an idempotent
-# Python function that is a no-op once its durable marker exists.
+# One RRSI arm, strategy `skillopt` (SkillOpt dream_consolidate on the evolve split); design C5, section 11.2.
+# Shares critique -> repair -> evaluate -> finalize with the other arm_*.yaml.
+# Repairs are unrolled declaratively: repair_N is a no-op when critique_N passed,
+# else it re-runs the strategy with the critic's reasons as feedback. Every gate is an
+# idempotent Python function that is a no-op once its durable run-dir marker exists.
 kind: Workflow
 trigger:
   kind: OnConversationStart
-  id: rrsi_arm
+  id: rrsi_arm_skillopt
   actions:
     - kind: InvokeFunctionTool
       id: provision_slot
       functionName: provision_slot
       arguments:
         step: provision_slot
-    - kind: InvokeAzureAgent
-      id: proposer
-      agent:
-        name: Proposer
-      input:
-        messages: "Read your brief and directive with your tools, make your tagged edits, then call submit_proposal."
+    - kind: InvokeFunctionTool
+      id: propose
+      functionName: propose
+      arguments:
+        strategy: skillopt
     - kind: InvokeFunctionTool
       id: critique_1
       functionName: critique

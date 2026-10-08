@@ -11,7 +11,8 @@ make_agent                (role, ctx) -> MAF agent (tools bound)      M8a
 provision_slot            (eid, arm, base_commit) -> worktree Path    M6
 head_commit/harness_tree  worktree -> sha / harness tree hash         M6
 resolve_incumbent         () -> (commit, harness tree) of the base    M6
-critique                  async (ArmContext, attempt) -> CriticVerdict M8a
+critique                  async (ArmRun, attempt) -> CriticVerdict    M8a
+get_strategy              (name, **strategy_kwargs) -> ArmStrategy    M10
 schedule                  (round_no, hyper, history) -> directives    M7
 select                    (incumbent, arms, delta, hyper) -> verdict  M7
 calibrate_delta           (aa_results, hyper) -> delta                M7
@@ -32,7 +33,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Protocol
 
-from ci_lab.contracts import ArmResult, CriticVerdict, Domain, EvalResult, Outbox
+from ci_lab.contracts import ArmResult, ArmStrategy, CriticVerdict, Domain, EvalResult, Outbox
 from ci_lab.workflows import runtime
 
 
@@ -59,6 +60,13 @@ Schedule = Callable[[int, Mapping[str, Any], Sequence[Mapping[str, Any]]], list[
 Select = Callable[[EvalResult, Mapping[str, ArmResult], float, Mapping[str, Any]], Mapping[str, Any]]
 CalibrateDelta = Callable[[Sequence[EvalResult], Mapping[str, Any]], float]
 ConfirmTest = Callable[[EvalResult, EvalResult, Mapping[str, Any]], Mapping[str, Any]]
+
+
+def lazy_get_strategy(name: str, **kwargs: Any) -> ArmStrategy:
+    """Resolve a non-agent arm strategy from M10 (imported lazily: dspy/skillopt are heavy, C26)."""
+    from ci_lab.strategies import get_strategy
+
+    return get_strategy(name, **kwargs)
 
 
 def _defaults() -> Any:
@@ -88,3 +96,5 @@ class CampaignDeps:
     build_workflow: Callable[[Path, Mapping[str, Any], Mapping[str, Callable[..., Any]], Path], Any] = \
         runtime.build_workflow
     run_or_resume: Callable[[Any, Path, str], Awaitable[Any]] = runtime.run_or_resume
+    get_strategy: Callable[..., ArmStrategy] = lazy_get_strategy
+    strategy_kwargs: Mapping[str, Any] = field(default_factory=dict)

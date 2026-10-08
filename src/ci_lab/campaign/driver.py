@@ -10,16 +10,33 @@ command after a crash resumes from checkpoints and durable markers.
 
 from __future__ import annotations
 
+import contextlib
 import os
-from collections.abc import Mapping
+from collections.abc import AsyncIterator, Mapping
 from pathlib import Path
 from typing import Any
 
+from ci_lab import obs
 from ci_lab.campaign import records
 from ci_lab.campaign.defaults import DEFAULT_HYPER
 from ci_lab.campaign.deps import CampaignDeps
-from ci_lab.contracts import CAMPAIGN_RE, Profile, round_experiment_id
+from ci_lab.contracts import (
+    ATTR_CAMPAIGN,
+    ATTR_DECISION,
+    ATTR_DELTA_S,
+    ATTR_EXPERIMENT,
+    ATTR_PROFILE,
+    ATTR_ROUND,
+    CAMPAIGN_RE,
+    SPAN_CALIBRATE,
+    SPAN_CAMPAIGN_ROUND,
+    SPAN_CONFIRM,
+    STRATEGIES,
+    Profile,
+    round_experiment_id,
+)
 from ci_lab.workflows import CALIBRATE_YAML, CONFIRM_YAML, ROUND_YAML
+from ci_lab.workflows.progress import Progress, root_span
 from ci_lab.workflows.runtime import GatedAgent
 from ci_lab.workflows.steps import (
     CalibrationContext,
@@ -47,6 +64,13 @@ def merge_hyper(hyperparams: Mapping[str, Any] | None) -> dict[str, Any]:
             raise ValueError(f"{key} must be >= 1")
     if not 1 <= int(hyper["max_rounds"]) <= 99:
         raise ValueError("max_rounds must be in 1..99")
+    strategies = hyper["strategies"]
+    if isinstance(strategies, str):
+        strategies = hyper["strategies"] = [s for s in strategies.split(",") if s]
+    if not strategies or not set(strategies) <= set(STRATEGIES):
+        raise ValueError(f"strategies must be a non-empty subset of {STRATEGIES}")
+    if not 0 < float(hyper["heartbeat_s"]) <= 60:
+        raise ValueError("heartbeat_s must be in (0, 60]")
     return hyper
 
 
@@ -96,6 +120,29 @@ class Campaign:
     def deps(self) -> CampaignDeps:
         return self.env.deps
 
+    @contextlib.asynccontextmanager
+    async def _traced(self, name: str, eid: str, progress: Progress,
+                      attrs: Mapping[str, Any] | None = None) -> AsyncIterator[Any]:
+        """One trace per round/calibration/confirm (C27): a new root linked to the
+        interrupted previous attempt; live markers record start and failure (C36)."""
+        with root_span(name, {ATTR_CAMPAIGN: self.cid, ATTR_EXPERIMENT: eid,
+                              ATTR_PROFILE: self.env.profile.value, **(attrs or {})},
+                       self.env.run_root, eid) as span:
+            progress.write(phase="start", state="running", pid=os.getpid())
+            try:
+                yield span
+            except Exception as exc:
+                progress.write(state="failed", error=type(exc).__name__)
+                raise
+
+    def _live(self, eid: str) -> dict[str, Any]:
+        """Aggregated live markers (``status.d``) of an in-flight round, for ``status``."""
+        st = obs.read_status(self.env.run_root, eid)
+        return {"phase": st.get("phase"), "state": st.get("state"), "updated": st.get("updated"),
+                "heartbeat_s": st.get("heartbeat_s"),
+                "arms": {a: {k: v.get(k) for k in ("strategy", "state", "phase")}
+                         for a, v in (st.get("arms") or {}).items()}}
+
     def _meta(self) -> dict[str, Any]:
         return self.deps.ledger.read_json(self.env.rel("campaign.json"))
 
@@ -105,9 +152,13 @@ class Campaign:
         if cal is not None:
             return float(cal["delta"])
         ctx = CalibrationContext(self.env)
-        workflow = self.deps.build_workflow(CALIBRATE_YAML, {}, calibrate_tools(ctx), ctx.ckpt)
-        await self.deps.run_or_resume(workflow, ctx.ckpt, "start")
-        return self.env.delta()
+        async with self._traced(SPAN_CALIBRATE, ctx.eid, ctx.progress) as span:
+            workflow = self.deps.build_workflow(CALIBRATE_YAML, {}, calibrate_tools(ctx), ctx.ckpt)
+            await self.deps.run_or_resume(workflow, ctx.ckpt, "start")
+            delta = self.env.delta()
+            span.set_attribute(ATTR_DELTA_S, delta)
+            ctx.progress.write(phase="done", state="done", delta=delta)
+        return delta
 
     # ------------------------------------------------------------ rounds
     def _spent_tokens(self) -> int:
@@ -128,16 +179,21 @@ class Campaign:
         done = records.read_json(ctx.dir / "round.done")
         if done is not None:
             return done
-        analyst = GatedAgent(self.deps.make_agent("analyst", ctx), ctx.analysis_path)
-        workflow = self.deps.build_workflow(ROUND_YAML, {"Analyst": analyst}, round_tools(ctx), ctx.ckpt)
-        await self.deps.run_or_resume(workflow, ctx.ckpt, "start")
-        rec = records.read_json(ctx.dir / "record.done")
-        pub = records.read_json(ctx.dir / "publish.done")
-        if rec is None or pub is None:
-            raise RuntimeError(f"{ctx.eid}: round workflow completed without record/publish markers")
-        summary = {"eid": ctx.eid, "round": round_no, "decision": rec["decision"], "winner": rec["winner"],
-                   "pr": (pub.get("result") or {}).get("pr")}
-        records.write_json(ctx.dir / "round.done", summary)
+        async with self._traced(SPAN_CAMPAIGN_ROUND, ctx.eid, ctx.progress, {ATTR_ROUND: round_no}) as span:
+            tracker = ctx.tracker
+            analyst = GatedAgent(self.deps.make_agent("analyst", ctx), ctx.analysis_path,
+                                 wrap=lambda: tracker.phase("analyst"))
+            workflow = self.deps.build_workflow(ROUND_YAML, {"Analyst": analyst}, round_tools(ctx), ctx.ckpt)
+            await self.deps.run_or_resume(workflow, ctx.ckpt, "start")
+            rec = records.read_json(ctx.dir / "record.done")
+            pub = records.read_json(ctx.dir / "publish.done")
+            if rec is None or pub is None:
+                raise RuntimeError(f"{ctx.eid}: round workflow completed without record/publish markers")
+            summary = {"eid": ctx.eid, "round": round_no, "decision": rec["decision"], "winner": rec["winner"],
+                       "pr": (pub.get("result") or {}).get("pr")}
+            records.write_json(ctx.dir / "round.done", summary)
+            span.set_attribute(ATTR_DECISION, rec["decision"])
+            ctx.progress.write(phase="done", state="done", decision=rec["decision"], winner=rec["winner"])
         return summary
 
     async def run(self, rounds: int | None = None, stop_file: Path | None = None) -> dict[str, Any]:
@@ -174,6 +230,7 @@ class Campaign:
                 "frontier": ledger.read_json(self.env.rel("frontier.json")),
                 "rounds": [{k: h[k] for k in ("eid", "decision", "winner", "tokens")} for h in history],
                 "in_flight": in_flight, "tokens_spent": self._spent_tokens(),
+                "live": {eid: self._live(eid) for eid in in_flight},
                 "stack": ledger.read_json(self.env.rel("stack.json")),
                 "confirm": ledger.read_json(self.env.rel("confirm.json")),
                 "landed": ledger.read_json(self.env.rel("land.json"))}
@@ -198,9 +255,13 @@ class Campaign:
     # ------------------------------------------------------------ confirm / land
     async def confirm(self) -> dict[str, Any]:
         ctx = ConfirmContext(self.env)
-        workflow = self.deps.build_workflow(CONFIRM_YAML, {}, confirm_tools(ctx), ctx.ckpt)
-        await self.deps.run_or_resume(workflow, ctx.ckpt, "start")
-        return self.deps.ledger.read_json(self.env.rel("confirm.json"))
+        async with self._traced(SPAN_CONFIRM, ctx.eid, ctx.progress) as span:
+            workflow = self.deps.build_workflow(CONFIRM_YAML, {}, confirm_tools(ctx), ctx.ckpt)
+            await self.deps.run_or_resume(workflow, ctx.ckpt, "start")
+            result = self.deps.ledger.read_json(self.env.rel("confirm.json"))
+            span.set_attribute(ATTR_DECISION, result["decision"])
+            ctx.progress.write(phase="done", state="done", decision=result["decision"])
+        return result
 
     def land(self) -> dict[str, Any]:
         ledger = self.deps.ledger

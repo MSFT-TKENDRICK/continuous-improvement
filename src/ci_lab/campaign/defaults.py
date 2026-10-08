@@ -22,13 +22,18 @@ DEFAULT_HYPER: dict[str, Any] = {
     "max_arm_attempts": 2,    # arm workflow failures before the arm is marked failed
     "holdout_looks": 1,       # planned held-out looks L (global, per dataset hash)
     "draft_prs": True,
+    "strategies": ["agent"],  # arm strategies rotated by the trivial schedule (M7 allocates)
+    "arm_budget_tokens": None,  # ArmContext.budget_tokens for optimizer strategies
+    "heartbeat_s": 30.0,      # status marker heartbeat while long steps run (<= 60, C36)
 }
 
 
 def schedule(round_no: int, hyper: Mapping[str, Any], history: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
     n = int(hyper.get("arms", 2))
+    strategies = list(hyper.get("strategies") or ["agent"])
     return [{"arm": f"v{i + 1}", "component": COMPONENTS[(round_no + i) % len(COMPONENTS)],
-             "budget": int(hyper.get("budget", 1))} for i in range(n)]
+             "strategy": strategies[i % len(strategies)], "budget": int(hyper.get("budget", 1))}
+            for i in range(n)]
 
 
 def select(incumbent: EvalResult, arms: Mapping[str, ArmResult], delta: float,

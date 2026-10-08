@@ -10,6 +10,7 @@ import yaml
 from ci_lab.testing import Call, FakeChatClient
 from ci_lab.workflows import (
     ARM_YAML,
+    ARM_YAMLS,
     FORBIDDEN_ACTIONS,
     WORKFLOW_FILES,
     agent_names,
@@ -27,8 +28,12 @@ from ci_lab.workflows.runtime import (
 
 EXPECTED_ORDER = {
     "round": ["begin_round", "analyst", "run_arms", "select", "record", "publish"],
-    "arm": ["provision_slot", "proposer", "critique_1", "repair_1", "critique_2", "repair_2",
-            "critique_final", "evaluate", "finalize_arm"],
+    "arm_agent": ["provision_slot", "proposer", "critique_1", "repair_1", "critique_2", "repair_2",
+                  "critique_final", "evaluate", "finalize_arm"],
+    "arm_gepa": ["provision_slot", "propose", "critique_1", "repair_1", "critique_2", "repair_2",
+                 "critique_final", "evaluate", "finalize_arm"],
+    "arm_skillopt": ["provision_slot", "propose", "critique_1", "repair_1", "critique_2", "repair_2",
+                     "critique_final", "evaluate", "finalize_arm"],
     "calibrate": ["aa_runs", "delta", "record"],
     "confirm": ["reserve_look", "evaluate_heldout", "decide", "record"],
 }
@@ -138,7 +143,23 @@ def test_yaml_loads_and_runs_with_workflow_factory(name: str, tmp_path: Path) ->
         assert fn in called
     for agent in agent_names(path):
         assert agent in called
-    assert len([e for e in log if e.startswith("critique")]) == (3 if name == "arm" else 0)
+    assert len([e for e in log if e.startswith("critique")]) == (3 if name.startswith("arm_") else 0)
+    if name in ("arm_gepa", "arm_skillopt"):
+        assert f"propose:[('strategy', '{name[4:]}')]" in log
+
+
+def test_arm_yamls_cover_every_strategy() -> None:
+    from ci_lab.contracts import STRATEGIES
+
+    assert set(ARM_YAMLS) == set(STRATEGIES)
+    assert ARM_YAML == ARM_YAMLS["agent"]
+    assert set(agent_names(ARM_YAMLS["agent"])) == {"Proposer"}
+    for strategy in ("gepa", "skillopt"):
+        assert not agent_names(ARM_YAMLS[strategy])
+        doc = assert_expression_free(ARM_YAMLS[strategy])
+        propose = next(a for a in doc["trigger"]["actions"] if a["id"] == "propose")
+        assert propose == {"kind": "InvokeFunctionTool", "id": "propose", "functionName": "propose",
+                           "arguments": {"strategy": strategy}}
 
 
 def test_runtime_crash_then_resume_reruns_only_from_failed_step(tmp_path: Path) -> None:
@@ -202,3 +223,28 @@ def test_gated_agent_skips_when_output_exists(tmp_path: Path) -> None:
     (tmp_path / "out.json").write_text("{}")
     assert asyncio.run(gated.run("x")).startswith("already submitted")
     assert inner.ran == 1 and gated.name == "inner"
+
+
+def test_gated_agent_wrap_runs_around_real_runs_only(tmp_path: Path) -> None:
+    import contextlib
+
+    events: list[str] = []
+
+    @contextlib.asynccontextmanager
+    async def wrap():
+        events.append("enter")
+        yield
+        events.append("exit")
+
+    class Inner:
+        name = "inner"
+
+        async def run(self, messages: Any = None, **kw: Any) -> str:
+            events.append("run")
+            return "ran"
+
+    gated = GatedAgent(Inner(), tmp_path / "out.json", wrap=wrap)
+    asyncio.run(gated.run("x"))
+    (tmp_path / "out.json").write_text("{}")
+    asyncio.run(gated.run("x"))
+    assert events == ["enter", "run", "exit"]

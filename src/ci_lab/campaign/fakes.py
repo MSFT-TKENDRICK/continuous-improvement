@@ -23,7 +23,9 @@ from ci_lab.campaign.deps import CampaignDeps
 from ci_lab.campaign.local import FileLedger, FileOutbox
 from ci_lab.contracts import (
     COMPONENTS,
+    ArmContext,
     CriticVerdict,
+    Edit,
     EvalResult,
     EvaluatorPin,
     FailureRecord,
@@ -208,6 +210,44 @@ class FakeAgents:
         return Agent(client=client, name="Analyst", instructions="Analyse.", tools=[submit_analysis])
 
 
+class FakeStrategy:
+    """Stand-in :class:`~ci_lab.contracts.ArmStrategy` (M10): one commit per ``propose``;
+    critic feedback (``critic_rejected`` failures) yields a "(repaired)" hypothesis."""
+
+    def __init__(self, name: str, repo: FakeRepo, hypothesis_fn: HypothesisFn = default_hypothesis) -> None:
+        self.name = name
+        self.repo = repo
+        self.hypothesis_fn = hypothesis_fn
+        self.calls: list[ArmContext] = []
+
+    async def propose(self, ctx: ArmContext) -> list[Edit]:
+        self.calls.append(ctx)
+        d = ctx.directive
+        component = d.component_focus[0] if d.component_focus else "prompt"
+        hypothesis = self.hypothesis_fn(ctx.experiment_id, d.arm, {"component": component,
+                                                                   "strategy": d.strategy})
+        if any(f.category == "critic_rejected" for f in ctx.failures):
+            hypothesis += " (repaired)"
+        commit = self.repo.apply(ctx.worktree, ctx.base_commit, hypothesis)
+        return [Edit(component, hypothesis, (f"harness/{component}/x",), commit)]
+
+
+class FakeStrategies:
+    """``get_strategy(name, **kw)`` for the fake profile; instances are cached per name."""
+
+    def __init__(self, repo: FakeRepo, hypothesis_fn: HypothesisFn = default_hypothesis) -> None:
+        self.repo = repo
+        self.hypothesis_fn = hypothesis_fn
+        self.instances: dict[str, FakeStrategy] = {}
+        self.kwargs: list[dict[str, Any]] = []
+
+    def __call__(self, name: str, **kwargs: Any) -> FakeStrategy:
+        self.kwargs.append(kwargs)
+        if name not in self.instances:
+            self.instances[name] = FakeStrategy(name, self.repo, self.hypothesis_fn)
+        return self.instances[name]
+
+
 def fake_deps(root: Path, *, outbox: Outbox | None = None, score_fn: ScoreFn = default_score,
               hypothesis_fn: HypothesisFn = default_hypothesis, reject_first: Container[str] = (),
               publisher: Any = None, repo: str = "example/harness", ledger_root: Path | None = None,
@@ -224,6 +264,7 @@ def fake_deps(root: Path, *, outbox: Outbox | None = None, score_fn: ScoreFn = d
         domain=StubDomain(fake_repo, score_fn), make_agent=FakeAgents(fake_repo, hypothesis_fn),
         provision_slot=fake_repo.provision_slot, head_commit=fake_repo.head_commit,
         harness_tree=fake_repo.harness_tree, resolve_incumbent=fake_repo.resolve_incumbent,
+        get_strategy=FakeStrategies(fake_repo, hypothesis_fn),
         critique=FakeCritic(reject_first), ledger=FileLedger(ledger_root or root / "experiments"),
         publisher=publisher, outbox=outbox)
     kwargs.update(overrides)

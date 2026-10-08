@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -48,9 +49,28 @@ def load_deps(profile: Profile, *, run_root: Path, ledger_dir: Path | None, repo
         f"{dry_run_publish} would select GitHubPublisher(dry_run=...).")
 
 
+def _setup_telemetry(profile: Profile, run_root: Path) -> Callable[[], None]:
+    """``ci_lab.telemetry.setup("campaign", ...)`` (M12) if available; returns its shutdown."""
+    try:
+        from ci_lab import telemetry
+    except ImportError:
+        return lambda: None
+    result = telemetry.setup("campaign", profile=profile, run_dir=run_root)
+    shutdown = getattr(result, "shutdown", None) or getattr(telemetry, "shutdown", None)
+    return shutdown if callable(shutdown) else (lambda: None)
+
+
 def _main(args: argparse.Namespace) -> int:
     profile = Profile(args.profile)
     run_root = Path(args.run_dir) if args.run_dir else default_run_root()
+    shutdown = _setup_telemetry(profile, run_root)
+    try:
+        return _dispatch(args, profile, run_root)
+    finally:
+        shutdown()
+
+
+def _dispatch(args: argparse.Namespace, profile: Profile, run_root: Path) -> int:
     try:
         deps = load_deps(profile, run_root=run_root, ledger_dir=Path(args.ledger_dir) if args.ledger_dir else None,
                          repo=args.repo, dry_run_publish=args.dry_run_publish)

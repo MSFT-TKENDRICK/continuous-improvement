@@ -13,6 +13,7 @@ re-executes the in-flight superstep (steps are idempotent via run-dir markers).
 
 from __future__ import annotations
 
+import contextlib
 import inspect
 import json
 import os
@@ -110,11 +111,15 @@ async def run_or_resume(workflow: Any, ckpt_dir: Path, message: str = "start") -
 
 class GatedAgent:
     """Wraps a MAF agent so a re-run of its workflow action is a no-op once the
-    agent's durable output (written by its terminal ``submit_*`` tool) exists."""
+    agent's durable output (written by its terminal ``submit_*`` tool) exists.
+    ``wrap`` (optional) returns an async context manager entered around each real
+    run, e.g. a tracing/progress phase."""
 
-    def __init__(self, agent: Any, done: Path) -> None:
+    def __init__(self, agent: Any, done: Path,
+                 wrap: Callable[[], contextlib.AbstractAsyncContextManager[Any]] | None = None) -> None:
         self._agent = agent
         self._done = done
+        self._wrap = wrap
 
     def __getattr__(self, name: str) -> Any:
         return getattr(self._agent, name)
@@ -122,4 +127,5 @@ class GatedAgent:
     async def run(self, messages: Any = None, **kwargs: Any) -> Any:
         if self._done.exists():
             return f"already submitted: {self._done.name}"
-        return await self._agent.run(messages, **kwargs)
+        async with (self._wrap() if self._wrap is not None else contextlib.nullcontext()):
+            return await self._agent.run(messages, **kwargs)

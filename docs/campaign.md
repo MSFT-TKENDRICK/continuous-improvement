@@ -34,13 +34,24 @@ The workflows contain only `InvokeFunctionTool` and `InvokeAzureAgent` actions w
 | file | actions |
 | --- | --- |
 | `round.yaml` | `begin_round` → Analyst → `run_arms` → `select` → `record` → `publish` |
-| `arm.yaml` | `provision_slot` → Proposer → `critique_1` → `repair_1` → `critique_2` → `repair_2` → `critique_final` → `evaluate` → `finalize_arm` |
+| `arm_agent.yaml` | `provision_slot` → Proposer → `critique_1` → `repair_1` → `critique_2` → `repair_2` → `critique_final` → `evaluate` → `finalize_arm` |
+| `arm_gepa.yaml`, `arm_skillopt.yaml` | the same, with the Proposer replaced by `propose` (`arguments: {strategy: gepa\|skillopt}`) |
 | `calibrate.yaml` | `aa_runs` → `delta` → `record` |
 | `confirm.yaml` | `reserve_look` → `evaluate_heldout` → `decide` → `record` |
 
 Dynamic context never appears in the YAML. The run dir, eid and arm are bound into the registered tool closures (`ci_lab.workflows.steps`), and the YAML passes only `step:` names, `attempt:` numbers and `split:` names.
 
 Repairs are unrolled. `repair_N` is a no-op when `critique_N` passed. Otherwise it re-invokes the proposer through an injected callable.
+
+### Arm strategies (design §11.2)
+
+Each directive carries `strategy` (`contracts.STRATEGIES`; default `agent`) and the driver runs `arm_<strategy>.yaml`:
+
+- `agent`: the MAF Proposer agent (M8a), whose `submit_proposal` writes `proposal.json`.
+- `gepa` / `skillopt`: `CampaignDeps.get_strategy(name, **strategy_kwargs)` resolves an `ArmStrategy` (default: lazy `ci_lab.strategies.get_strategy`, M10). The `propose` step calls `await strategy.propose(contracts.ArmContext)` once (marker `proposal.json`); a failed critique re-runs it with the critic reasons appended as `critic_rejected` `FailureRecord`s.
+- `ArmResult.strategy` is filled; the incumbent pseudo-arm reports `incumbent`.
+
+The trivial default schedule rotates `hyper["strategies"]` (default `["agent"]`) over the arms; M7 allocates for real.
 
 ## Durability
 
@@ -58,11 +69,19 @@ Repairs are unrolled. `repair_N` is a no-op when `critique_N` passed. Otherwise 
 
 ### `run_arms` (C5, C8)
 
-- Launches one `arm.yaml` workflow per arm with asyncio, bounded by `max_parallel_arms`.
+- Launches one `arm_<strategy>.yaml` workflow per arm with asyncio, bounded by `max_parallel_arms`.
 - Re-evaluates the incumbent each round as the pseudo-arm `inc`, interleaved with the arms in a seeded random order that is persisted in `run_order.json`.
 - Off the Copilot profile, incumbent evals may be served from the tree-keyed cache.
 - Then reconciles the `arm.done` markers.
 - An arm whose workflow fails `max_arm_attempts` times is recorded as `failed`.
+
+## Tracing and live status (design §12, C27, C36)
+
+- **One trace per round.** `ci.round` (`ci.campaign_id`, `oes.experiment_id`, `rrsi.round`, `ci.profile`, plus `oes.decision`) is a new root (`obs.span(..., new_trace=True)`). Calibration (`ci.calibrate`, with `rrsi.delta_s`) and confirm (`ci.confirm`) are their own traces as well.
+- **Children.** `ci.arm` per arm (`oes.variant`, `ci.strategy`, `ci.score`) and `ci.step` per phase (`ci.phase`: every workflow step plus `analyst`/`propose` agent runs).
+- **Resume.** A rerun after a crash starts a new root linked to the interrupted trace via `obs.previous_link(run_dir, eid)`; the link source is the `trace` recorded in the status markers.
+- **Live markers.** `obs.write_status(run_dir, eid, writer=..., ...)` writes `<eid>/status.d/<writer>.json`: writer `round` (or `campaign` for calibration/confirm) holds `phase`, `state`, `round`, `campaign_id`, `heartbeat_s`, `decision`/`winner`; each arm worker (`v1`, …, `inc`) holds `arms.<arm> = {strategy, state, phase}`. Markers are rewritten at every phase transition and arm state change, and every `heartbeat_s` (default 30, max 60) while a step runs. Readers must aggregate with `obs.read_status`; `campaign status` includes a `live` summary of in-flight rounds.
+- **Telemetry.** CLI entry calls `ci_lab.telemetry.setup("campaign", profile=..., run_dir=...)` when M12 is installed (an `ImportError` is ignored) and its `shutdown` on exit.
 
 ## Ledger (`experiments/`)
 
@@ -115,6 +134,7 @@ The driver codes only against `contracts.py`, and every collaborator from anothe
 | --- | --- |
 | M6 | `ledger`, `outbox`, `provision_slot`, `head_commit`, `harness_tree`, `resolve_incumbent` |
 | M8a | `make_agent`, `critique` |
+| M10 | `get_strategy`, `strategy_kwargs` |
 | M7 | `schedule`, `select`, `calibrate_delta`, `confirm_test` |
 | M4 | `build_envelope` |
 | M1 | `build_workflow`, `run_or_resume` |

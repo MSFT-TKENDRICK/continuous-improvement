@@ -18,6 +18,7 @@ from ci_lab.contracts import (
     Edit,
     EvalResult,
     EvaluatorPin,
+    FailureRecord,
     TaskScore,
     Violation,
 )
@@ -123,7 +124,13 @@ def arm_from_dict(data: Mapping[str, Any]) -> ArmResult:
         critic=verdict_from_dict(data["critic"]) if data.get("critic") else None,
         eval=eval_from_dict(data["eval"]) if data.get("eval") else None,
         status=data.get("status", "pending"),
+        strategy=data.get("strategy", "agent"),
     )
+
+
+def failure_from_dict(data: Mapping[str, Any]) -> FailureRecord:
+    return FailureRecord(data["case_id"], data["suite"], data["category"], tuple(data.get("rule_ids", ())),
+                         dict(data.get("rubric_scores") or {}), data.get("excerpt", ""))
 
 
 # ------------------------------------------------------------------ metrics
