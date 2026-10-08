@@ -30,6 +30,15 @@ def test_record_decisions_writes_and_traces(tmp_path, spans):
     assert s.attributes[ATTR_DECISION] == "ship"
 
 
+def test_record_decisions_annotates_caller_span(tmp_path, spans):
+    with obs.span("ci.round", {ATTR_ROUND: 1}):
+        record_decisions(tmp_path, "cmp-a", "cmp-a-r001", {"decision": "do_not_ship"})
+    step, rnd = spans.get_finished_spans()
+    assert step.parent.span_id == rnd.context.span_id
+    assert rnd.attributes[ATTR_DECISION] == "do_not_ship"
+    assert rnd.attributes[ATTR_EXPERIMENT] == "cmp-a-r001"
+
+
 def test_record_decisions_validates(tmp_path):
     with pytest.raises(ValueError):
         record_decisions(tmp_path, "cmp-a", "cmp-a-r001", {"decision": "maybe"})

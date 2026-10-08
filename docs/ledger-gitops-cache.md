@@ -22,7 +22,9 @@ diff until the user updates. Prefer a dedicated ref such as `exp-ledger/<cid>`.
 
 Observability (design §12.3): `record_decisions` and `cas_frontier` each emit a
 `ci.step{ci.phase=record}` span via `ci_lab.obs` carrying `oes.experiment_id`
-(+ `oes.decision`, or `rrsi.round`/`ci.score` for the frontier). Without a tracer
+(+ `oes.decision`, or `rrsi.round`/`ci.score` for the frontier); `record_decisions` also
+`obs.annotate`s the caller's current (round) span with `oes.experiment_id`/`oes.decision`.
+Without a tracer
 provider (installed only by `ci_lab.telemetry.setup`) these are no-ops.
 
 ## `ci_lab.gitops` — git plumbing

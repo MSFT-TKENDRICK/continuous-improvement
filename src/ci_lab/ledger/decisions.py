@@ -25,6 +25,7 @@ def record_decisions(repo: str | os.PathLike[str] | Layout, campaign_id: str, ex
     if decision is not None and decision not in DECISIONS:
         raise ValueError(f"decision must be one of {DECISIONS}, got {decision!r}")
     path = layout.decisions_json(campaign_id, experiment_id)
+    obs.annotate({ATTR_EXPERIMENT: experiment_id, ATTR_DECISION: decision})  # caller's round span
     with obs.span(SPAN_STEP, {ATTR_PHASE: "record", ATTR_CAMPAIGN: campaign_id, ATTR_EXPERIMENT: experiment_id,
                               ATTR_DECISION: decision}):
         path.parent.mkdir(parents=True, exist_ok=True)
