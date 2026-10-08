@@ -139,19 +139,22 @@ always uses `persist-credentials: false`.
    new reviewed tasks since the last recorded night is at least the threshold
    (`vars.SLEEP_USAGE_THRESHOLD`). A manual dispatch forces the run.
 2. **`evaluate`** (`contents: read`, `copilot-requests: write`) does the following:
-   - runs `uv sync`;
+   - runs `uv sync` (not `--frozen`/`--locked`: `uv.lock` is intentionally not committed because it
+     is generated against an internal package proxy, so CI resolves from `pyproject.toml`; the same
+     holds for every workflow);
    - starts a loopback `agl-server` with a random masked key;
    - runs `ci-lab sleep run --profile copilot` with `COPILOT_GITHUB_TOKEN=${{ github.token }}`
      and `SLEEP_LESSONS=${{ vars.SLEEP_LESSONS }}` (the lessons hook; unset means off);
-   - uploads two artifacts: `sleep-bundle`, and `sleep-spans` (the redacted span JSONL, which can
-     be replayed with `ci-lab telemetry import`).
+   - uploads two artifacts: `sleep-bundle`, and `spans` (the redacted span JSONL). `spans` is the
+     default artifact name of `ci-lab telemetry pull --run <id>`, which verifies its sha256 digest
+     and imports it into the dashboard.
 3. **`publish`** (`environment: sleep-publish`, `contents: write`, `pull-requests: write`) runs
    only if the night was accepted or `ledger_update` is set. It installs nothing and restores no
    caches. It checks out `github.sha`, downloads the bundle, and runs
    `python3 -I scripts/sleep_publish.py`.
 
 `.github/workflows/usage-harvest.yml` runs daily. Its **`harvest`** job (`contents: read`,
-`actions: read`) downloads the latest `sleep-spans` artifact, runs `harvest-usage --bundle`, and
+`actions: read`) downloads the `spans` artifact of the latest successful night, runs `harvest-usage --bundle`, and
 uploads `usage-bundle`. Its **`publish`** job is the same stdlib-only validator, which opens a
 draft PR on `exp/usage-<date>/tasks`.
 

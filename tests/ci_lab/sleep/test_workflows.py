@@ -8,6 +8,8 @@ from pathlib import Path
 import pytest
 import yaml
 
+from ci_lab.telemetry.pull import DEFAULT_ARTIFACT
+
 ROOT = Path(__file__).resolve().parents[3]
 WF = ROOT / ".github" / "workflows"
 FILES = ("sleep-nightly.yml", "usage-harvest.yml")
@@ -67,7 +69,7 @@ def test_nightly_jobs_and_permissions():
     assert night["env"]["SLEEP_LESSONS"] == "${{ vars.SLEEP_LESSONS }}"
     assert "--lessons" not in night["run"]
     uploads = [s["with"]["name"] for s in steps(ev) if s.get("uses", "").startswith("actions/upload-artifact@")]
-    assert uploads == ["sleep-bundle", "sleep-spans"]
+    assert uploads == ["sleep-bundle", DEFAULT_ARTIFACT]  # `ci-lab telemetry pull` default
     pub = jobs["publish"]
     assert pub["permissions"] == {"contents": "write", "pull-requests": "write"}
     assert pub["environment"] == "sleep-publish" and pub["needs"] == "evaluate"
@@ -94,6 +96,19 @@ def test_publish_jobs_run_only_the_stdlib_validator(name, job, artifact):
     env = steps(pub)[-1]["env"]
     assert env["GH_TOKEN"] == "${{ github.token }}"
     assert not any("merge" in r for r in runs)
+
+
+def test_usage_harvest_downloads_the_pull_spans_artifact():
+    runs = "\n".join(s.get("run", "") for s in steps(load("usage-harvest.yml")["jobs"]["harvest"]))
+    assert f"--name {DEFAULT_ARTIFACT} " in runs and "sleep-spans" not in runs
+
+
+@pytest.mark.parametrize("name", [*FILES, "lint.yml"])
+def test_uv_sync_is_documented_unlocked(name):
+    """uv.lock is intentionally not committed (internal proxy), so workflows cannot sync --frozen."""
+    raw = (WF / name).read_text(encoding="utf-8")
+    assert "uv sync" in raw and "uv.lock is intentionally not committed" in raw
+    assert "--frozen" not in raw.replace("--frozen/--locked", "") and "uv.lock" not in str(load(name))
 
 
 def test_usage_harvest_jobs():

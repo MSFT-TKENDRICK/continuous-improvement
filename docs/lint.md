@@ -11,6 +11,10 @@ Following poteto's "encode lessons in structure", every lesson we learn while bu
 | `.github/workflows/lint.yml` | the same lint on every PR and every push to `main` | no; **authoritative** |
 | `.github/extensions/ci-guardrails` | Copilot CLI PreToolUse hook | denies the agent's bypass attempts before they run |
 
+`lint.yml` (like the sleep workflows) runs plain `uv sync`, not `uv sync --frozen`. `uv.lock` is
+intentionally not committed because it is generated against an internal package proxy. CI
+therefore resolves from `pyproject.toml`; never commit `uv.lock` to "fix" this.
+
 ## Running
 
 ```sh

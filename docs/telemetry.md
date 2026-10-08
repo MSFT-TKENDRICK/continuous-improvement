@@ -155,6 +155,12 @@ ci-lab telemetry imports
   A cached run is reused unless `--force` is given. `telemetry imports` (`pull.list_imports()`)
   lists the manifests for the canvas.
 
+  **Artifact name convention.** CI workflows upload span JSONL as an artifact named `spans`
+  (`pull.DEFAULT_ARTIFACT`). `sleep-nightly.yml` uploads its redacted night spans under that name,
+  and `usage-harvest.yml` downloads them by that name. So `ci-lab telemetry pull --run <id>` works
+  on a sleep night with no `--artifact`. `upload-artifact` v4+ records the `sha256:` digest that
+  `pull` verifies. Use `--artifact NAME` only for other workflows that pick a different name.
+
 ## Tests
 
 - **Offline:** `tests/ci_lab/telemetry/` mocks HTTP, downloads and processes. `setup()` tests
