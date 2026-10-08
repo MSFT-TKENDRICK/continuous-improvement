@@ -187,6 +187,7 @@ def test_offline_round_with_meta_agents(tmp_path: Path, no_offline_env: None, no
     asyncio.run(camp.calibrate())
     out = asyncio.run(camp.run(rounds=1))
     assert out["rounds"][0]["winner"] == "v1" and out["rounds"][0]["decision"] == "ship"
+    assert list((tmp_path / "runs").rglob("meta-harness.json"))  # the round pinned its meta harness
 
     run_dir = tmp_path / "runs" / f"{CID}-r01"
     assert records.read_json(run_dir / "analysis.json")["summary"] == "identity gaps"
