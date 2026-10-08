@@ -66,6 +66,14 @@ def test_lock_seeded_with_win_arm64_pin():
         "B53B7F4A20D884A0CB673F847CC2D4D4FF753D9B3612D9ECA605EFB5C8C45166")
 
 
+def test_lock_pins_common_rids_for_default_version():
+    pins = aspire.load_lock()["packages"][aspire.default_version()]
+    assert {"win-arm64", "win-x64", "linux-x64", "osx-arm64"} <= set(pins)
+    assert set(pins) <= set(aspire.RIDS)
+    for sha in pins.values():
+        assert len(sha) == 64 and sha == sha.upper() and all(c in "0123456789ABCDEF" for c in sha)
+
+
 def test_rid_detection(monkeypatch):
     assert aspire.detect_rid() in aspire.RIDS
     monkeypatch.setenv(aspire.RID_ENV, "linux-arm64")

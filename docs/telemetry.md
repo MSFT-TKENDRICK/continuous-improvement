@@ -107,8 +107,14 @@ ci-lab telemetry imports
 - **Package:** `Aspire.Dashboard.Sdk.<rid>` (default 13.6.1). It is downloaded from
   `$CI_NUGET_FLAT` (default: internal feed), falling back to nuget.org.
 - **Verification:** the download's sha256 is checked against `src/ci_lab/telemetry/aspire.lock.json`.
-  - If the RID/version has no pin, `--trust-new` is required. It records the pin (TOFU)
-    in that lock file, or in `<install root>/aspire.lock.json` if the package dir is read-only.
+  - **Pinned for 13.6.1:** `win-arm64`, `win-x64`, `linux-x64` and `osx-arm64`. These hashes come
+    from the `.nupkg` files `package_url()` fetches from the default feed, and the existing
+    `win-arm64` pin reproduced exactly. They work on first use with no extra flags.
+  - **Unpinned:** `linux-arm64`, `osx-x64`, and any other version. These need `--trust-new` on
+    first use. That flag downloads the package, records its sha256 (trust on first use) in the
+    lock file, or in `<install root>/aspire.lock.json` if the package dir is read-only, and
+    logs a `TOFU:` warning. Review that diff and commit it so later installs are verified.
+    Never edit a hash by hand.
 - **Install:** zip-slip-safe extraction to `%LOCALAPPDATA%\ci-lab\aspire-dashboard\<ver>\pkg\`
   (`$XDG_DATA_HOME`/`~/.local/share` on Linux, `~/Library/Application Support` on macOS).
   Overrides: `CI_ASPIRE_HOME`, `CI_ASPIRE_RID`.
