@@ -83,7 +83,8 @@ def confirm_test(h0: EvalResult, final: EvalResult, hyper: Mapping[str, Any]) ->
 
 
 def build_envelope(kind: str, record: Mapping[str, Any]) -> dict[str, Any]:
-    """Minimal OES-0.1.0-shaped envelope; M4 replaces this with validated builders."""
+    """Minimal OES-0.1.0-shaped envelope; M4 replaces this with validated builders. ``record["extensions"]``
+    (e.g. the shipped guard arm's ``com.microsoft.ci.guard``) is merged next to ``org.ci.rrsi``."""
     design = {"round": "abn", "calibration": "ab", "confirm": "ab"}[kind]
     return {
         "oesVersion": "0.1.0",
@@ -93,5 +94,6 @@ def build_envelope(kind: str, record: Mapping[str, Any]) -> dict[str, Any]:
         "design": {"type": design, "multipleTestingPolicy":
                    "exploratory-rrsi-selection" if kind == "round" else "preregistered"},
         "decision": record.get("decision"),
-        "extensions": {"org.ci.rrsi": {k: v for k, v in record.items() if k != "eid"}},
+        "extensions": {"org.ci.rrsi": {k: v for k, v in record.items() if k not in ("eid", "extensions")},
+                       **dict(record.get("extensions") or {})},
     }

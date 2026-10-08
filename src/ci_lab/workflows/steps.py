@@ -46,6 +46,7 @@ from ci_lab.contracts import (
     round_experiment_id,
 )
 from ci_lab.contracts import ArmContext as StrategyContext
+from ci_lab.ledger.looks import LookBudgetExceeded
 from ci_lab.workflows import ARM_YAMLS
 from ci_lab.workflows.progress import HEARTBEAT_S, Progress, Tracker
 from ci_lab.workflows.runtime import GatedAgent, StepAborted
@@ -53,6 +54,7 @@ from ci_lab.workflows.runtime import GatedAgent, StepAborted
 INCUMBENT = "inc"
 INCUMBENT_STRATEGY = "incumbent"  # status.json label only; not an arm strategy
 INCUMBENT_GUARD = "inc-guard"     # run-dir/slot name of the incumbent's paired guard eval (B1)
+GUARD_SPLIT_FILE = "guard_split.json"  # split + dataset hash (+ C15 look) of a guard arm's paired eval
 FINAL_CRITIQUE = 3  # critique_1, critique_2, critique_final
 _GUARD_LOCKS: dict[tuple[int, str], asyncio.Lock] = {}
 
@@ -176,6 +178,25 @@ class RoundContext:
                                                 run_dir=run_dir, split=split, experiment_id=self.eid,
                                                 variant=INCUMBENT_GUARD, **guard_eval_options(self.env))
         return GuardMetrics.model_validate(data["metrics"])
+
+
+def guard_envelope_extension(ctx: RoundContext, arm: str) -> dict[str, Any] | None:
+    """``{"com.microsoft.ci.guard": ...}`` (``lessons_arm.envelope.guard_extension``) for a guard arm
+    that ran its paired eval, else ``None``; the round envelope carries it for the shipped guard arm."""
+    guard = (records.read_json(ctx.dir / arm / "arm.done") or {}).get("guard") or {}
+    if guard.get("skipped") or not guard.get("metrics"):
+        return None
+    from ci_lab.lessons_arm.envelope import guard_extension
+    from ci_lab.lessons_arm.paired import GUARD_EVAL_FILE
+    from ci_lab.rulespec import GuardMetrics
+
+    ship = guard.get("ship")
+    inc = (records.read_json(ctx.dir / INCUMBENT_GUARD / GUARD_EVAL_FILE) or {}).get("metrics") or {}
+    return guard_extension(
+        GuardMetrics.model_validate(guard["metrics"]), split=guard.get("split", "evolve"), arm=arm,
+        ship=(bool(ship.get("ok")), ship.get("reasons") or ()) if ship else None,
+        incumbent_digest=inc.get("bundle_digest"), dataset_hash=guard.get("dataset_hash"),
+        looks_used=int(guard.get("look_no") or 1), planned_looks=int(guard.get("planned_looks") or 1))
 
 
 def guard_eval_options(env: CampaignEnv) -> dict[str, Any]:
@@ -433,6 +454,7 @@ def arm_tools(ctx: ArmRun) -> dict[str, Callable[..., Awaitable[Any]]]:
     async def guard_paired_eval(split: str = "evolve") -> dict[str, Any]:
         """``arm_guard.yaml`` (v2.4 §13, B1/B4): paired guard-off/on eval of the arm, gated against
         the incumbent's paired metrics (marker ``guard_eval.json``; skipped with ``evaluate``)."""
+        from ci_lab.lessons_arm.envelope import holdout_look_required
         from ci_lab.lessons_arm.paired import GUARD_EVAL_FILE, guard_paired_eval_step
 
         data = _done(ctx.dir / GUARD_EVAL_FILE)
@@ -440,6 +462,15 @@ def arm_tools(ctx: ArmRun) -> dict[str, Callable[..., Awaitable[Any]]]:
             ev = _done(ctx.dir / "eval.json")
             if ev is None:
                 raise RuntimeError("guard_paired_eval before evaluate")
+            if not ev.get("skipped"):
+                env = ctx.round.env
+                info: dict[str, Any] = {"split": split, "holdout_look": holdout_look_required(split),
+                                        "planned_looks": int(env.hyper["holdout_looks"])}
+                if info["holdout_look"]:  # C15: one look per round, shared by the round's guard arms
+                    info.update(reserve_holdout_look(env, ctx.eid, split))
+                else:
+                    info["dataset_hash"] = dataset_hash(deps.domain.splits()[split])
+                records.write_json(ctx.dir / GUARD_SPLIT_FILE, info)
             incumbent = None if ev.get("skipped") else await ctx.round.incumbent_guard_metrics(split)
             data = await guard_paired_eval_step(domain=deps.domain, worktree=ctx.worktree, run_dir=ctx.dir,
                                                 split=split, experiment_id=ctx.eid, variant=ctx.arm,
@@ -476,7 +507,7 @@ def arm_tools(ctx: ArmRun) -> dict[str, Callable[..., Awaitable[Any]]]:
             status=status, strategy=ctx.strategy, cost=ctx.optimizer_cost())
         done = {"result": records.arm_to_dict(result), "reason": reason, "directive": dict(ctx.directive)}
         if guard is not None:
-            done["guard"] = guard
+            done["guard"] = {**guard, **(_done(ctx.dir / GUARD_SPLIT_FILE) or {})}
         records.write_json(marker, done)
         return {"arm": ctx.arm, "status": result.status}
 
@@ -678,9 +709,14 @@ def round_tools(ctx: RoundContext) -> dict[str, Callable[..., Awaitable[Any]]]:
                "base_tree": begin["base_tree"], "delta": env.delta(), "decision": sel["decision"],
                "winner": winner, "selection": sel, "arms": arm_rows, "tokens": tokens,
                "incumbent_score": records.mean_score(incumbent.eval)}
+        if winner and (guard_ext := guard_envelope_extension(ctx, winner)):
+            rec["extensions"] = guard_ext
         rounds = f"rounds/{ctx.eid}"
         deps.ledger.write_json(env.rel(rounds, "envelope.json"), deps.build_envelope("round", rec))
-        deps.ledger.write_json(env.rel(rounds, "decisions.json"), sel)
+        if (record_decisions := getattr(deps.ledger, "record_decisions", None)) is not None:
+            record_decisions(env.cid, ctx.eid, sel)  # ci_lab.ledger.decisions (verdict check + record span)
+        else:
+            deps.ledger.write_json(env.rel(rounds, "decisions.json"), sel)
         deps.ledger.write_json(env.rel(rounds, "evals.json"), {
             "incumbent": records.arm_to_dict(incumbent),
             "arms": {k: records.arm_to_dict(v) for k, v in arms.items()}})
@@ -867,7 +903,37 @@ LOOKS = "holdout-looks.jsonl"  # global, ledger root (C15)
 
 
 def dataset_hash(case_ids: Any) -> str:
-    return hashlib.sha256("\n".join(sorted(str(c) for c in case_ids)).encode()).hexdigest()
+    """``sha256:<hex>`` of the sorted case ids (OES ``datasetHash`` form; also a valid look-ledger key)."""
+    return "sha256:" + hashlib.sha256("\n".join(sorted(str(c) for c in case_ids)).encode()).hexdigest()
+
+
+def reserve_holdout_look(env: CampaignEnv, eid: str, split: str) -> dict[str, Any]:
+    """C15: reserve one look at ``split`` in the global ledger ``holdout-looks.jsonl`` for experiment
+    ``eid`` (idempotent per experiment, so a resumed step does not consume a second look); returns
+    ``{"dataset_hash", "look_no"}``. Ledgers with ``record_look`` (FileLedger) go through
+    :mod:`ci_lab.ledger.looks`."""
+    deps = env.deps
+    digest = dataset_hash(deps.domain.splits()[split])
+    planned = int(env.hyper["holdout_looks"])
+    if (record_look := getattr(deps.ledger, "record_look", None)) is not None:
+        try:
+            look_no = int(record_look(digest, experiment_id=eid, planned=planned, campaign_id=env.cid,
+                                      split=split)["look_no"])
+        except LookBudgetExceeded as exc:
+            raise HoldoutExhausted(str(exc)) from exc
+    else:
+        key = f"{eid}|{digest}"
+        looks = [r for r in deps.ledger.read_jsonl(LOOKS) if r.get("dataset_hash") == digest]
+        keys = [r.get("key") for r in looks]
+        if key not in keys:
+            if len(looks) >= planned:
+                raise HoldoutExhausted(f"held-out {digest[:19]} already looked at {len(looks)} time(s)")
+            deps.ledger.append_jsonl(LOOKS, {"key": key, "campaign": env.cid, "dataset_hash": digest,
+                                             "split": split, "eid": eid}, key="key")
+            keys.append(key)
+        look_no = keys.index(key) + 1
+    env.commit_ledger(f"{eid}-look", f"Reserve held-out look for {eid}", [LOOKS])
+    return {"dataset_hash": digest, "look_no": look_no}
 
 
 def confirm_tools(ctx: ConfirmContext) -> dict[str, Callable[..., Awaitable[Any]]]:
@@ -879,17 +945,8 @@ def confirm_tools(ctx: ConfirmContext) -> dict[str, Callable[..., Awaitable[Any]
         marker = ctx.dir / "look.json"
         if (data := _done(marker)) is not None:
             return data
-        digest = dataset_hash(deps.domain.splits()[split])
-        key = f"{env.cid}|{digest}"
-        looks = deps.ledger.read_jsonl(LOOKS)
-        if not any(r["key"] == key for r in looks):
-            used = sum(1 for r in looks if r["dataset_hash"] == digest)
-            if used >= int(hyper["holdout_looks"]):
-                raise HoldoutExhausted(f"held-out {digest[:12]} already looked at {used} time(s)")
-            deps.ledger.append_jsonl(LOOKS, {"key": key, "campaign": env.cid, "dataset_hash": digest,
-                                             "split": split, "eid": ctx.eid}, key="key")
-        env.commit_ledger(f"{ctx.eid}-look", f"Reserve held-out look for {env.cid}", [LOOKS])
-        data = {"dataset_hash": digest, "split": split}
+        look = reserve_holdout_look(env, ctx.eid, split)
+        data = {"dataset_hash": look["dataset_hash"], "split": split}
         records.write_json(marker, data)
         return data
 

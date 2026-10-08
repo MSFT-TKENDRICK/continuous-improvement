@@ -12,6 +12,9 @@ from pathlib import Path
 from typing import Any
 
 from ci_lab.campaign import records
+from ci_lab.ledger import decisions as ledger_decisions
+from ci_lab.ledger import looks as ledger_looks
+from ci_lab.ledger.layout import Layout
 
 
 class FileLedger:
@@ -51,6 +54,35 @@ class FileLedger:
     def commit(self, message: str, paths: Sequence[str]) -> str | None:
         self.commits.append((message, tuple(paths)))
         return self._committer(message, paths) if self._committer else None
+
+    def record_decisions(self, campaign_id: str, experiment_id: str, decisions: Mapping[str, Any]) -> str:
+        """Decision-time write of ``campaigns/<cid>/rounds/<eid>/decisions.json`` through
+        :func:`ci_lab.ledger.decisions.record_decisions` (verdict check + ``ci.step{record}`` span).
+        Returns the ledger-relative path."""
+        path = ledger_decisions.record_decisions(_RootedLayout(self.root), campaign_id, experiment_id, decisions)
+        return path.relative_to(self.root).as_posix()
+
+    def record_look(self, dataset_hash: str, *, experiment_id: str, planned: int, campaign_id: str | None = None,
+                    split: str = "heldout") -> dict[str, Any]:
+        """Reserve one held-out look in the global C15 ledger ``holdout-looks.jsonl`` via
+        :func:`ci_lab.ledger.looks.record_look` (idempotent per experiment; raises
+        :class:`ci_lab.ledger.looks.LookBudgetExceeded` past the planned looks)."""
+        return ledger_looks.record_look(_RootedLayout(self.root).holdout_looks(), dataset_hash,
+                                        experiment_id=experiment_id, planned=planned, campaign_id=campaign_id,
+                                        split=split)
+
+
+class _RootedLayout(Layout):
+    """:class:`ci_lab.ledger.layout.Layout` anchored at an explicit ledger root (FileLedger's root
+    need not be ``<repo>/experiments``)."""
+
+    def __init__(self, root: Path) -> None:
+        super().__init__(Path(root).parent)
+        object.__setattr__(self, "_root", Path(root))
+
+    @property
+    def root(self) -> Path:
+        return self._root  # type: ignore[attr-defined]
 
 
 class FileOutbox:
