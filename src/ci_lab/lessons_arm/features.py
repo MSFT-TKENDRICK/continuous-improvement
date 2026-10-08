@@ -107,6 +107,19 @@ class Candidate(BaseModel):
 
     cluster: LessonCluster
     features: LessonFeatures | None = None
+    trusted: bool | None = None  # M16 top-level trust bit (False: usage/PR source, needs a human label)
+
+    @field_validator("features", mode="before")
+    @classmethod
+    def _empty(cls, v: object) -> object:
+        return None if v in ({}, None) else v
+
+    def resolved(self) -> LessonFeatures | None:
+        """Typed features (given or derived from the frozen oracle map) with the top-level trust bit applied."""
+        feats = self.features or derive_features(self.cluster)
+        if feats is not None and self.trusted is False and feats.trusted:
+            feats = feats.model_copy(update={"trusted": False})
+        return feats
 
 
 def read_candidates(path: Path) -> list[Candidate]:
@@ -128,4 +141,4 @@ def read_candidates(path: Path) -> list[Candidate]:
 
 
 def features_for(candidates: Iterable[Candidate]) -> list[tuple[LessonCluster, LessonFeatures | None]]:
-    return [(c.cluster, c.features or derive_features(c.cluster)) for c in candidates]
+    return [(c.cluster, c.resolved()) for c in candidates]

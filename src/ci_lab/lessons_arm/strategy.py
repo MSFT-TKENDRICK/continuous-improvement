@@ -42,7 +42,7 @@ from ci_lab.contracts import (
 from ci_lab.rulespec import GUARD_BUNDLE_LOCK, GUARDS_DIR, LESSON_REGISTRY, LessonCluster, RuleSpec
 
 from .bundle import BundleError, dump_rule_file, load_rules, rule_files, subset_bundle
-from .features import Candidate, LessonFeatures, derive_features, is_injection, read_candidates
+from .features import Candidate, LessonFeatures, is_injection, read_candidates
 from .seams import ReplayFn, default_replay, lessons_touching, load_registry
 from .synth import SynthesisError, lesson_id_for, synthesize
 
@@ -210,7 +210,7 @@ class GuardStrategy:
         own_changed = self._changed_since_base(ctx)
         out: list[tuple[str, LessonCluster, LessonFeatures | None]] = []
         for c in cands:
-            cl, feats = c.cluster, c.features or derive_features(c.cluster)
+            cl, feats = c.cluster, c.resolved()
             lid = lesson_id_for(cl)
             reason = None
             if is_injection(cl) or (feats is not None and feats.injection_suspect):
@@ -219,7 +219,7 @@ class GuardStrategy:
                 reason = f"status_{cl.status}"
             elif cl.route not in ("R1", "R2", "R3"):
                 reason = f"route_{cl.route}"
-            elif feats is not None and not feats.trusted and not cl.human_confirmed:
+            elif ((feats is not None and not feats.trusted) or c.trusted is False) and not cl.human_confirmed:
                 reason = "untrusted_unlabeled"
             elif lid in foreign:
                 reason = "touched_by_other_arm"

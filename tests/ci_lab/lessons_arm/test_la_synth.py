@@ -84,11 +84,15 @@ def test_derive_features_and_candidates(tmp_path: Path):
     path.write_text("\n".join([
         c1.model_dump_json(),
         json.dumps({"cluster": c2.model_dump(mode="json"), "features": feats, "route_reasons": ["x"]}),
+        json.dumps({"cluster": c1.model_dump(mode="json"), "features": {}, "trusted": False,
+                    "forced_structural": True, "holdout_members": ["t1"]}),
         "",
     ]), encoding="utf-8")
     pairs = features_for(read_candidates(path))
     assert pairs[0][1] == ORACLE_FEATURES["refund.ineligible_order"]
     assert pairs[1][1] is not None and pairs[1][1].arg == "amount"
+    # M16 form: empty features => derived; top-level trusted=False propagates (B3)
+    assert pairs[2][1] is not None and pairs[2][1].kind == "prior_call" and pairs[2][1].trusted is False
     assert read_candidates(tmp_path / "missing.jsonl") == []
     (tmp_path / "bad.jsonl").write_text("{not json\n", encoding="utf-8")
     with pytest.raises(ValueError, match="bad.jsonl:1"):
