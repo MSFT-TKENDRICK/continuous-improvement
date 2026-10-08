@@ -376,3 +376,300 @@ def _analysis(at: str, *, method: str = "custom", model: str, alpha: float | Non
 
 # ---------------------------------------------------------------- calibration (A/A)
 
+def calibration_envelope(campaign_id: str, runs: Sequence[EvalResult], *, delta: float, delta_method: str,
+                         harness_commit: str, split_hashes: Mapping[str, str],
+                         judge_errors: Mapping[str, int] | None = None,
+                         max_missing_rate: float = DEFAULT_MAX_MISSING, exported_at: str | None = None,
+                         source_version: str | None = None,
+                         artifacts: Sequence[Mapping[str, Any]] = ()) -> dict[str, Any]:
+    """A/A calibration: ``runs`` are R>=2 repeated evaluations of the incumbent (``rep0`` = baseline)."""
+    _check_campaign(campaign_id)
+    if len(runs) < 2:
+        raise ValueError("A/A calibration needs at least 2 repeats")
+    at = exported_at or _now()
+    ids = [f"rep{i}" for i in range(len(runs))]
+    by_id = dict(zip(ids, runs, strict=True))
+    stats = {v: summarize(r) for v, r in by_id.items()}
+    pins = {v: r.pin for v, r in by_id.items()}
+    primary = _metric_id(runs[0].split)
+    results = _results(ids[0], stats, pins, primary=primary, delta=delta, shipped=None, judge_errors=judge_errors)
+    checks = _quality(ids[0], stats, pins, max_missing=max_missing_rate, judge_errors=judge_errors)
+    pairs = {f"{a}-{b}": _r(abs(stats[a].score - stats[b].score))
+             for i, a in enumerate(ids) for b in ids[i + 1:]}
+    widest = max(pairs.values())
+    checks.append(QualityCheck(
+        check_type="aa_noise_band", status="pass" if widest <= delta else "warn", severity="low",
+        observed={"maxAbsDeltaS": widest, "pairs": pairs}, expected={"delta": delta},
+        message=f"A/A max |dS| {widest} vs delta {delta} ({delta_method})"))
+    trees = {r.harness_tree for r in runs}
+    checks.append(QualityCheck(
+        check_type="harness_identity", status="pass" if len(trees) == 1 else "fail", severity="critical",
+        observed=sorted(trees), expected=runs[0].harness_tree,
+        message="all repeats evaluate the same harness tree" if len(trees) == 1 else
+                "A/A repeats evaluated different harness trees"))
+    blocking = _blocking(checks)
+    if blocking:
+        outcome, why = "rerun", "calibration invalid: " + "; ".join(c.message or c.check_type for c in blocking)
+    else:
+        outcome, why = "do_not_ship", (f"A/A calibration of the incumbent ({len(runs)} repeats); no change to ship. "
+                                       f"delta fixed at {delta} for campaign {campaign_id}.")
+    decision, scorecard = _decide(outcome, why, at, "rrsi.calibration", checks)
+    variants = [Variant(id=v, key=v, name=f"incumbent repeat {i}", role="baseline" if i == 0 else "treatment",
+                        description="A/A copy of the incumbent harness", config={"harnessTree": by_id[v].harness_tree},
+                        code_references=[{"type": "commit", "sha": harness_commit}])
+                for i, v in enumerate(ids)]
+    ext = {
+        "version": EXT_VERSION, "kind": "calibration", "campaignId": campaign_id, "round": 0,
+        "split": runs[0].split, "multipleTesting": "none", "repeats": len(runs), "delta": delta,
+        "deltaMethod": delta_method, "harnessTree": runs[0].harness_tree, "evaluatorPin": pin_dict(runs[0].pin),
+        "splitHashes": dict(split_hashes), "supersedes": None,
+    }
+    return _envelope(
+        exp=Experiment(id=f"{campaign_id}-cal", slug=f"{campaign_id}-cal", status="decided",
+                       title=f"{campaign_id}: A/A noise calibration",
+                       hypothesis="Repeated evaluations of an unchanged harness differ only by evaluation noise.",
+                       learning_goal="Fix the campaign noise band delta used by every RRSI round.",
+                       tags=["rrsi", "calibration", campaign_id]),
+        design=Design(type="ab" if len(runs) == 2 else "abn", randomization_unit="task",
+                      analysis_unit="task_trial", assignment_method="every task evaluated in every repeat",
+                      population=f"{runs[0].split} split", multiple_testing_policy="none",
+                      peeking_policy="fixed_horizon"),
+        variants=variants, metrics=_metrics(primary, stats[ids[0]].suites),
+        analysis=_analysis(at, model=f"A/A repeat comparison; delta via {delta_method}"),
+        results=results, checks=checks, decision=decision, scorecard=scorecard,
+        provenance=_provenance(harness_commit, stats, by_id),
+        extensions={RRSI_EXT: ext}, at=at, source_version=source_version, artifacts=artifacts)
+
+
+# ---------------------------------------------------------------- RRSI round
+
+def _variant_ext(arm: ArmResult, archive_ref: str | None) -> dict[str, Any]:
+    return {
+        "status": arm.status, "baseCommit": arm.base_commit, "headCommit": arm.head_commit,
+        "harnessTree": arm.harness_tree,
+        "edits": [{"component": e.component, "hypothesis": e.hypothesis, "commit": e.commit,
+                   "files": list(e.files)} for e in arm.edits],
+        "critic": None if arm.critic is None else {"passed": arm.critic.passed, "reasons": list(arm.critic.reasons),
+                                                   "repairs": arm.critic.repairs},
+        "archiveRef": archive_ref,
+    }
+
+
+def round_envelope(campaign_id: str, round_no: int, *, incumbent: EvalResult, incumbent_commit: str,
+                   arms: Sequence[ArmResult], selection: SelectionExt | Mapping[str, Any], schedule: Schedule,
+                   params: RrsiParams, split_hashes: Mapping[str, str],
+                   lineage: Mapping[str, Any] | None = None, supersedes: str | None = None,
+                   archive_refs: Mapping[str, str] | None = None,
+                   judge_errors: Mapping[str, int] | None = None,
+                   max_missing_rate: float = DEFAULT_MAX_MISSING, exported_at: str | None = None,
+                   source_version: str | None = None,
+                   artifacts: Sequence[Mapping[str, Any]] = ()) -> dict[str, Any]:
+    """One exploratory RRSI round: baseline ``inc`` (incumbent) vs each arm (treatment).
+
+    ``selection`` is the Alg.2 trace from ``ci_lab.rrsi`` (winner + per-candidate rule trace).
+    Arms without an ``eval`` (rejected/failed) are listed as variants with no results.
+    """
+    _check_campaign(campaign_id)
+    exp_id = round_experiment_id(campaign_id, round_no)
+    if round_no < 1:
+        raise ValueError("rounds start at 1 (round 0 is calibration)")
+    if incumbent.split != "evolve":
+        raise ValueError("rounds evaluate the evolve split only")
+    names = [a.arm for a in arms]
+    if len(set(names)) != len(names) or BASELINE_ID in names or not all(ARM_RE.match(n) for n in names):
+        raise ValueError(f"arm names must be unique, valid and not {BASELINE_ID!r}: {names}")
+    sel = selection if isinstance(selection, SelectionExt) else SelectionExt.model_validate(dict(selection))
+    evaluated = {a.arm: a.eval for a in arms if a.eval is not None}
+    if sel.winner is not None and sel.winner not in evaluated:
+        raise ValueError(f"winner {sel.winner!r} is not an evaluated arm")
+    at = exported_at or _now()
+
+    by_id: dict[str, EvalResult] = {BASELINE_ID: incumbent, **evaluated}
+    stats = {v: summarize(r) for v, r in by_id.items()}
+    pins = {v: r.pin for v, r in by_id.items()}
+    cands = {c.variant_id: c for c in sel.candidates}
+    ci = {v: Interval(level=c.ci_level, lower=c.ci_lower_bound)
+          for v, c in cands.items() if c.ci_lower_bound is not None and v in evaluated}
+    checks = _quality(BASELINE_ID, stats, pins, max_missing=max_missing_rate, judge_errors=judge_errors)
+    for a in arms:
+        if a.critic is not None:
+            checks.append(QualityCheck(
+                check_type=f"critic_{a.arm}", status="pass" if a.critic.passed else "fail", severity="medium",
+                observed={"reasons": list(a.critic.reasons), "repairs": a.critic.repairs},
+                message=f"critic {'passed' if a.critic.passed else 'rejected'} arm {a.arm}"))
+    blocking = _blocking(checks)
+    winner = None if blocking else sel.winner
+    results = _results(BASELINE_ID, stats, pins, primary="evolve_score", delta=params.delta, shipped=winner,
+                       judge_errors=judge_errors, primary_ci=ci)
+    if blocking:
+        outcome = "rerun"
+        why = f"round {round_no} invalid: " + "; ".join(c.message or c.check_type for c in blocking)
+    elif winner:
+        c = cands.get(winner)
+        outcome = "ship"
+        why = (f"arm {winner} admissible under the {c.rule if c else 'selection'} rule"
+               + (f" (dS={c.delta_s}, dC={c.delta_c})" if c else "") + "; becomes the new incumbent.")
+    else:
+        outcome, why = "do_not_ship", f"no admissible arm in round {round_no}; incumbent kept."
+    decision, scorecard = _decide(outcome, why, at, "rrsi.alg2", checks)
+    if winner:
+        scorecard.primary_outcome = {"metricId": "evolve_score", "variantId": winner,
+                                     "absoluteDifference": _r(stats[winner].score - stats[BASELINE_ID].score)}
+        scorecard.guardrail_outcomes = [
+            {"metricId": "safety_violations", "variantId": winner,
+             "status": "pass" if stats[winner].critical_violations <= stats[BASELINE_ID].critical_violations
+             else "fail"}]
+
+    variants = [Variant(id=BASELINE_ID, key=BASELINE_ID, name="incumbent", role="baseline",
+                        description="Current campaign incumbent harness",
+                        config={"harnessTree": incumbent.harness_tree},
+                        code_references=[{"type": "commit", "sha": incumbent_commit}])]
+    refs = dict(archive_refs or {})
+    for a in arms:
+        code_refs = [{"type": "commit", "sha": e.commit, "component": e.component} for e in a.edits]
+        if a.head_commit:
+            code_refs.append({"type": "branch", "ref": f"exp/{exp_id}/{a.arm}", "sha": a.head_commit})
+        if a.arm in refs:
+            code_refs.append({"type": "tag", "ref": refs[a.arm]})
+        variants.append(Variant(
+            id=a.arm, key=a.arm, name=f"arm {a.arm}", role="treatment",
+            description="; ".join(f"[{e.component}] {e.hypothesis}" for e in a.edits) or f"arm {a.arm} ({a.status})",
+            config={"harnessTree": a.harness_tree, "status": a.status}, code_references=code_refs or None))
+
+    parent = f"{campaign_id}-cal" if round_no == 1 else round_experiment_id(campaign_id, round_no - 1)
+    lin = {"parentExperimentId": parent, "incumbentCommit": incumbent_commit, "incumbentTree": incumbent.harness_tree}
+    lin.update(lineage or {})
+    ext = {
+        "version": EXT_VERSION, "kind": "round", "campaignId": campaign_id, "round": round_no, "split": "evolve",
+        "multipleTesting": "exploratory", "budget": schedule.budget, "stall": schedule.stall,
+        "explorationSlots": schedule.exploration_slots, "pruneSet": list(schedule.prune_set),
+        "delta": params.delta, "deltaMethod": params.delta_method,
+        "costRule": {"beta0": params.beta0, "beta1": params.beta1},
+        "weights": {"ws": params.ws, "wc": params.wc, "wn": params.wn},
+        "selection": sel.to_dict(),
+        "variants": {BASELINE_ID: {"status": "incumbent", "baseCommit": incumbent_commit,
+                                   "headCommit": incumbent_commit, "harnessTree": incumbent.harness_tree,
+                                   "edits": [], "critic": None, "archiveRef": None},
+                     **{a.arm: _variant_ext(a, refs.get(a.arm)) for a in arms}},
+        "harnessTree": incumbent.harness_tree, "evaluatorPin": pin_dict(incumbent.pin),
+        "splitHashes": dict(split_hashes), "supersedes": supersedes, "lineage": lin,
+        "ciLowerBound": cands[winner].ci_lower_bound if winner and winner in cands else None,
+    }
+    return _envelope(
+        exp=Experiment(id=exp_id, slug=exp_id, status="decided", title=f"{campaign_id}: RRSI round {round_no}",
+                       hypothesis="At least one proposed harness edit improves the evolve score beyond the noise "
+                                  "band without worsening safety (exploratory; not an inferential claim).",
+                       learning_goal="Select the next incumbent via RRSI Alg. 2.",
+                       tags=["rrsi", "round", campaign_id]),
+        design=Design(type="abn", randomization_unit="task", analysis_unit="task_trial",
+                      assignment_method="every task evaluated on every variant (paired)",
+                      population="evolve split", multiple_testing_policy="custom", peeking_policy="informal",
+                      stopping_rule=f"fixed budget b_t={schedule.budget}; one evaluation per variant",
+                      minimum_detectable_effect=params.delta),
+        variants=variants, metrics=_metrics("evolve_score", stats[BASELINE_ID].suites),
+        analysis=_analysis(at, model="RRSI Alg.2 regularized selection (cost rule / weighted rule, "
+                                     "non-compensatory safety guard, floor S* - delta)", estimator="bootstrap"),
+        results=results, checks=checks, decision=decision, scorecard=scorecard,
+        provenance=_provenance(incumbent_commit, stats, by_id),
+        extensions={RRSI_EXT: ext}, at=at, source_version=source_version, artifacts=artifacts)
+
+
+# ---------------------------------------------------------------- confirmation
+
+def confirm_envelope(campaign_id: str, *, baseline: EvalResult, final: EvalResult, baseline_commit: str,
+                     final_commit: str, stats: ConfirmStats, holdout: Holdout, look_ledger_ref: str,
+                     split_hashes: Mapping[str, str], alpha: float = 0.05, sided: str = "one",
+                     non_inferiority_margin: int = 0, registered_at: str | None = None,
+                     ood: tuple[EvalResult, EvalResult] | None = None, accepted_rounds: Sequence[str] = (),
+                     supersedes: str | None = None, judge_errors: Mapping[str, int] | None = None,
+                     max_missing_rate: float = DEFAULT_MAX_MISSING, exported_at: str | None = None,
+                     source_version: str | None = None,
+                     artifacts: Sequence[Mapping[str, Any]] = ()) -> dict[str, Any]:
+    """Pre-registered confirmation H0 (``h0``, baseline) vs H_final (``final``) on the sealed held-out split.
+
+    Ship iff quality is valid, ``p_value < alpha``, the CI lower bound is > 0 and safety is
+    non-inferior (final critical violations <= h0 + margin). OOD (optional) is secondary.
+    """
+    _check_campaign(campaign_id)
+    if baseline.split != "heldout" or final.split != "heldout":
+        raise ValueError("confirmation must evaluate the held-out split")
+    if not 1 <= holdout.looks_used <= holdout.planned_looks:
+        raise ValueError(f"held-out look budget exceeded: {holdout.looks_used}/{holdout.planned_looks}")
+    at = exported_at or _now()
+    by_id = {"h0": baseline, "final": final}
+    st = {v: summarize(r) for v, r in by_id.items()}
+    pins = {v: r.pin for v, r in by_id.items()}
+    checks = _quality("h0", st, pins, max_missing=max_missing_rate, judge_errors=judge_errors)
+    blocking = _blocking(checks)
+    safe = st["final"].critical_violations <= st["h0"].critical_violations + non_inferiority_margin
+    sig = stats.p_value < alpha and stats.ci_lower > 0
+    shipped = "final" if (not blocking and sig and safe) else None
+    results = _results("h0", st, pins, primary="heldout_score", delta=0.0, shipped=shipped,
+                       judge_errors=judge_errors, safety_slack=non_inferiority_margin,
+                       primary_ci={"final": Interval(level=stats.ci_level, lower=stats.ci_lower,
+                                                     upper=stats.ci_upper)},
+                       p_values={"final": stats.p_value})
+    metrics = _metrics("heldout_score", st["h0"].suites, secondary="ood_score" if ood else None)
+    if ood:
+        ob, of = summarize(ood[0]), summarize(ood[1])
+        results.metric_results.append(_cmp("ood_score", "secondary", ob.score, of.score,
+                                           baseline="h0", variant="final"))
+    if blocking:
+        outcome = "rerun"
+        why = "confirmation invalid: " + "; ".join(c.message or c.check_type for c in blocking)
+    elif shipped:
+        outcome = "ship"
+        why = (f"H_final beats H0 on held-out (p={stats.p_value} < alpha={alpha}, CI lower {stats.ci_lower} > 0) "
+               f"and safety is non-inferior (margin {non_inferiority_margin}).")
+    else:
+        outcome = "do_not_ship"
+        why = ("pre-registered test not passed: " + ", ".join(
+            x for x, bad in (("not significant", not sig), ("safety inferior", not safe)) if bad))
+    decision, scorecard = _decide(outcome, why, at, "rrsi.confirm", checks)
+    ext = {
+        "version": EXT_VERSION, "kind": "confirm", "campaignId": campaign_id,
+        "round": len(accepted_rounds), "split": "heldout", "multipleTesting": "confirmatory",
+        "harnessTree": baseline.harness_tree, "evaluatorPin": pin_dict(baseline.pin),
+        "splitHashes": dict(split_hashes),
+        "holdout": {"datasetHash": holdout.dataset_hash, "plannedLooks": holdout.planned_looks,
+                    "looksUsed": holdout.looks_used},
+        "lookLedgerRef": look_ledger_ref,
+        "preRegistration": {"alpha": alpha, "sided": sided, "primaryMetric": "heldout_score",
+                            "nonInferiorityMargin": non_inferiority_margin,
+                            **({"registeredAt": registered_at} if registered_at else {}),
+                            "stats": {"method": stats.method, "pValue": stats.p_value, "ciLevel": stats.ci_level,
+                                      "ciLower": stats.ci_lower, "ciUpper": stats.ci_upper}},
+        "supersedes": supersedes,
+        "lineage": {"parentExperimentId": accepted_rounds[-1] if accepted_rounds else f"{campaign_id}-cal",
+                    "incumbentCommit": baseline_commit, "incumbentTree": baseline.harness_tree,
+                    "finalCommit": final_commit, "finalTree": final.harness_tree,
+                    "acceptedRounds": list(accepted_rounds)},
+        "ciLowerBound": stats.ci_lower,
+    }
+    return _envelope(
+        exp=Experiment(id=f"{campaign_id}-confirm", slug=f"{campaign_id}-confirm", status="decided",
+                       title=f"{campaign_id}: held-out confirmation",
+                       hypothesis="The final harness scores higher than the campaign starting harness on the sealed "
+                                  "held-out split, without more critical safety violations.",
+                       tags=["rrsi", "confirm", campaign_id]),
+        design=Design(type="ab", randomization_unit="task", analysis_unit="task",
+                      assignment_method="every held-out task evaluated on both variants (paired)",
+                      population="sealed held-out split", alpha=alpha, multiple_testing_policy="none",
+                      peeking_policy="fixed_horizon",
+                      stopping_rule=f"single pre-registered look ({holdout.looks_used}/{holdout.planned_looks})"),
+        variants=[Variant(id="h0", key="h0", name="campaign start (H0)", role="baseline",
+                          config={"harnessTree": baseline.harness_tree},
+                          code_references=[{"type": "commit", "sha": baseline_commit}]),
+                  Variant(id="final", key="final", name="final incumbent (H_final)", role="treatment",
+                          config={"harnessTree": final.harness_tree},
+                          code_references=[{"type": "commit", "sha": final_commit}])],
+        metrics=metrics,
+        analysis=_analysis(at, method="frequentist", model=stats.method, alpha=alpha,
+                           confidence=stats.ci_level, estimator="bootstrap"),
+        results=results, checks=checks, decision=decision, scorecard=scorecard,
+        provenance=_provenance(final_commit, st, by_id),
+        extensions={RRSI_EXT: ext}, at=at, source_version=source_version, artifacts=artifacts)
+
+
+# ---------------------------------------------------------------- SkillOpt-Sleep
+
