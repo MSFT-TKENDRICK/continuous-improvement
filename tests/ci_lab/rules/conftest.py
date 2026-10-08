@@ -44,6 +44,13 @@ class TB:
     def respond(self, text: str) -> TrajectoryStep:
         return self._add(kind="response", text=text)
 
+    def pending(self, tool: str, **args: Any) -> TrajectoryStep:
+        """A tool_call step that is NOT appended (the call under evaluation)."""
+        return TrajectoryStep(i=len(self.steps), kind="tool_call", tool=tool, call_id="pending", args=args)
+
+    def pending_response(self, text: str) -> TrajectoryStep:
+        return TrajectoryStep(i=len(self.steps), kind="response", text=text)
+
     def lookup(self, order_id: str, total: float = 50.0, eligible: bool = True, exceeded: bool = False,
                status: str = "delivered", pii: bool = False) -> TrajectoryStep:
         res: dict[str, Any] = {"order_id": order_id, "status": status, "total": total,
@@ -67,3 +74,44 @@ def seeds():
     from ci_lab.rules import load_bundle
 
     return load_bundle([SEEDS], [EXTRACTORS])
+
+
+IDV = {"flag": "identity_verified", "tool": "verify_identity", "result_path": "result.verified",
+       "subject": "args.order_id"}
+_ON = {"R1": "tool_call", "R2": "tool_call", "R3": "response", "R4": "trajectory"}
+
+
+def make_rule(**kw: Any):
+    from ci_lab.rulespec import RuleSpec
+
+    rung = kw.get("rung", "R2")
+    base: dict[str, Any] = {"id": "t.rule", "version": 1, "rung": rung, "on": _ON[rung], "target": "issue_refund",
+                            "action": "block" if rung == "R2" else "warn", "template": "count.exceeded",
+                            "slots": {"tool": "issue_refund"}}
+    base.update(kw)
+    return RuleSpec.model_validate(base)
+
+
+@pytest.fixture
+def mk():
+    """``mk(rule_kwargs..., extractors=[...])`` -> compiled Bundle (default extractor: identity_verified)."""
+    from ci_lab.rules import build_bundle
+    from ci_lab.rulespec import ExtractorSpec
+
+    def _mk(*rules: dict[str, Any], extractors: list[dict[str, Any]] | None = None):
+        ex = [ExtractorSpec.model_validate(e) for e in (extractors if extractors is not None else [IDV])]
+        return build_bundle([make_rule(**{"id": f"t.rule{n}", **r}) for n, r in enumerate(rules)], ex)
+
+    return _mk
+
+
+@pytest.fixture
+def fires():
+    """``fires(bundle, steps, pending, on=...)`` -> sorted ids of matching rules."""
+    from ci_lab.rules import evaluate
+    from ci_lab.rulespec import GuardView
+
+    def _fires(bundle, steps, pending, on="tool_call"):
+        return [m.rule.id for m in evaluate(bundle, GuardView(steps=tuple(steps), pending=pending), on=on)]
+
+    return _fires

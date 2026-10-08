@@ -79,6 +79,9 @@ class Bundle:
     _redact_patterns: Mapping[str, tuple[str, ...]] = field(default_factory=dict, repr=False, compare=False)
     _by_on: Mapping[str, tuple[RuleSpec, ...]] = field(default_factory=dict, repr=False, compare=False)
 
+    def __hash__(self) -> int:
+        return hash((self.digest, self.config_digest))
+
     def rule(self, rule_id: str) -> RuleSpec:
         for r in self.rules:
             if r.id == rule_id:
