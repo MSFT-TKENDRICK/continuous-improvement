@@ -1,0 +1,38 @@
+# RRSI round (design §5, C5). Expression-free: literal arguments only; dynamic
+# context (run dir, experiment id) is bound into the registered tool closures.
+kind: Workflow
+trigger:
+  kind: OnConversationStart
+  id: rrsi_round
+  actions:
+    - kind: InvokeFunctionTool
+      id: begin_round
+      functionName: begin_round
+      arguments:
+        step: begin_round
+    - kind: InvokeAzureAgent
+      id: analyst
+      agent:
+        name: Analyst
+      input:
+        messages: "Read your brief with your tools, then call submit_analysis."
+    - kind: InvokeFunctionTool
+      id: run_arms
+      functionName: run_arms
+      arguments:
+        step: run_arms
+    - kind: InvokeFunctionTool
+      id: select
+      functionName: select
+      arguments:
+        step: select
+    - kind: InvokeFunctionTool
+      id: record
+      functionName: record
+      arguments:
+        step: record
+    - kind: InvokeFunctionTool
+      id: publish
+      functionName: publish
+      arguments:
+        step: publish
