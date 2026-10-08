@@ -22,7 +22,8 @@ def register(subparsers: Any) -> None:
     pr.add_argument("--decisions", required=True, type=Path, help="GuardDecision + opportunity JSONL")
     pr.add_argument("--labels", type=Path, default=None, help="adjudications JSONL {attempt_digest,label,intent?}")
     pr.add_argument("--repo", type=Path, default=Path("."), help="harness repo/worktree root")
-    pr.add_argument("--guards-dir", type=Path, default=None, help=f"default <repo>/{GUARDS_DIR}")
+    pr.add_argument("--guards-dir", type=Path, default=None,
+                    help=f"default <repo>/src/order_support/harness/guards if present, else <repo>/{GUARDS_DIR}")
     pr.add_argument("--epsilon", type=float, default=PROMOTE_FP_UCB)
     pr.add_argument("--out", type=Path, default=None, help="write the patch here")
     pr.add_argument("--branch", default=None, help="also create this local branch (git plumbing; no checkout)")
@@ -41,6 +42,12 @@ def register(subparsers: Any) -> None:
     rt.add_argument("--min-opportunities", type=int, default=PROMOTE_MIN_OPPORTUNITIES)
     rt.add_argument("--max-fire-ucb", type=float, default=None)
     rt.set_defaults(func=_retire)
+
+
+def _guards(repo: Path) -> Path:
+    from ci_lab.domain.layout import repo_guards_dir
+
+    return repo_guards_dir(repo)
 
 
 def _all_rules(guards: Path) -> list[Any]:
@@ -75,7 +82,7 @@ def _prose(a: Any) -> int:
         print(f"error: lesson {a.lesson!r} not in registry", file=sys.stderr)
         return 2
     try:
-        prop = propose_deletions(entry, _all_rules(a.repo / GUARDS_DIR), root=a.repo)
+        prop = propose_deletions(entry, _all_rules(_guards(a.repo)), root=a.repo)
     except ProseError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
@@ -90,7 +97,7 @@ def _prose(a: Any) -> int:
 def _retire(a: Any) -> int:
     from .retire import DEFAULT_MAX_FIRE_UCB, retirement_candidates
 
-    cands = retirement_candidates(_all_rules(a.repo / GUARDS_DIR), a.decisions,
+    cands = retirement_candidates(_all_rules(_guards(a.repo)), a.decisions,
                                   min_opportunities=a.min_opportunities,
                                   max_fire_ucb=DEFAULT_MAX_FIRE_UCB if a.max_fire_ucb is None else a.max_fire_ucb)
     print(json.dumps([c.__dict__ | {"hypothesis": c.hypothesis()} for c in cands], indent=2))

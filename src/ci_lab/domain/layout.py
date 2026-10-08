@@ -46,6 +46,15 @@ def guards_rel(domain: Any = None) -> str:
     return str(PurePosixPath(root) / GUARDS_SUBDIR) if root else GUARDS_SUBDIR
 
 
+def repo_guards_dir(repo: Path) -> Path:
+    """Guard rule dir the agent loads in the repo checkout ``repo``: order-support's
+    ``src/order_support/harness/guards`` when present, else ``<repo>/harness/guards``."""
+    from ci_lab.domain.order_support import HARNESS_ROOT
+
+    candidate = Path(repo) / HARNESS_ROOT / GUARDS_SUBDIR
+    return candidate if candidate.is_dir() else Path(repo) / DEFAULT_GUARDS_DIR
+
+
 def guard_extractors(domain: Any = None) -> list[Path]:
     """Frozen extractor files the domain's guard bundle is loaded with (``Domain.guard_extractors``)."""
     if domain is None:

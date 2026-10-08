@@ -20,7 +20,7 @@ from pathlib import Path
 from typing import Literal
 
 from ci_lab.contracts import Edit
-from ci_lab.rulespec import GUARDS_DIR, PROMOTE_MIN_OPPORTUNITIES, GuardDecision, RuleSpec
+from ci_lab.rulespec import PROMOTE_MIN_OPPORTUNITIES, GuardDecision, RuleSpec
 
 from .bundle import dump_rule_file, read_rule_file, rule_files
 from .promote import _jsonl, opportunity_applies
@@ -96,16 +96,20 @@ def retirement_candidates(rules: Sequence[RuleSpec], decisions: Iterable[Path], 
     return out
 
 
-def apply_ablation(candidate: RetirementCandidate, worktree: Path, *, committer: Committer = git_commit) -> Edit:
-    """Remove ``candidate``'s rule from its guard file (only under ``GUARDS_DIR``) and commit one Edit."""
+def apply_ablation(candidate: RetirementCandidate, worktree: Path, *, committer: Committer = git_commit,
+                   guards_dir: Path | None = None) -> Edit:
+    """Remove ``candidate``'s rule from its guard file (only under the guard dir the agent loads,
+    default :func:`~ci_lab.domain.layout.repo_guards_dir`) and commit one Edit."""
+    from ci_lab.domain.layout import repo_guards_dir
+
     wt = Path(worktree).resolve()
-    guards = (wt / GUARDS_DIR).resolve()
+    guards = (Path(guards_dir) if guards_dir is not None else repo_guards_dir(wt)).resolve()
     for path in rule_files(guards):
         rf = read_rule_file(path)
         if not any(r.id == candidate.rule_id for r in rf.rules):
             continue
         if guards not in path.resolve().parents:
-            raise GuardPathViolation(f"{path} is outside {GUARDS_DIR}")
+            raise GuardPathViolation(f"{path} is outside {guards}")
         rel = path.resolve().relative_to(wt).as_posix()
         keep = [r for r in rf.rules if r.id != candidate.rule_id]
         if keep:
@@ -115,4 +119,4 @@ def apply_ablation(candidate: RetirementCandidate, worktree: Path, *, committer:
         hypothesis = candidate.hypothesis()
         sha = committer(wt, [rel], f"guards: ablate {candidate.rule_id} (N6)\n\n{hypothesis}\n\n{COMMIT_TRAILER}")
         return Edit(component=GUARD_COMPONENT, hypothesis=hypothesis, files=(rel,), commit=sha)
-    raise GuardPathViolation(f"rule {candidate.rule_id!r} not found under {GUARDS_DIR}")
+    raise GuardPathViolation(f"rule {candidate.rule_id!r} not found under {guards}")

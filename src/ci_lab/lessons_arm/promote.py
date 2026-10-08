@@ -28,7 +28,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
 
-from ci_lab.rulespec import GUARDS_DIR, PROMOTE_FP_UCB, SHADOW_MAX_NIGHTS, GuardDecision, RuleSpec
+from ci_lab.rulespec import PROMOTE_FP_UCB, SHADOW_MAX_NIGHTS, GuardDecision, RuleSpec
 
 from .bundle import dump_rule_file, load_rules, read_rule_file, rule_files
 from .strategy import COMMIT_TRAILER, FALLBACK_IDENTITY
@@ -183,7 +183,12 @@ def promote(rule_id: str, decisions: Path, labels: Path | None, *, repo: Path, g
             epsilon: float = PROMOTE_FP_UCB, branch: str | None = None,
             extractors: Iterable[Path] | None = None) -> PromotionResult:
     repo = Path(repo)
-    gdir = Path(guards_dir) if guards_dir is not None else repo / GUARDS_DIR
+    if guards_dir is None:
+        from ci_lab.domain.layout import repo_guards_dir
+
+        gdir = repo_guards_dir(repo)
+    else:
+        gdir = Path(guards_dir)
     path, rule = find_rule(gdir, rule_id)
     ev = gather_evidence(rule, decisions, labels)
     opp, fires, pos, fp = ev.totals()
