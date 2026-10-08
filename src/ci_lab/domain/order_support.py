@@ -397,3 +397,338 @@ class AssertCaseRunner:
         return parse_run(case, run_root, returncode=proc.returncode)
 
 
+def _first_jsonl(path: Path) -> dict[str, Any] | None:
+    if not path.is_file():
+        return None
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if line.strip():
+            return json.loads(line)
+    return None
+
+
+def parse_run(case: TestCase, run_root: Path, *, returncode: int = 0) -> CaseOutcome:
+    """Read ``scores.jsonl`` + ``inference_set.jsonl`` of a one-case ASSERT run."""
+    inf = _first_jsonl(run_root / "inference_set.jsonl")
+    transcript = transcript_from_inference(case.case_id, inf) if inf else None
+    score = _first_jsonl(run_root / "scores.jsonl")
+    if score is None:
+        return CaseOutcome(judge_status="missing", transcript=transcript,
+                           error=f"no scores.jsonl (exit {returncode})")
+    status = str(score.get("judge_status") or "ok")
+    if status in ("completed", "scored", "success"):
+        status = "ok"
+    verdict = (score.get("verdict") or {}).get("dimensions") or {}
+    keys = [k for k in (score.get("score_keys") or verdict) if k not in set(score.get("not_applicable_score_keys")
+                                                                            or ())]
+    return CaseOutcome(judge_status=status if not score.get("judge_error") else "error", verdict=verdict,
+                       scored_keys=keys, dimension_scales=score.get("dimension_scales") or {},
+                       judge_model=score.get("judge_model"), transcript=transcript,
+                       error=score.get("judge_error"))
+
+
+# ---------------------------------------------------------------- domain
+
+ScopeFactory = Callable[[RolloutKey], Any]  # -> (async) context manager; entered value may expose .env
+
+
+def _agl_scope_factory() -> ScopeFactory | None:
+    try:
+        from ci_lab.agl.scope import RolloutScope  # type: ignore[import-not-found]
+    except Exception:  # noqa: BLE001 - built in parallel (M5)
+        return None
+    return lambda key: RolloutScope(key)
+
+
+class _NoSpan:
+    def set_attribute(self, key: str, value: Any) -> None:
+        pass
+
+
+def _default_oracle() -> SafetyOracle | None:
+    try:
+        from order_support import oracle as mod  # type: ignore[attr-defined]
+    except Exception:  # noqa: BLE001 - built in parallel (M3)
+        return None
+    for name in ("SafetyOracle", "OrderSupportOracle", "Oracle"):
+        cls = getattr(mod, name, None)
+        if isinstance(cls, type):
+            with contextlib.suppress(Exception):
+                return cls()
+    if callable(check := getattr(mod, "check", None)):
+        return type("_ModOracle", (), {"check": staticmethod(check)})()
+    return None
+
+
+@contextlib.asynccontextmanager
+async def _enter(cm: Any):  # type: ignore[no-untyped-def]
+    if hasattr(cm, "__aenter__"):
+        async with cm as value:
+            yield value
+    else:
+        with cm as value:
+            yield value
+
+
+class OrderSupportDomain:
+    """contracts.Domain for the order-support agent. All collaborators are injectable."""
+
+    name = "order_support"
+    surface_globs: Sequence[str] = SURFACE_GLOBS
+    frozen_globs: Sequence[str] = FROZEN_GLOBS
+    component_globs: Mapping[str, Sequence[str]] = COMPONENT_GLOBS
+
+    def __init__(self, *, repo_root: Path = REPO_ROOT, evals_dir: Path | None = None,
+                 artifacts_root: Path | None = None, test_sets: Mapping[str, Path] | None = None,
+                 cases: Sequence[TestCase] | None = None, runner: CaseRunner | None = None,
+                 work_dir: Path | None = None, scope_factory: ScopeFactory | None = None,
+                 oracle: SafetyOracle | None = None, use_default_oracle: bool = True,
+                 journal: RolloutJournal | None = None, seed: str = "order-support-v1",
+                 heldout_fraction: float = 0.25, ood_fraction: float = 0.2,
+                 concurrency: int = 1, judge_model: str | None = None, case_spans: bool | None = None) -> None:
+        self.repo_root = Path(repo_root)
+        self.evals_dir = Path(evals_dir) if evals_dir else self.repo_root / "evals" / "assert"
+        self.artifacts_root = Path(artifacts_root) if artifacts_root else self.repo_root / "artifacts"
+        self._test_sets = dict(test_sets or {})
+        self._cases = list(cases) if cases is not None else None
+        self._injected_cases = cases is not None
+        self.work_dir = Path(work_dir) if work_dir else self.artifacts_root / "ci_lab" / "domain"
+        self.runner: CaseRunner = runner or AssertCaseRunner(self.work_dir)
+        agl_scope = None if scope_factory is not None else _agl_scope_factory()
+        self.scope_factory: ScopeFactory = scope_factory or agl_scope or (lambda key: contextlib.nullcontext())
+        # One ci.case span per case x trial (design §12.3). AGL's RolloutScope (M5) owns that span
+        # when it is in use, so by default only emit it ourselves without it.
+        self.case_spans = (agl_scope is None) if case_spans is None else case_spans
+        self.oracle = oracle if oracle is not None else (_default_oracle() if use_default_oracle else None)
+        self.journal = journal
+        self.seed = seed
+        self.heldout_fraction = heldout_fraction
+        self.ood_fraction = ood_fraction
+        self.concurrency = max(1, concurrency)
+        self.judge_model = judge_model
+        self._details: dict[tuple[str, str, str, int], tuple[CaseOutcome, tuple[Violation, ...]]] = {}
+
+    @property
+    def guard_extractors(self) -> tuple[Path, ...]:
+        """Frozen extractors the agent's guard bundle loads with (``order_support.guarding``)."""
+        from ci_lab.guards.domains.order_support import EXTRACTORS
+
+        return (Path(EXTRACTORS),)
+
+    # -- cases / splits
+
+    def cases(self) -> list[TestCase]:
+        if self._cases is None:
+            self._cases = load_cases(self.evals_dir, self.artifacts_root, self._test_sets)
+        return self._cases
+
+    def case(self, case_id: str) -> TestCase:
+        for c in self.cases():
+            if c.case_id == case_id:
+                return c
+        raise KeyError(case_id)
+
+    def splits(self) -> Mapping[str, Sequence[str]]:
+        cases = self.cases()
+        if not cases:
+            raise FileNotFoundError(
+                "no frozen ASSERT test cases found; generate them (order-support-evals run <suite config>) "
+                "or pass test_sets=/cases=")
+        by_suite: dict[str, set[str]] = {}
+        for c in cases:
+            by_suite.setdefault(c.suite, set()).add(c.category)
+        ood_groups: set[tuple[str, str]] = set()
+        for suite, cats in by_suite.items():
+            n = math.floor(self.ood_fraction * len(cats))
+            ranked = sorted(cats, key=lambda cat: (_unit(self.seed, "ood", suite, cat), cat))
+            ood_groups |= {(suite, cat) for cat in ranked[:n]}
+        out: dict[str, list[str]] = {"evolve": [], "heldout": [], "ood": []}
+        for c in cases:
+            if (c.suite, c.category) in ood_groups:
+                out["ood"].append(c.case_id)
+            elif _unit(self.seed, "heldout", c.case_id) < self.heldout_fraction:
+                out["heldout"].append(c.case_id)
+            else:
+                out["evolve"].append(c.case_id)
+        return {k: sorted(v) for k, v in out.items()}
+
+    def leak_corpus(self) -> LeakCorpus:
+        """The critic's leak corpus: frozen ASSERT test sets (seed texts and long titles, see
+        :func:`~ci_lab.tools.critic_checks.case_leak_material`) plus :meth:`leak_literals`.
+
+        Built from the same ``test_set.jsonl`` sources as :meth:`cases` (cached per file
+        size/mtime); injected ``cases=`` are screened from their rows instead."""
+        from ci_lab.tools.critic_checks import (
+            LeakCorpus,
+            case_leak_material,
+            load_test_set_corpus,
+        )
+
+        if self._injected_cases:
+            texts, titles = case_leak_material(c.row for c in self.cases())
+            return LeakCorpus.build(texts, [*self.leak_literals(), *titles])
+        paths = [p for suite, cfg_path, _ in _suite_configs(self.evals_dir)
+                 if (p := _test_set_path(suite, cfg_path, self.artifacts_root, self._test_sets)) is not None]
+        if not paths:
+            raise FileNotFoundError(f"no frozen ASSERT test sets under {self.evals_dir} for the leak corpus")
+        return load_test_set_corpus(paths, self.leak_literals())
+
+    def leak_texts(self) -> list[str]:
+        """Case inputs (seed title/description) for the critic's n-gram leak screen."""
+        return [c.text for c in self.cases() if c.text]
+
+    @staticmethod
+    def leak_literals() -> list[str]:
+        """Order ids and customer identifiers from ``order_support.data``."""
+        from order_support.data import ORDERS
+
+        lits: list[str] = []
+        for oid, order in ORDERS.items():
+            lits.append(oid)
+            cust = order.get("customer") or {}
+            lits += [str(cust.get(k)) for k in ("name", "email", "phone", "address") if cust.get(k)]
+        return lits
+
+    def is_injection_suite(self, suite: str) -> bool:
+        return any(m in suite for m in INJECTION_MARKERS)
+
+    # -- evaluation
+
+    def pin(self, served_judges: Iterable[str] = ()) -> EvaluatorPin:
+        judge = self.judge_model or ""
+        for _, _, cfg in [] if judge else _suite_configs(self.evals_dir):
+            model = ((cfg.get("pipeline") or {}).get("judge") or {}).get("model") or cfg.get("default_model") or {}
+            judge = str(model.get("name", "") if isinstance(model, Mapping) else model)
+            break
+        provider = judge.split("/", 1)[0] if "/" in judge else "unknown"
+        evaluator_tree = tree_hash(self.evals_dir)
+        if tester := getattr(self.runner, "tester_model", None):
+            # A tester override changes the evaluator; fold it into the pin so caches and
+            # comparisons never mix runs that used different testers.
+            digest = hashlib.sha256(f"{evaluator_tree}\0{ASSERT_MODEL_ENV}={tester}".encode()).hexdigest()
+            evaluator_tree = f"sha256:{digest}"
+        return EvaluatorPin(evaluator_tree=evaluator_tree, judge_model=judge, judge_provider=provider,
+                            served_judge_models=tuple(sorted(set(served_judges))))
+
+    async def evaluate(self, harness_dir: Path, split: str, k: int, *, experiment_id: str,
+                       variant: str) -> EvalResult:
+        split_name = "evolve" if split == "aa" else split
+        ids = list(self.splits()[split_name])
+        harness_dir = Path(harness_dir).resolve()
+        htree = tree_hash(harness_dir)
+        sem = asyncio.Semaphore(self.concurrency)
+        jobs = [(cid, t) for cid in ids for t in range(max(1, k))]
+
+        async def one(cid: str, trial: int) -> tuple[TaskScore, str | None]:
+            async with sem:
+                return await self._run_one(self.case(cid), trial, harness_dir, htree, split,
+                                           experiment_id, variant)
+
+        results = await asyncio.gather(*(one(cid, t) for cid, t in jobs))
+        served_judges = [j for _, j in results if j]
+        return EvalResult(harness_tree=htree, split=split, pin=self.pin(served_judges),  # type: ignore[arg-type]
+                          scores=[s for s, _ in results])
+
+    async def _run_one(self, case: TestCase, trial: int, harness_dir: Path, htree: str, split: str,
+                       experiment_id: str, variant: str) -> tuple[TaskScore, str | None]:
+        key = RolloutKey(experiment_id, variant, case.case_id, trial)
+        env = {HARNESS_ENV: str(harness_dir), "CI_ROLLOUT_ID": key.rollout_id, "CI_EXPERIMENT_ID": experiment_id,
+               "CI_VARIANT": variant, "CI_CASE_ID": case.case_id, "CI_TRIAL": str(trial)}
+        if self.journal is not None:
+            # typed fields read by ci_lab.agl.export.skillopt_task_records (sleep AGL harvest)
+            seed = case.row.get("seed") or {}
+            self.journal.start(key, {"case_id": case.case_id, "suite": case.suite, "category": case.category,
+                                     "split": split, "harness_tree": htree,
+                                     "intent": str(seed.get("prompt") or case.text)})
+        status = "failed"
+        attrs = {ATTR_CASE: case.case_id, ATTR_TRIAL: trial, ATTR_ROLLOUT: key.rollout_id,
+                 ATTR_ATTEMPT: key.attempt_id, ATTR_SPLIT: split, ATTR_EXPERIMENT: experiment_id,
+                 ATTR_VARIANT: variant}
+        case_span = obs.span(SPAN_CASE, attrs) if self.case_spans else contextlib.nullcontext(_NoSpan())
+        with case_span as span:
+            outcome = await self._run_case(case, harness_dir, key, env)
+            span.set_attribute("ci.judge_status", outcome.judge_status)
+            violations: tuple[Violation, ...] = ()
+            if self.oracle is not None and outcome.transcript is not None:
+                violations = tuple(self.oracle.check(outcome.transcript))
+            value = score_outcome(outcome, violations)
+            if value is not None:
+                span.set_attribute(ATTR_SCORE, value)
+        tr = outcome.transcript
+        score = TaskScore(case_id=case.case_id, trial=trial, suite=case.suite, score=value, violations=violations,
+                          tokens_in=tr.tokens_in if tr else 0, tokens_out=tr.tokens_out if tr else 0,
+                          served_model=(tr.served_models[0] if tr and tr.served_models else None))
+        self._details[(htree, case.case_id, split, trial)] = (outcome, violations)
+        if self.journal is not None:
+            self.journal.event(key, "ci.score", {
+                "name": SCORE_NAME, "value": value, "score": value, "suite": case.suite, "category": case.category,
+                "judge_status": outcome.judge_status, "rule_ids": [v.rule_id for v in violations],
+                "violations": [{"rule_id": v.rule_id, "severity": v.severity, "detail": v.detail}
+                               for v in violations],
+                "served_models": list(tr.served_models) if tr else [],
+                "judge_model": outcome.judge_model}, event_id=op_id(key.rollout_id, "ci.score"))
+            status = "succeeded" if value is not None else "failed"
+            self.journal.finish(key, status)  # type: ignore[arg-type]
+        return score, outcome.judge_model
+
+    async def _run_case(self, case: TestCase, harness_dir: Path, key: RolloutKey,
+                        env: dict[str, str]) -> CaseOutcome:
+        try:
+            async with _enter(self.scope_factory(key)) as scope:
+                scope_env = getattr(scope, "env", None)
+                if isinstance(scope_env, Mapping):
+                    env.update({str(k): str(v) for k, v in scope_env.items()})
+                outcome = self.runner(case, harness_dir=harness_dir, key=key, env=env)
+                if inspect.isawaitable(outcome):
+                    outcome = await outcome
+        except Exception as exc:  # noqa: BLE001 - a crashed trial is a missing trial
+            outcome = CaseOutcome(judge_status="error", error=f"{type(exc).__name__}: {exc}"[:500])
+        return outcome
+
+    # -- failures
+
+    def failures(self, result: EvalResult) -> list[FailureRecord]:
+        """One typed record per case with any trial below 1.0 / missing / oracle violation.
+
+        Never raw tool output (C12); excerpts are truncated assistant text and always empty
+        for injection suites.
+        """
+        by_case: dict[str, list[TaskScore]] = {}
+        for s in result.scores:
+            by_case.setdefault(s.case_id, []).append(s)
+        out: list[FailureRecord] = []
+        for cid, scores in sorted(by_case.items()):
+            if all(s.score is not None and s.score >= 1.0 and not s.violations for s in scores):
+                continue
+            suite = scores[0].suite
+            try:
+                category = self.case(cid).category
+            except KeyError:
+                category = "unknown"
+            rules: set[str] = set()
+            rubric_sum: dict[str, list[float]] = {}
+            worst: tuple[float, str] = (2.0, "")
+            for s in scores:
+                rules |= {v.rule_id for v in s.violations}
+                outcome, _ = self._details.get((result.harness_tree, cid, result.split, s.trial), (None, ()))
+                if s.score is None:
+                    rules.add("eval.missing_trial")
+                if outcome is None:
+                    continue
+                for dim, val in rubric_scores(outcome).items():
+                    rubric_sum.setdefault(dim, []).append(val)
+                    if val < 1.0 and isinstance(outcome.verdict.get(dim), bool):
+                        rules.add(f"judge.{dim}")
+                if (s.score if s.score is not None else -1.0) < worst[0] and outcome.transcript is not None:
+                    worst = (s.score if s.score is not None else -1.0, _last_assistant(outcome.transcript))
+            excerpt = "" if self.is_injection_suite(suite) else worst[1][:EXCERPT_CHARS]
+            out.append(FailureRecord(case_id=cid, suite=suite, category=category, rule_ids=tuple(sorted(rules)),
+                                     rubric_scores={k: round(sum(v) / len(v), 4) for k, v in rubric_sum.items()},
+                                     excerpt=excerpt))
+        return out
+
+
+def _last_assistant(transcript: Transcript) -> str:
+    for msg in reversed(list(transcript.messages)):
+        if msg.get("role") == "assistant" and msg.get("content"):
+            return " ".join(str(msg["content"]).split())
+    return ""
