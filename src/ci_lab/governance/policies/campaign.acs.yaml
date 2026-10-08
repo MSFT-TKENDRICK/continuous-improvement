@@ -1,0 +1,29 @@
+# ACS policy for campaign launch (agent_startup). Loaded by
+# ci_lab.governance.policies.load_policy("campaign"); evaluated by the campaign launch gate.
+agent_control_specification_version: 0.4.0-alpha.1
+metadata:
+  name: campaign
+  owner: ci_lab.governance
+policies:
+  launch:
+    type: custom
+    adapter: ci.campaign.startup
+    protected_globs:
+      - src/ci_lab/governance/**
+      - src/ci_lab/rules/**
+      - src/ci_lab/guards/**
+      - .github/workflows/**
+      - evals/**
+      - "**/sealed/**"
+      - "**/.lkg/**"
+      - "**/lessons/**"
+intervention_points:
+  agent_startup:
+    policy_target: $snap.campaign
+    policy: {id: launch}
+approval:
+  default_resolver: file_queue
+  timeout_seconds: 5
+  on_timeout: deny
+  resolvers:
+    file_queue: {type: file, root: artifacts/governance/approvals}
