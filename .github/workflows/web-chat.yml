@@ -1,0 +1,63 @@
+# Experiment chat bundle (web/experiment-chat -> .github/extensions/ci-harness-dashboard/ui/chat).
+# The canvas loads the committed bundle, so CI rebuilds it from the lockfile and fails if the
+# output differs from what is committed or if two builds differ (reproducibility).
+name: web-chat
+
+on:
+  pull_request:
+    paths:
+      - "web/experiment-chat/**"
+      - ".github/extensions/ci-harness-dashboard/ui/chat/**"
+      - ".github/workflows/web-chat.yml"
+  push:
+    branches: [main]
+    paths:
+      - "web/experiment-chat/**"
+      - ".github/extensions/ci-harness-dashboard/ui/chat/**"
+      - ".github/workflows/web-chat.yml"
+
+permissions: {}
+
+concurrency:
+  group: web-chat-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  bundle:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: web/experiment-chat
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+      # --ignore-scripts: no install-time scripts run (esbuild finds its platform binary through
+      # optionalDependencies; this also skips telemetry postinstall hooks).
+      - name: npm ci
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: build
+        run: node build.mjs
+      - name: committed bundle matches the build
+        run: |
+          git status --porcelain -- ../../.github/extensions/ci-harness-dashboard/ui/chat
+          git diff --exit-code --stat -- ../../.github/extensions/ci-harness-dashboard/ui/chat
+          test -z "$(git status --porcelain -- ../../.github/extensions/ci-harness-dashboard/ui/chat)"
+      - name: build is deterministic
+        run: |
+          out=../../.github/extensions/ci-harness-dashboard/ui/chat
+          (cd "$out" && sha256sum -- * | sort) > "$RUNNER_TEMP/first.sha"
+          node build.mjs
+          (cd "$out" && sha256sum -- * | sort) > "$RUNNER_TEMP/second.sha"
+          diff "$RUNNER_TEMP/first.sha" "$RUNNER_TEMP/second.sha"
+      - name: bundle source tests
+        run: node --test test/*.test.mjs
+      - name: bundle guard tests
+        working-directory: .
+        run: node --test .github/extensions/ci-harness-dashboard/test/chat-bundle.test.mjs
