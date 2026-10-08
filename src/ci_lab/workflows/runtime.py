@@ -1,8 +1,9 @@
 """Default MAF workflow runtime: build + checkpointed run/resume (design §5, C14).
 
-``ci_lab.maf.workflows`` (M1) owns the canonical implementation; these defaults
-keep the campaign driver runnable on their own and are injected through
-:class:`ci_lab.campaign.deps.CampaignDeps` so integration can swap them.
+``ci_lab.maf.workflows`` (M1) owns workflow building (expression-free and reference checks,
+private checkpoint dir, declarative allowlist) and checkpoint lookup; this module adds the
+campaign's run-status/abort semantics on top and is injected through
+:class:`ci_lab.campaign.deps.CampaignDeps` so integration can swap it.
 
 Failure model: declarative ``InvokeFunctionTool`` swallows ``Exception``s, so step
 functions convert errors into :class:`StepAborted` (a ``BaseException``) which
@@ -14,10 +15,8 @@ re-executes the in-flight superstep (steps are idempotent via run-dir markers).
 from __future__ import annotations
 
 import contextlib
-import inspect
 import json
 import os
-import warnings
 from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any
@@ -44,32 +43,28 @@ class StepFailed(RuntimeError):
 
 def declarative_allowlist() -> list[str]:
     """``module:qualname`` of declarative internals that must be unpickled (silent-failure guard)."""
-    import agent_framework_declarative._workflows._declarative_base as base
+    from ci_lab.maf.workflows import declarative_allowlist as maf_allowlist
 
-    return sorted(f"{base.__name__}:{name}" for name, obj in vars(base).items()
-                  if inspect.isclass(obj) and obj.__module__ == base.__name__)
+    return maf_allowlist()
 
 
 def _storage(ckpt_dir: Path) -> Any:
     from agent_framework import FileCheckpointStorage
 
-    ckpt_dir.mkdir(parents=True, exist_ok=True)
-    if os.name != "nt":
-        os.chmod(ckpt_dir, 0o700)
-    return FileCheckpointStorage(ckpt_dir, allowed_checkpoint_types=declarative_allowlist())
+    from ci_lab.maf.workflows import secure_dir
+
+    return FileCheckpointStorage(secure_dir(ckpt_dir), allowed_checkpoint_types=declarative_allowlist())
 
 
 def build_workflow(path: Path, agents: Mapping[str, Any], tools: Mapping[str, Callable[..., Any]],
                    ckpt_dir: Path) -> Any:
-    """WorkflowFactory + FileCheckpointStorage; tools are registered by name."""
-    from agent_framework_declarative import WorkflowFactory
+    """Build through ``ci_lab.maf.workflows.build_workflow`` (M1): expression-free check,
+    agent/tool reference check, ``.env``-free factories and a checkpoint store in a private
+    dir with the declarative allowlist. Tools are registered by name."""
+    from ci_lab.maf.workflows import build_workflow as maf_build_workflow
 
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore")  # AgentFactory ExperimentalWarning (unused: agents are prebuilt)
-        factory = WorkflowFactory(agents=dict(agents), checkpoint_storage=_storage(ckpt_dir))
-        for name, fn in tools.items():
-            factory.register_tool(name, fn)
-        return factory.create_workflow_from_yaml_path(path)
+    workflow, _storage_unused = maf_build_workflow(path, agents=agents, tools=tools, checkpoint_dir=ckpt_dir)
+    return workflow
 
 
 def _status(ckpt_dir: Path) -> str | None:
@@ -92,8 +87,10 @@ async def run_or_resume(workflow: Any, ckpt_dir: Path, message: str = "start") -
     state = _status(ckpt_dir)
     if state == "completed":
         return {"status": "completed", "resumed": False, "skipped": True}
+    from ci_lab.maf.workflows import latest_checkpoint
+
     storage = _storage(ckpt_dir)
-    latest = await storage.get_latest(workflow_name=workflow.name) if state == "running" else None
+    latest = await latest_checkpoint(storage, workflow.name) if state == "running" else None
     _set_status(ckpt_dir, "running", workflow=workflow.name)
     try:
         if latest is not None:
