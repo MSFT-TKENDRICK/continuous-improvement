@@ -56,7 +56,7 @@ class _Rule(_M):
         return v
 
 
-def _check_re2(pattern: str) -> str:
+def check_re2(pattern: str) -> str:
     if not pattern or len(pattern) > REGEX_MAX_LEN:
         raise ValueError(f"pattern must be 1..{REGEX_MAX_LEN} chars")
     try:
@@ -97,7 +97,7 @@ class BannedText(_Rule):
     @field_validator("pattern")
     @classmethod
     def _p(cls, v: str) -> str:
-        return _check_re2(v)
+        return check_re2(v)
 
 
 class GhaBannedTrigger(_Rule):
