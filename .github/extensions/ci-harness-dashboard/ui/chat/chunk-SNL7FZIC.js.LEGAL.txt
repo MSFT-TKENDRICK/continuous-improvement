@@ -1,0 +1,15 @@
+Bundled license information:
+
+fast-json-patch/module/helpers.mjs:
+  /*!
+   * https://github.com/Starcounter-Jack/JSON-Patch
+   * (c) 2017-2022 Joachim Wester
+   * MIT licensed
+   */
+
+fast-json-patch/module/duplex.mjs:
+  /*!
+   * https://github.com/Starcounter-Jack/JSON-Patch
+   * (c) 2017-2021 Joachim Wester
+   * MIT license
+   */

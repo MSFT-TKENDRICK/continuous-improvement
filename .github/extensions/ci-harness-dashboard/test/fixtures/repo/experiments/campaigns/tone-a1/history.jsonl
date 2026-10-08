@@ -1,0 +1,2 @@
+{"eid":"tone-a1-r01","round":1,"decision":"ship","winner":"v1","tokens":12000,"arms":[{"arm":"v1","component":"prompt","hypotheses":["h1"],"accepted":true,"score":0.7,"status":"evaluated"},{"arm":"v2","component":"tools","hypotheses":["h2"],"accepted":false,"score":0.55,"status":"evaluated"}]}
+{not json
