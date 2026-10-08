@@ -177,3 +177,16 @@ def test_non_evolve_agl_rows_are_hard_error(sleep_repo, tmp_path):
 def test_rejects_bad_base_sha(sleep_repo, tmp_path):
     with pytest.raises(ValueError):
         run_night(cfg_for(sleep_repo, tmp_path, base_sha="HEAD"), deps_for())
+
+def test_lessons_hook_is_off_by_default_and_typed_when_enabled(sleep_repo, tmp_path):
+    seen: list = []
+
+    def lessons(target, tasks):
+        seen.append((target.name, [type(t).__name__ for t in tasks]))
+        return tasks
+
+    res = run_night(cfg_for(sleep_repo, tmp_path), deps_for(lessons=lessons))
+    assert res.status == "accepted" and seen == []
+    res = run_night(cfg_for(sleep_repo, tmp_path / "on", lessons_hook=True), deps_for(lessons=lessons))
+    assert res.status == "accepted", res.error
+    assert seen and seen[0][0] == OS and set(seen[0][1]) == {"TaskRecord"}

@@ -89,6 +89,7 @@ class SleepConfig:
     night_date: str | None = None  # yyyymmdd (UTC today when None)
     run_attempt: int = 1
     base_sha: str | None = None
+    lessons_hook: bool = False  # HOOK(M16): lessons mine/replay seam, off by default
 
     def __post_init__(self) -> None:
         self.repo_root = Path(self.repo_root)
@@ -129,7 +130,8 @@ class SleepDeps:
     # target-specific callables (run_target, oracle, reflector, assert_eval, scorer,
     # run_canaries, latest_delta); None = these deps serve every target
     per_target: Callable[[SkillTarget], SleepDeps] | None = None
-
+    # HOOK(M16): (target, typed TaskRecords) -> typed TaskRecords; used only when cfg.lessons_hook
+    lessons: Callable[[SkillTarget, list[TaskRecord]], Iterable[TaskRecord]] | None = None
 
 @dataclass
 class NightResult:
@@ -388,6 +390,13 @@ def _consolidate(night: _Night, gate_mode: str) -> dict[str, Any]:
             run.backend = OrderSupportSleepBackend(run_target=d.run_target, oracle=d.oracle,
                                                    reflector=d.reflector, scorer=d.scorer, budget=night.budget)
             tasks: list[TaskRecord] = run.harvest.tasks
+            # HOOK(M16): lessons mine/replay step (design §13/§13.6, ci_lab.lessons on dev/lessons).
+            # Seam between trajectory collection (harvest) and proposal (dream_consolidate/reflect).
+            # Gated OFF by default (cfg.lessons_hook); not implemented here. Inputs/outputs must stay
+            # local and typed-only (§13.6 B8): typed TaskRecords in, typed TaskRecords out; nothing
+            # from reflect/usage data is written to the bundle, envelope, spans or status.
+            if cfg.lessons_hook and d.lessons is not None:
+                tasks = list(d.lessons(run.target, tasks))
             with obs.span(SPAN_OPTIMIZER, {ATTR_STRATEGY: "skillopt", ATTR_COMPONENT: run.name,
                                            ATTR_TARGET: run.name, ATTR_NIGHT: night.night_no}) as s:
                 res = dream_consolidate(

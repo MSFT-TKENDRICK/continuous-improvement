@@ -1,0 +1,85 @@
+# Usage-driven task harvest (design §11.3, C22). Traces from the latest sleep-nightly run
+# (redacted spans artifact) -> redaction + prompt-injection filter -> PENDING tasks
+# (`reviewed: false`) -> DRAFT PR on exp/usage-<date>/tasks. Pending rows are never fed to
+# SkillOpt-Sleep; a human authors reference/judge, flips `reviewed: true` and merges.
+name: usage-harvest
+
+on:
+  schedule:
+    - cron: '41 5 * * *'
+  workflow_dispatch: {}
+
+concurrency:
+  group: usage-harvest
+  cancel-in-progress: false
+
+permissions: {}
+
+jobs:
+  harvest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      ledger_update: ${{ steps.harvest.outputs.ledger_update }}
+      new_pending: ${{ steps.harvest.outputs.new_pending }}
+    env:
+      TRACES_DIR: ${{ runner.temp }}/usage-traces
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+      - run: uv sync
+      - name: Download the latest redacted sleep-nightly spans
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          mkdir -p "$TRACES_DIR"
+          run_id="$(gh run list --workflow sleep-nightly.yml --status success --limit 1 \
+            --json databaseId --jq '.[0].databaseId // empty')"
+          if [ -n "$run_id" ]; then
+            gh run download "$run_id" --name sleep-spans --dir "$TRACES_DIR/$run_id" || echo "no spans artifact in run $run_id"
+          fi
+      - id: harvest
+        run: >-
+          uv run ci-lab sleep harvest-usage
+          --source "artifacts:$TRACES_DIR"
+          --since-hours 48 --max-new 25
+          --bundle out/usage-bundle
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: ${{ !cancelled() }}
+        with:
+          name: usage-bundle
+          path: out/usage-bundle/
+          if-no-files-found: ignore
+          retention-days: 14
+
+  publish:
+    needs: harvest
+    if: needs.harvest.outputs.ledger_update == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: sleep-publish
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: usage-bundle
+          path: ${{ runner.temp }}/usage-bundle
+      - name: Validate bundle and open DRAFT PR (stdlib only, never merges)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SLEEP_BASE_REF: ${{ github.ref_name }}
+          SLEEP_RUN_ATTEMPT: ${{ github.run_attempt }}
+          BUNDLE_DIR: ${{ runner.temp }}/usage-bundle
+        run: python3 -I scripts/sleep_publish.py --bundle "$BUNDLE_DIR"
