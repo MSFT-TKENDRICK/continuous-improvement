@@ -1,4 +1,5 @@
 import json
+from dataclasses import replace
 
 import pytest
 
@@ -120,6 +121,28 @@ def test_round_baseline_missing_trials_reruns(fx):
     doc = fx.build_round(incumbent=fx.make_eval(fx.T0, missing=2))
     assert doc["decision"]["outcome"] == "rerun" and doc["scorecard"]["qualityStatus"] == "invalid"
     assert validate_envelope(doc) == []
+
+
+def test_round_surface_metrics_only_with_surface_data(fx, envelopes):
+    assert not {"surface_complexity", "simplicity_score"} & {m["id"] for m in envelopes["round"]["metrics"]}
+
+    def with_surface(ev, complexity):
+        return replace(ev, surface={"complexity": complexity, "files": 4.0})
+
+    arms = [fx.make_arm("v1", fx.H1, fx.T1, with_surface(fx.make_eval(fx.T1, base=0.7), 80.0)),
+            fx.make_arm("v2", fx.H2, fx.T2, fx.make_eval(fx.T2, base=0.55, crit=1)),
+            fx.make_arm("v3", None, None, None, passed=False)]
+    doc = fx.build_round(arms=arms, incumbent=with_surface(fx.make_eval(fx.T0), 100.0))
+    assert validate_envelope(doc) == [] and verify(doc)
+    roles = {m["id"]: (m["role"], m["direction"]) for m in doc["metrics"]}
+    assert roles["surface_complexity"] == ("diagnostic", "decrease_is_good")
+    assert roles["simplicity_score"] == ("diagnostic", "increase_is_good")
+    cx = _results(doc, "surface_complexity", "v1")[0]
+    assert (cx["baselineValue"], cx["variantValue"], cx["relativeDifference"]) == (100.0, 80.0, -0.2)
+    simp = _results(doc, "simplicity_score", "v1")[0]
+    assert (simp["baselineValue"], simp["variantValue"]) == (0.5, 1.0)
+    assert not _results(doc, "surface_complexity", "v2")  # no surface data on v2
+    assert Envelope.from_dict(doc).to_dict() == doc
 
 
 def test_confirm_envelope(envelopes):
