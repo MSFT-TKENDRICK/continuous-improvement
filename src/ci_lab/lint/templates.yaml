@@ -1,0 +1,86 @@
+# Trusted lesson → lint-rule templates for `ci-lab reflect` (design §13.6 B8, §13.1 R5).
+# Closed vocabulary: transcripts can only *select* a template (rule_hint) and narrow its include glob;
+# they never contribute text. Triggers are RE2, matched in memory against user corrections that also
+# contain a correction phrase; the matched text is discarded immediately.
+schema_version: 1
+templates:
+  - id: no-sleep
+    triggers: ['\btime\.sleep\b', '\bsleep(?:ing)?\b', '\bpoll(?:ing)?\b']
+    rule:
+      kind: banned_call
+      names: [time.sleep]
+      include: ["src/**/*.py"]
+      message: Fixed sleeps in code paths (lesson mined from repeated corrections).
+      fix: Wait on the event/condition (or an explicit deadline with backoff), not a fixed sleep.
+  - id: no-print
+    triggers: ['\bprint\(', '\bprint statements?\b', '\bprints?\b']
+    rule:
+      kind: banned_call
+      names: [print]
+      include: ["src/**/*.py"]
+      message: print() in library code (lesson mined from repeated corrections).
+      fix: Use ci_lab.obs spans/annotations or the logging module; CLIs return output from their handlers.
+  - id: no-console-log
+    triggers: ['\bconsole\.(?:log|info|debug)\b', '\bconsole log\b']
+    rule:
+      kind: banned_text
+      pattern: '\bconsole\.(?:log|info|debug)\s*\('
+      include: ["**/*.{mjs,js,cjs,ts}"]
+      message: console output where stdout is a protocol channel (lesson mined from repeated corrections).
+      fix: Use session.log (extensions) or the host logger.
+  - id: no-stdlib-re
+    triggers: ['\bre\.(?:compile|match|search|sub)\b', '\bstdlib re\b', '\buse re2\b', '\bre2\b']
+    rule:
+      kind: banned_call
+      names: [re.compile, re.match, re.search, re.fullmatch, re.finditer, re.findall, re.sub]
+      include: ["src/**/*.py"]
+      message: Backtracking stdlib `re` where RE2 is required (lesson mined from repeated corrections).
+      fix: Use `import re2`.
+  - id: no-tmp-paths
+    triggers: ['/tmp\b', '\btemp(?:orary)? dir(?:ector(?:y|ies))?\b', '\btempfile\b']
+    rule:
+      kind: banned_text
+      pattern: '["''](?:/tmp|/var/tmp)/'
+      include: ["**/*.{py,sh,mjs,js}"]
+      message: Hard-coded /tmp paths (lesson mined from repeated corrections).
+      fix: Write under the repo (artifacts/ or tests/_scratch/) or use pytest's tmp_path.
+  - id: no-shell-true
+    triggers: ['\bshell\s*=\s*true\b']
+    rule:
+      kind: banned_text
+      pattern: '\bshell\s*=\s*True\b'
+      include: ["**/*.py"]
+      message: subprocess with shell=True (lesson mined from repeated corrections).
+      fix: Pass an argv list.
+  - id: single-tracer-provider
+    triggers: ['\bset_tracer_provider\b', '\btracer ?provider\b']
+    rule:
+      kind: banned_call
+      names: [opentelemetry.trace.set_tracer_provider, "*.set_tracer_provider"]
+      include: ["src/**/*.py"]
+      exclude: ["src/ci_lab/telemetry/**"]
+      message: Tracer provider installed outside ci_lab.telemetry (lesson mined from repeated corrections).
+      fix: Call ci_lab.telemetry's init once in the entrypoint.
+  - id: no-stringified-span-attrs
+    triggers: ['\bspan attr(?:ibute)?s?\b', '\bset_attribute\b']
+    rule:
+      kind: banned_attr_arg
+      calls: [set_attribute, set_attributes, span, annotate, add_event]
+      include: ["src/**/*.py"]
+      message: Stringified objects in span attributes (lesson mined from repeated corrections).
+      fix: Record ids/counts/enums only.
+  - id: pin-actions-sha
+    triggers: ['\bpin(?:ned)? (?:by |to )?(?:a |the )?(?:full )?(?:commit )?sha\b', '@v\d+\b']
+    rule:
+      kind: gha_pinned_sha
+      include: [".github/workflows/*.{yml,yaml}"]
+      message: Action not pinned by full commit SHA (lesson mined from repeated corrections).
+      fix: "Pin `uses:` to owner/repo@<40-hex> with the tag in a comment."
+  - id: max-file-lines
+    triggers: ['\btoo (?:long|big|large)\b', '\bsplit (?:this|the|that) (?:file|module)\b']
+    rule:
+      kind: max_lines
+      max: 600
+      include: ["src/**/*.py"]
+      message: Oversized module (lesson mined from repeated corrections).
+      fix: Split by responsibility.
