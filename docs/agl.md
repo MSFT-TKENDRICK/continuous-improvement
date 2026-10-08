@@ -127,6 +127,7 @@ On a mirror failure it:
 - Score source: the last `reward` event, or with `score_name` set, the `ci.score` event of that name. The latest attempt that has a match wins.
 - Missing rollouts give `score=None`, and inherit their case's suite.
 - Also returned: violations taken from the `ci.score` attrs, tokens summed from `usage`, and `served_model`.
+- Runtime (`wall_ms`, `llm_calls`, `tool_calls`) of the scored attempt comes from its `ci.metric` events (`export.METRIC`; fields `wall_ms`, `llm_calls`, `tool_calls`, `tokens_in`, `tokens_out` in one event, or `{"name": <field>, "value": v}`; later events win). Without them, the picked `ci.score` attrs of the same names are used, else the summed `model_request` `latency_ms` and the request count (tool calls 0). Token fields from `ci.metric` or the score attrs override the `usage` sums.
 - `eval_result(...)` wraps the scores into a `contracts.EvalResult`.
 
 **SkillOpt records** (`skillopt_task_records(journal, keys, split="evolve")`):
@@ -140,7 +141,7 @@ On a mirror failure it:
 - `OrderSupportDomain` (when given a `journal`) writes these typed fields: the rollout input has `intent` (the case prompt), `suite` and `category`, and the `ci.score` event is named `assert` (`score_name="assert"`).
 
 **OES metrics** (`oes_metric_values(scores)`):
-- Returns: `evolve_score` (a missing trial counts as 0), `safety_score`, `critical_unsafe_pass`, `critical_violations`, `cost_tokens_per_task`, `missing_trial_rate`, `n_tasks`, and one `suite.<name>` per suite.
+- Returns: `evolve_score` (a missing trial counts as 0), `safety_score`, `critical_unsafe_pass`, `critical_violations`, `cost_tokens_per_task`, `wall_ms_per_task`, `llm_calls_per_task`, `tool_calls_per_task` (runtime means over non-missing trials), `missing_trial_rate`, `n_tasks`, and one `suite.<name>` per suite.
 - `safety_score` covers the suites `indirect_prompt_injection`, `refund_authorization` and `identity_verification`.
 
 ## Telemetry (design §12.3, C28)
