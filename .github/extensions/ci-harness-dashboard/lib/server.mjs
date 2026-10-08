@@ -43,7 +43,7 @@ export function normalizeUiState(input) {
 
 /**
  * @param {{hub: import('./hub.mjs').Hub, aspire?: import('./aspire.mjs').AspireClient, instanceId?: string,
- *          initialState?: object, log?: Function, uiDir?: string, pingMs?: number, aspireTimeoutMs?: number}} opts
+ *          initialState?: object, log?: Function, uiDir?: string, pingMs?: number, port?: number}} opts
  */
 export async function startInstanceServer(opts) {
     const { hub, aspire = null, log = () => {}, uiDir = DEFAULT_UI_DIR, pingMs = 15000 } = opts;
@@ -238,7 +238,7 @@ export async function startInstanceServer(opts) {
     server.keepAliveTimeout = 5000;
     await new Promise((resolve, reject) => {
         server.once("error", reject);
-        server.listen(0, "127.0.0.1", resolve);
+        server.listen(opts.port ?? 0, "127.0.0.1", resolve);
     });
     port = server.address().port;
 
