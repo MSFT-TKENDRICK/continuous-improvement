@@ -174,3 +174,29 @@ def test_real_rules_engine(make: Make, tmp_path: Path) -> None:
     assert not rep.ok and rep.fp == 220
     rep = validate(narrow_rule().model_copy(update={"template": "no.such_template"}), trajs, cluster=c)
     assert not rep.ok and any("rule load failed" in r for r in rep.reasons)
+
+
+def test_real_engine_state_flag_rules_need_extractors(make: Make, tmp_path: Path) -> None:
+    """Flags come only from extractors: without one the bundle fails to load (→ reject)."""
+    pytest.importorskip("ci_lab.rules")
+    import yaml
+
+    from ci_lab.rulespec import ExtractorFile, ExtractorSpec, StatePred
+
+    trajs = _corpus(make)
+    c = _cluster(trajs)
+    rule = RuleSpec(id="refund.needs_verified", version=1, rung="R2", on="tool_call", target="issue_refund",
+                    require=StatePred(kind="state", flag="order_checked", subject="current.args.order_id"),
+                    action="block", template="precondition.state_flag",
+                    slots={"tool": "issue_refund", "flag": "order_checked", "subject": "order_id",
+                           "via_tool": "get_order_status"})
+    rep = validate(rule, trajs, cluster=c)
+    assert not rep.ok and any("rule load failed" in r for r in rep.reasons)
+    ext = tmp_path / "extractors.yaml"
+    body = ExtractorFile(extractors=[ExtractorSpec(flag="order_checked", tool="get_order_status",
+                                                   result_path="result.status", equals="delivered",
+                                                   subject="args.order_id")])
+    ext.write_text(yaml.safe_dump(body.model_dump(mode="json", exclude_none=True)), encoding="utf-8")
+    rep = validate(rule, trajs, cluster=c, extractors=[ext])
+    assert rep.ok, rep.reasons
+    assert rep.recall == 1.0 and rep.fp == 0

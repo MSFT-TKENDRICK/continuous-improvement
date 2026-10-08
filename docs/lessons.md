@@ -17,7 +17,7 @@ never accept. Acceptance is the guard-on/guard-off closed loop + OES gates.
 |---|---|---|
 | `harvest --source assert\|spans\|agl\|usage\|calibrate --in <path> --out <dir> [--split evolve] [--pin P] [--slice S] [--labels L.jsonl]` | adapt traces → `<dir>/trajectories.jsonl` (merged, de-duplicated by id) + `harvest_report.json` | 0; **3** if any sealed/unknown-split record was refused (others still written) |
 | `mine --in <dir> --run <run_dir> [--registry registry.yaml] [--min-support 3] [--min-slices 2]` | split/cluster/route → `<run>/lessons/candidates.jsonl` + `mine_report.json` | 0 |
-| `validate --rules <yaml> --in <dir> [--run R --cluster ID] [--dataset eval.yaml]… [--epsilon E] [--out report.json]` | replay rejection filter → `ReplayReport` JSON | 0 pass_to_closed_loop; 2 reject |
+| `validate --rules <yaml> --in <dir> [--run R --cluster ID] [--extractors X.yaml]… [--dataset eval.yaml]… [--epsilon E] [--out report.json]` | replay rejection filter → `ReplayReport` JSON | 0 pass_to_closed_loop; 2 reject |
 | `confirm <cluster_id> --run R --by NAME [--reject] [--note …] [--yes]` | human confirmation | 0; 2 unknown cluster; **4** refused (CI/agent env or non-TTY without `--yes`) |
 
 Each phase runs in `obs.span(contracts.SPAN_LESSONS, {ATTR_PHASE: harvest|cluster|route|replay})`
@@ -39,9 +39,11 @@ Each phase runs in `obs.span(contracts.SPAN_LESSONS, {ATTR_PHASE: harvest|cluste
   decisions) -> MineResult`, `append_confirmation`, `load_confirmations`.
 * `ci_lab.lessons.route`: `route_all(clusters, members, corpus, registry) -> [Routing]`.
 * `ci_lab.lessons.replay`: `validate(rules, trajectories, *, cluster=None, dataset_texts=(),
-  config=ReplayConfig(), engine=None, work_dir=None) -> ReplayReport`; `validate_ok(...) -> (ok,
+  config=ReplayConfig(), engine=None, work_dir=None, extractors=()) -> ReplayReport`; `validate_ok(...) -> (ok,
   reasons)`; `leak_screen`, `safety_check`, `paraphrases`. `rules` may be a `RuleSpec`, a list, a
-  `RuleFile`, or an already-loaded `ci_lab.rules.Bundle`.
+  `RuleFile`, or an already-loaded `ci_lab.rules.Bundle`. Rules using `state` flags need the
+  extractor YAML paths (`extractors=` / `--extractors`): flags come only from extractors, and a flag
+  rule without one fails to load (→ reject).
 * `ci_lab.lessons.registry`: `Registry.load/save/upsert/by_cluster/prose_fix_count/touched_lessons`,
   `conflicts(lesson_ids_touched_by_arms, interaction_evaluated=()) -> {lesson_id: [arms]}` (N4).
 * `ci_lab.lessons.pipeline`: `run_harvest`, `run_mine`, `run_validate` (what the CLI calls).

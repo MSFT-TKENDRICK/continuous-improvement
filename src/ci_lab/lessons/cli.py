@@ -55,6 +55,8 @@ def register(subparsers: Any) -> None:
     v.add_argument("--dataset", type=Path, action="append", default=[], help="eval dataset YAML (leak screen)")
     v.add_argument("--epsilon", type=float, default=None)
     v.add_argument("--out", type=Path, default=None)
+    v.add_argument("--extractors", type=Path, action="append", default=[],
+                   help="extractor YAML (required for rules using state flags)")
     v.set_defaults(func=_validate)
 
     c = sub.add_parser("confirm", help="human confirmation of a lesson cluster")
@@ -109,7 +111,8 @@ def _validate(a: argparse.Namespace) -> int:
             return 2
     texts = [t for d in a.dataset for t in dataset_texts_from_yaml(d)]
     cfg = ReplayConfig(epsilon=a.epsilon) if a.epsilon is not None else None
-    report = run_validate(a.rules, a.in_path, cluster=cluster, dataset_texts=texts, config=cfg)
+    report = run_validate(a.rules, a.in_path, cluster=cluster, dataset_texts=texts, config=cfg,
+                          extractors=a.extractors)
     body = report.model_dump_json(indent=2)
     if a.out:
         a.out.parent.mkdir(parents=True, exist_ok=True)

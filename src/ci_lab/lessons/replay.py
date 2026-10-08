@@ -120,12 +120,13 @@ def _rule_id(match: Any) -> str:
     return str(getattr(r, "id", r))
 
 
-def _load(rules: Sequence[RuleSpec], eng: Any, work_dir: Path | None) -> Any:
+def _load(rules: Sequence[RuleSpec], eng: Any, work_dir: Path | None, extractors: Sequence[Path] = ()) -> Any:
     def go(d: Path) -> Any:
         p = d / "candidate_rules.yaml"
         body = RuleFile(rules=list(rules)).model_dump(mode="json", exclude_none=True)
         p.write_text(yaml.safe_dump(body, sort_keys=False, allow_unicode=True), encoding="utf-8")
-        return eng.load_bundle([p])
+        # state flags come only from extractors; a flag rule without its extractor fails to load
+        return eng.load_bundle([p], list(extractors)) if extractors else eng.load_bundle([p])
 
     try:
         if work_dir is not None:
@@ -312,8 +313,11 @@ def holdout_members(cluster: LessonCluster, trajectories: Iterable[Trajectory], 
 
 def validate(rules: RuleSpec | Sequence[RuleSpec] | RuleFile | Any, trajectories: Iterable[Trajectory], *,
              cluster: LessonCluster | None = None, dataset_texts: Sequence[str] = (),
-             config: ReplayConfig | None = None, engine: Any = None, work_dir: Path | None = None) -> ReplayReport:
-    """Reject or pass-to-closed-loop. Never accepts (B4)."""
+             config: ReplayConfig | None = None, engine: Any = None, work_dir: Path | None = None,
+             extractors: Sequence[Path] = ()) -> ReplayReport:
+    """Reject or pass-to-closed-loop. Never accepts (B4).
+
+    ``extractors``: ExtractorFile YAML paths, required for rules that reference ``state`` flags."""
     cfg = config or ReplayConfig()
     reasons: list[str] = []
     try:
@@ -334,7 +338,7 @@ def validate(rules: RuleSpec | Sequence[RuleSpec] | RuleFile | Any, trajectories
                             **base)
     if bundle is None:
         try:
-            bundle = _load(rule_list, eng, work_dir)
+            bundle = _load(rule_list, eng, work_dir, extractors)
         except RuleLoadFailure as exc:
             return ReplayReport(verdict="reject", ok=False, reasons=[*reasons, f"rule load failed: {exc}"], **base)
 

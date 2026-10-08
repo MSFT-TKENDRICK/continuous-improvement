@@ -71,7 +71,8 @@ def run_mine(in_dir: Path, run_dir: Path, *, registry: Registry | None = None,
 
 def run_validate(rules_path: Path, in_dir: Path, *, cluster: LessonCluster | None = None,
                  dataset_texts: Sequence[str] = (), config: ReplayConfig | None = None,
-                 engine: Any = None, work_dir: Path | None = None) -> ReplayReport:
+                 engine: Any = None, work_dir: Path | None = None,
+                 extractors: Sequence[Path] = ()) -> ReplayReport:
     import yaml
     from pydantic import ValidationError
 
@@ -85,6 +86,6 @@ def run_validate(rules_path: Path, in_dir: Path, *, cluster: LessonCluster | Non
         except (ValidationError, ValueError, TypeError) as exc:
             return ReplayReport(verdict="reject", ok=False, reasons=[f"invalid rule file: {str(exc)[:300]}"])
         report = validate(rules, trajs, cluster=cluster, dataset_texts=dataset_texts, config=config,
-                          engine=engine, work_dir=work_dir)
+                          engine=engine, work_dir=work_dir, extractors=extractors)
         s.set_attribute("ci.lessons.verdict", report.verdict)
     return report
