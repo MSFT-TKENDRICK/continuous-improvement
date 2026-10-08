@@ -251,7 +251,8 @@ test("SSE: hello with UI state, ui pushes from actions, change notifications and
     } finally {
         req.destroy();
     }
-    await new Promise((r) => setTimeout(r, 50));
+    const deadline = Date.now() + 3000;
+    while (srv.clientCount() !== 0 && Date.now() < deadline) await new Promise((r) => setTimeout(r, 25));
     assert.equal(srv.clientCount(), 0);
 });
 
