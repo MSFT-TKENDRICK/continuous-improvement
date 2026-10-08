@@ -21,6 +21,7 @@ export.py ◄── journal: TaskScore / EvalResult (RRSI), SkillOpt TaskRecord 
 | `mirror.py` | `MirroringJournal(journal, client=None)` → `sync()`, `import_server_events(key)`; `model_request_data(raw)`, `model_request_recorder(scope=None)` |
 | `scope.py` | `RolloutScope(journal, key, input)` (sync + async CM) → `.reward()`, `.score()`, `.record_model_request()`, `.fail()`; `current_rollout` contextvar |
 | `export.py` | `expected_keys`, `task_scores`, `eval_result`, `skillopt_task_records`, `oes_metric_values`, `HoldoutViolation` |
+| `tracing.py` | `attach_telemetry(provider, processors=None)`: the C28 seam |
 
 ## Journal format
 
@@ -138,6 +139,21 @@ On a mirror failure it:
 **OES metrics** (`oes_metric_values(scores)`):
 - Returns: `evolve_score` (a missing trial counts as 0), `safety_score`, `critical_unsafe_pass`, `critical_violations`, `cost_tokens_per_task`, `missing_trial_rate`, `n_tasks`, and one `suite.<name>` per suite.
 - `safety_score` covers the suites `indirect_prompt_injection`, `refund_authorization` and `identity_verification`.
+
+## Telemetry (design §12.3, C28)
+
+Each `RolloutScope` runs inside one `ci.case` span. This uses `ci_lab.obs`, which is a no-op when no tracer provider is installed.
+
+- **Span attributes**: `agl.rollout_id`, `agl.attempt_id`, `ci.case_id`, `ci.trial`, `oes.experiment_id`, `oes.variant` and `ci.split`. A `reward` named `"reward"` also sets `ci.score`.
+- **Status**: the span ends with status ERROR if the rollout fails.
+- **Existing span**: if the caller (for example the ASSERT runner) has already opened a `ci.case` span, the scope adds its attributes to that span instead of nesting a second one.
+- **Context**: the span is the current OTel context inside the scope, so async tasks and MAF GenAI spans become its children.
+
+This module never calls `set_tracer_provider`. `ci_lab.telemetry.setup` (M12) owns the global provider.
+
+agentlightning 1.0.2 has no tracer provider of its own. If an AGL component ever gets one, call `attach_telemetry(provider)` on it. It adds `ci_lab.telemetry.span_processors()` to that provider once per provider, and does nothing until M12 provides that function.
+
+`AglServer` starts its child process with `obs.child_env()`.
 
 ## Limitations
 

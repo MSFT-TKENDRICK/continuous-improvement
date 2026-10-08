@@ -20,6 +20,7 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import IO, Any
 
+from ci_lab import obs
 from ci_lab.agl.client import AglClient, ProxyMode, proxy_base_url
 from ci_lab.contracts import RolloutKey
 
@@ -147,7 +148,7 @@ class AglServer:
         raise last_error or AglServerError("agl-server failed to start")
 
     def _launch(self) -> None:
-        env = dict(os.environ)
+        env = obs.child_env()
         env[KEY_ENV] = self._key
         env.setdefault("PYTHONUNBUFFERED", "1")
         if self.log_path is not None:

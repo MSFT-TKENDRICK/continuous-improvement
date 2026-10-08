@@ -11,11 +11,28 @@ import logging
 import threading
 from collections import defaultdict
 from collections.abc import Mapping
+from contextlib import AbstractContextManager
 from contextvars import ContextVar, Token
 from types import TracebackType
 from typing import Any, Literal
 
-from ci_lab.contracts import RolloutJournal, RolloutKey, op_id
+from opentelemetry import trace
+
+from ci_lab import obs
+from ci_lab.contracts import (
+    ATTR_ATTEMPT,
+    ATTR_CASE,
+    ATTR_EXPERIMENT,
+    ATTR_ROLLOUT,
+    ATTR_SCORE,
+    ATTR_SPLIT,
+    ATTR_TRIAL,
+    ATTR_VARIANT,
+    SPAN_CASE,
+    RolloutJournal,
+    RolloutKey,
+    op_id,
+)
 
 log = logging.getLogger(__name__)
 
@@ -33,6 +50,11 @@ class RolloutScope:
     On exit: ``succeeded`` unless the body raised an :class:`Exception` or :meth:`fail` was
     called (then ``failed``). ``BaseException`` exits (cancellation, KeyboardInterrupt) leave the
     rollout running so a checkpoint resume can complete it.
+
+    Telemetry (design §12.3): the scope runs inside one ``ci.case`` span carrying
+    ``agl.rollout_id``/``agl.attempt_id`` (plus case/trial/experiment/variant/split). If the
+    caller (e.g. the ASSERT runner) already opened a ``ci.case`` span, that span is annotated
+    instead of nesting a second one. No-op without a tracer provider (``ci_lab.obs``).
     """
 
     def __init__(self, journal: RolloutJournal, key: RolloutKey, input: Mapping[str, Any] | None = None, *,
@@ -45,6 +67,8 @@ class RolloutScope:
         self._seq: dict[str, int] = defaultdict(int)
         self._lock = threading.Lock()
         self._tokens: list[Token[RolloutScope | None]] = []
+        self._spans: list[AbstractContextManager[Any] | None] = []
+        self.span: trace.Span = trace.INVALID_SPAN  # the ci.case span while entered
         self._started = False
 
     def __repr__(self) -> str:
@@ -81,6 +105,8 @@ class RolloutScope:
                message: str | None = None, name: str = "reward") -> str:
         """Scalar AGL ``RewardData`` event (telemetry; authoritative scores come from ASSERT)."""
         data = {"value": float(value), "message": message, "source": source, "reason": reason}
+        if name == "reward":
+            self.span.set_attribute(ATTR_SCORE, float(value))
         return self.emit(REWARD, data, name=name)
 
     def score(self, name: str, value: float | None, **attrs: Any) -> str:
@@ -99,10 +125,42 @@ class RolloutScope:
 
     # ------------------------------------------------------------ lifecycle
 
+    def span_attributes(self) -> dict[str, Any]:
+        return {ATTR_ROLLOUT: self.key.rollout_id, ATTR_ATTEMPT: self.key.attempt_id,
+                ATTR_CASE: self.key.case_id, ATTR_TRIAL: self.key.trial,
+                ATTR_EXPERIMENT: self.key.experiment_id, ATTR_VARIANT: self.key.variant,
+                ATTR_SPLIT: self.input.get("split")}
+
+    def _open_span(self) -> None:
+        current = trace.get_current_span()
+        if current.is_recording() and getattr(current, "name", None) == SPAN_CASE:
+            for k, v in self.span_attributes().items():
+                if v is not None:
+                    current.set_attribute(k, v)
+            self._spans.append(None)
+            self.span = current
+            return
+        cm = obs.span(SPAN_CASE, self.span_attributes())
+        self.span = cm.__enter__()
+        self._spans.append(cm)
+
+    def _close_span(self, exc_type: type[BaseException] | None, exc: BaseException | None,
+                    tb: TracebackType | None) -> None:
+        cm = self._spans.pop() if self._spans else None
+        if not self._spans:
+            self.span = trace.INVALID_SPAN
+        if cm is not None:
+            cm.__exit__(exc_type, exc, tb)
+
     def __enter__(self) -> RolloutScope:
-        if not self._started:
-            self.journal.start(self.key, self.input)
-            self._started = True
+        self._open_span()
+        try:
+            if not self._started:
+                self.journal.start(self.key, self.input)
+                self._started = True
+        except BaseException as exc:
+            self._close_span(type(exc), exc, exc.__traceback__)
+            raise
         self._tokens.append(current_rollout.set(self))
         return self
 
@@ -120,9 +178,12 @@ class RolloutScope:
                     importer(self.key)
             status: Literal["succeeded", "failed"] = "failed" if exc is not None else (self.outcome or "succeeded")
             self.journal.finish(self.key, status)
+            if exc is None and status == "failed":
+                self.span.set_status(trace.Status(trace.StatusCode.ERROR, "rollout failed"))
         finally:
             if self._tokens:
                 current_rollout.reset(self._tokens.pop())
+            self._close_span(exc_type, exc, tb)
 
     async def __aenter__(self) -> RolloutScope:
         return self.__enter__()
