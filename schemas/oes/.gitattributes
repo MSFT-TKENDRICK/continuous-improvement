@@ -1,0 +1,3 @@
+# Vendored file is pinned by sha256: never convert line endings (later lines win).
+*.schema.json text eol=lf
+openexperiment-0.1.0.schema.json -text
