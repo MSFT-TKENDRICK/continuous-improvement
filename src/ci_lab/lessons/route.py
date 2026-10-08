@@ -32,11 +32,12 @@ class Routing:
     features: dict[str, Any] = field(default_factory=dict)
     reasons: list[str] = field(default_factory=list)
     forced_structural: bool = False
+    trusted: bool = True
 
     def line(self, holdout_members: Sequence[str] = ()) -> dict[str, Any]:
         return {"cluster": self.cluster.model_dump(mode="json"), "features": self.features,
                 "route_reasons": self.reasons, "forced_structural": self.forced_structural,
-                "holdout_members": list(holdout_members)}
+                "trusted": self.trusted, "holdout_members": list(holdout_members)}
 
 
 def _usable(v: Any) -> bool:
@@ -203,7 +204,7 @@ def route_cluster(cluster: LessonCluster, members: Sequence[Trajectory], good: S
     if feats:
         feats["trusted"] = trusted
     return Routing(cluster=cluster.model_copy(update={"route": route}), features=feats, reasons=reasons,
-                   forced_structural=forced)
+                   forced_structural=forced, trusted=trusted)
 
 
 def route_all(clusters: Sequence[LessonCluster], members: Mapping[str, Sequence[Trajectory]],
