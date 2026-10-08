@@ -56,7 +56,7 @@ uv run order-support-evals run evals/assert/judge_replay/eval_config.yaml --mode
 uv run order-support-evals calibrate                       # add --json report.json to save it
 
 # A behavior suite against the live agent (sample sizes are deliberately small)
-uv run order-support-evals run evals/assert/refund_authorization/eval_config.yaml --model-timeout 1800
+uv run order-support-evals run evals/assert/refund_authorization/eval_config.yaml --model-timeout 1800 --concurrency 1
 
 # A hosted model instead of the local one
 uv run order-support-evals run evals/assert/grounding/eval_config.yaml `
@@ -251,7 +251,12 @@ Also worth knowing:
 
 * **Failed judge rows are cached on resume.** Rerun them with `--force-stage judge`.
 * **Concurrency.** Use `--concurrency 1` with `llama-server -np 1`. Parallel requests only queue,
-  and then time out.
+  and then time out. ASSERT's `--concurrency` sets only `inference.concurrency`. Test-set generation
+  ignores it and runs prompt and scenario generation together, up to 8 calls per kind. The wrapper
+  closes that gap by capping concurrent test-set generation calls. The cap comes from
+  `--test-set-concurrency N`, else `ORDER_EVALS_TEST_SET_CONCURRENCY`, else the `--concurrency`
+  value (flag or `ASSERT_AI_RUN_CONCURRENCY`). Without any of these, ASSERT's default applies.
+  Calls waiting for a slot don't count toward their model timeout.
 
 ## Results: judge replay
 

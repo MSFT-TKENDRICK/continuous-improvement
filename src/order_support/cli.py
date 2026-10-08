@@ -1,14 +1,15 @@
 """``order-support-evals``: thin helpers around the ``assert-ai`` CLI.
 
-    order-support-evals run CONFIG [--model-timeout S] [assert-ai run options...]
+    order-support-evals run CONFIG [--model-timeout S] [--test-set-concurrency N] [assert-ai run options...]
     order-support-evals replay build | check
     order-support-evals calibrate [--scores PATH] [--json OUT]
 
-``run`` forwards to ``assert-ai run`` in-process after three local fixes:
+``run`` forwards to ``assert-ai run`` in-process after local fixes:
 an absolute ``artifacts_root`` (a relative one resolves inside site-packages
 when assert-ai is installed as a wheel), staging the committed replay
 inference set into the run directory (ASSERT's viewer build expects it
-there), and an optional per-call model timeout for slow local models.
+there), an optional per-call model timeout for slow local models, and a
+bound on concurrent test-set generation calls.
 """
 
 from __future__ import annotations
@@ -35,17 +36,28 @@ _TIMEOUT_MODULES = ("assert_ai.core.judge", "assert_ai.stages.inference")
 # systematize, simulated tools) means no ASSERT-side bound.
 _MODEL_CLIENT = "assert_ai.core.model_client"
 _AWAIT_HELPER = "_await_with_timeout"
+TEST_SET_CONCURRENCY_ENV = "ORDER_EVALS_TEST_SET_CONCURRENCY"
+# assert-ai's click group uses auto_envvar_prefix="ASSERT_AI", so this env var sets `run --concurrency`.
+ASSERT_CONCURRENCY_ENV = "ASSERT_AI_RUN_CONCURRENCY"
+# Test-set generation runs up to 8 jobs per kind and gathers the prompt and scenario kinds
+# concurrently; ASSERT has no setting for it, so the wrapper bounds this module's model call.
+_TEST_SET_MODULE = "assert_ai.stages.test_set"
+_TEST_SET_MODEL_CALL = "generate_structured"
 
 
-def _overrides(passthrough: list[str]) -> list[str]:
+def _option_values(passthrough: list[str], option: str) -> list[str]:
     out: list[str] = []
     it = iter(passthrough)
     for arg in it:
-        if arg == "--override":
+        if arg == option:
             out.append(next(it, ""))
-        elif arg.startswith("--override="):
+        elif arg.startswith(f"{option}="):
             out.append(arg.split("=", 1)[1])
     return out
+
+
+def _overrides(passthrough: list[str]) -> list[str]:
+    return _option_values(passthrough, "--override")
 
 
 def with_artifacts_root(passthrough: list[str], artifacts: Path = DEFAULT_ARTIFACTS) -> list[str]:
@@ -91,6 +103,72 @@ def set_model_timeout(seconds: float) -> None:
 
     litellm.request_timeout = seconds
     litellm.request_timeout_explicitly_set = True
+
+
+def set_test_set_concurrency(limit: int) -> None:
+    """Allow at most ``limit`` in-flight test-set generation model calls, across prompt and scenario.
+
+    Waiting for a slot happens outside ASSERT's per-call timeout, so queued jobs can't time out.
+    Each stage runs on its own event loop, hence one semaphore per loop.
+    """
+    import asyncio
+    import importlib
+    import weakref
+
+    if limit < 1:
+        raise ValueError("test-set concurrency must be >= 1")
+    module = importlib.import_module(_TEST_SET_MODULE)
+    current = getattr(module, _TEST_SET_MODEL_CALL, None)
+    if current is None:
+        raise RuntimeError(f"{_TEST_SET_MODULE}.{_TEST_SET_MODEL_CALL} not found; assert-ai internals changed")
+    original = getattr(current, "__wrapped__", current)
+    semaphores: weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, asyncio.Semaphore] = weakref.WeakKeyDictionary()
+
+    async def _bounded_generate_structured(*args: Any, **kwargs: Any) -> Any:
+        loop = asyncio.get_running_loop()
+        if (semaphore := semaphores.get(loop)) is None:
+            semaphore = semaphores[loop] = asyncio.Semaphore(limit)
+        async with semaphore:
+            return await original(*args, **kwargs)
+
+    _bounded_generate_structured.__wrapped__ = original  # type: ignore[attr-defined]
+    setattr(module, _TEST_SET_MODEL_CALL, _bounded_generate_structured)
+
+
+def _positive_int(raw: str, source: str) -> int:
+    try:
+        value = int(raw)
+    except ValueError:
+        raise ValueError(f"{source} must be an integer >= 1, got {raw!r}") from None
+    if value < 1:
+        raise ValueError(f"{source} must be an integer >= 1, got {raw!r}")
+    return value
+
+
+def _arg_positive_int(raw: str) -> int:
+    try:
+        return _positive_int(raw, "--test-set-concurrency")
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(str(exc)) from None
+
+
+def resolve_test_set_concurrency(cli_value: int | None, passthrough: list[str]) -> int | None:
+    """``--test-set-concurrency``, else its env var, else assert-ai's ``--concurrency`` (flag or env)."""
+    if cli_value is not None:
+        return _positive_int(str(cli_value), "--test-set-concurrency")
+    if raw := os.environ.get(TEST_SET_CONCURRENCY_ENV, "").strip():
+        return _positive_int(raw, TEST_SET_CONCURRENCY_ENV)
+    if given := _option_values(passthrough, "--concurrency"):
+        try:
+            return _positive_int(given[-1], "--concurrency")
+        except ValueError:
+            return None  # let assert-ai's own option validation report it
+    if raw := os.environ.get(ASSERT_CONCURRENCY_ENV, "").strip():
+        try:
+            return _positive_int(raw, ASSERT_CONCURRENCY_ENV)
+        except ValueError:
+            return None
+    return None
 
 
 def stage_replay_inference_set(config: Path, passthrough: list[str]) -> Path | None:
@@ -139,6 +217,9 @@ def cmd_run(args: argparse.Namespace, passthrough: list[str]) -> int:
         set_model_timeout(timeout)
         # The in-process callable agent reads this per call (order_support.agent.agent_timeout).
         os.environ[TIMEOUT_ENV] = str(timeout)
+    test_set_concurrency = resolve_test_set_concurrency(args.test_set_concurrency, passthrough)
+    if test_set_concurrency is not None:
+        set_test_set_concurrency(test_set_concurrency)
     stage_replay_inference_set(config, passthrough)
     from assert_ai.cli import cli
 
@@ -186,6 +267,10 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--model-timeout", type=float, default=None,
                      help="per-call timeout in seconds for every ASSERT model call (judge, tester, "
                           f"test-set generation, ...; default: ASSERT's 300 for judge/tester; env {TIMEOUT_ENV})")
+    run.add_argument("--test-set-concurrency", type=_arg_positive_int, default=None, metavar="N",
+                     help="max concurrent test-set generation model calls across prompt and scenario kinds "
+                          f"(env {TEST_SET_CONCURRENCY_ENV}; default: --concurrency if given, else ASSERT's "
+                          "up to 8 per kind)")
     rp = sub.add_parser("replay", help="build or check the judge-replay inference set")
     rp.add_argument("action", choices=["build", "check"])
     cal = sub.add_parser("calibrate", help="compare judge_replay scores with reference labels")

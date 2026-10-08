@@ -1,4 +1,7 @@
+import asyncio
+import importlib
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -110,6 +113,10 @@ def fake_assert_run(monkeypatch, restore_timeouts):
     monkeypatch.setattr(cli, "stage_replay_inference_set", lambda *a, **k: None)
     monkeypatch.setattr(assert_cli, "main", lambda args, **_: calls.append(list(args)))
     monkeypatch.delenv(cli.TIMEOUT_ENV, raising=False)
+    monkeypatch.delenv(cli.TEST_SET_CONCURRENCY_ENV, raising=False)
+    monkeypatch.delenv(cli.ASSERT_CONCURRENCY_ENV, raising=False)
+    test_set = importlib.import_module(cli._TEST_SET_MODULE)
+    monkeypatch.setattr(test_set, cli._TEST_SET_MODEL_CALL, getattr(test_set, cli._TEST_SET_MODEL_CALL))
     return calls
 
 
@@ -137,6 +144,108 @@ def test_run_without_model_timeout_leaves_assert_defaults(fake_assert_run, monke
     before = [m.DEFAULT_MODEL_TIMEOUT_S for m in restore_timeouts]
     assert cli.main(["run", str(GROUNDING)]) == 0
     assert [m.DEFAULT_MODEL_TIMEOUT_S for m in restore_timeouts] == before
+
+
+class _InFlight:
+    """Fake test_set.generate_structured that records the peak number of concurrent calls."""
+
+    def __init__(self) -> None:
+        self.now = self.peak = self.calls = 0
+
+    async def __call__(self, model, prompt, *, schema_name, json_schema, options=None):
+        self.now += 1
+        self.calls += 1
+        self.peak = max(self.peak, self.now)
+        await asyncio.sleep(0.01)
+        self.now -= 1
+        count = json_schema["properties"]["test_set"]["minItems"]
+        return SimpleNamespace(parsed={"test_set": [{"title": "t", "description": "d", "system_prompt": ""}] * count})
+
+
+def _generate_prompt_and_scenario(out: Path) -> dict:
+    """Drive ASSERT's real run_test_set (both kinds, 7 jobs each) on a fresh loop, as a stage does."""
+    test_set = importlib.import_module(cli._TEST_SET_MODULE)
+    kind = {"model": "openai/fake", "sample_size": 8}
+    taxonomy = replay.REPO_ROOT / "evals" / "assert" / "grounding" / "taxonomy.json"
+    return asyncio.run(test_set.run_test_set(taxonomy_path=str(taxonomy), save_path=str(out), context=None,
+                                             prompt=dict(kind), scenario=dict(kind), target=None))
+
+
+@pytest.mark.parametrize("limit", [1, 3])
+def test_test_set_concurrency_bounds_both_kinds_together(fake_assert_run, tmp_path, limit):
+    test_set = importlib.import_module(cli._TEST_SET_MODULE)
+    fake = _InFlight()
+    setattr(test_set, cli._TEST_SET_MODEL_CALL, fake)
+    unbounded = _generate_prompt_and_scenario(tmp_path / "a.jsonl")
+    assert fake.peak > 8  # ASSERT alone: up to 8 per kind, both kinds at once
+    baseline_calls, fake.peak, fake.calls = fake.calls, 0, 0
+
+    cli.set_test_set_concurrency(limit)
+    cli.set_test_set_concurrency(limit)  # idempotent: wraps the original call, not the wrapper
+    bounded = _generate_prompt_and_scenario(tmp_path / "b.jsonl")
+    assert fake.peak == limit and fake.calls == baseline_calls
+    assert bounded["saved_count"] == unbounded["saved_count"]
+    # Each stage runs on a new event loop; the bound must hold (and not crash) there too.
+    fake.peak = 0
+    _generate_prompt_and_scenario(tmp_path / "c.jsonl")
+    assert fake.peak == limit
+
+
+def test_test_set_module_looks_up_model_call_at_call_time():
+    import ast
+    import inspect
+
+    test_set = importlib.import_module(cli._TEST_SET_MODULE)
+    tree = ast.parse(inspect.getsource(test_set))
+    gen = next(f for f in ast.walk(tree) if isinstance(f, ast.AsyncFunctionDef) and f.name == "_generate_records")
+    assert any(isinstance(n, ast.Call) and isinstance(n.func, ast.Name) and n.func.id == cli._TEST_SET_MODEL_CALL
+               for n in ast.walk(gen))
+
+
+def test_test_set_concurrency_precedence(monkeypatch):
+    monkeypatch.delenv(cli.TEST_SET_CONCURRENCY_ENV, raising=False)
+    monkeypatch.delenv(cli.ASSERT_CONCURRENCY_ENV, raising=False)
+    resolve = cli.resolve_test_set_concurrency
+    assert resolve(None, []) is None
+    monkeypatch.setenv(cli.ASSERT_CONCURRENCY_ENV, "4")
+    assert resolve(None, []) == 4
+    assert resolve(None, ["--concurrency", "2", "--concurrency=1"]) == 1  # last wins, as in click
+    monkeypatch.setenv(cli.TEST_SET_CONCURRENCY_ENV, "3")
+    assert resolve(None, ["--concurrency", "1"]) == 3
+    assert resolve(5, ["--concurrency", "1"]) == 5
+    assert resolve(None, ["--concurrency", "x"]) == 3
+    monkeypatch.delenv(cli.TEST_SET_CONCURRENCY_ENV)
+    assert resolve(None, ["--concurrency", "x"]) is None  # left for assert-ai to reject
+    monkeypatch.setenv(cli.TEST_SET_CONCURRENCY_ENV, "0")
+    with pytest.raises(ValueError):
+        resolve(None, [])
+
+
+def test_assert_concurrency_env_name_matches_click_prefix(monkeypatch):
+    import click
+    from assert_ai.cli import cli as assert_cli
+
+    run_cmd = assert_cli.commands["run"]
+    parent = click.Context(assert_cli, info_name="assert-ai", **assert_cli.context_settings)
+    ctx = click.Context(run_cmd, parent=parent, info_name="run")
+    option = next(p for p in run_cmd.params if p.name == "concurrency")
+    monkeypatch.setenv(cli.ASSERT_CONCURRENCY_ENV, "3")
+    assert option.resolve_envvar_value(ctx) == "3"
+
+
+def test_run_applies_test_set_concurrency(fake_assert_run, monkeypatch):
+    monkeypatch.setattr(cli, "_load_dotenv", lambda: None)
+    applied = []
+    monkeypatch.setattr(cli, "set_test_set_concurrency", applied.append)
+    assert cli.main(["run", str(GROUNDING), "--concurrency", "1"]) == 0
+    assert cli.main(["run", str(GROUNDING), "--test-set-concurrency", "2", "--concurrency", "1"]) == 0
+    assert cli.main(["run", str(GROUNDING)]) == 0
+    assert applied == [1, 2]
+    # --concurrency is still forwarded to assert-ai; --test-set-concurrency is not.
+    assert fake_assert_run[1][-4:-2] == ["--concurrency", "1"]
+    assert "--test-set-concurrency" not in fake_assert_run[1]
+    with pytest.raises(SystemExit):
+        cli.main(["run", str(GROUNDING), "--test-set-concurrency", "0"])
 
 
 def test_replay_inference_set_is_staged_into_run_root(tmp_path):
