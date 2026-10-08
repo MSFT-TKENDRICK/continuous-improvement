@@ -18,13 +18,20 @@ from ci_lab.campaign.local import FileLedger
 from ci_lab.contracts import Profile
 from ci_lab.ledger.decisions import read_decisions
 from ci_lab.ledger.layout import Layout
-from ci_lab.ledger.looks import LookBudgetExceeded, looks
+from ci_lab.ledger.looks import (
+    LookBudgetExceeded,
+    count_looks,
+    looks,
+    planned_looks,
+    record_look,
+)
 from ci_lab.oes.models import GUARD_EXT
 from ci_lab.oes.validate import EXTENSION_SCHEMAS, _schema_errors
 from ci_lab.workflows.steps import (
     CampaignEnv,
     HoldoutExhausted,
     RoundContext,
+    dataset_hash,
     guard_envelope_extension,
     reserve_holdout_look,
 )
@@ -117,6 +124,65 @@ def test_reserve_holdout_look_legacy_ledger(tmp_path: Path) -> None:
         "dataset_hash": first["dataset_hash"], "look_no": 1}
     with pytest.raises(HoldoutExhausted):
         reserve_holdout_look(env, "other-camp-confirm", "heldout")
+
+
+def _legacy_look(path: Path, cid: str, digest: str, **extra: str) -> dict[str, str]:
+    """A pre-``ledger.looks`` record: bare hex hash, ``"<cid>|<hex>"`` key, no plan/look_id."""
+    bare = digest.removeprefix("sha256:")
+    rec = {"key": f"{cid}|{bare}", "campaign": cid, "dataset_hash": bare, "split": "heldout", **extra}
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(rec) + "\n", encoding="utf-8")
+    return rec
+
+
+def test_record_look_counts_legacy_bare_hash_entries(tmp_path: Path) -> None:
+    path = tmp_path / "experiments" / "holdout-looks.jsonl"
+    bare = "b" * 64
+    _legacy_look(path, "old-camp", bare, eid="old-camp-confirm")
+    for h in (bare, f"sha256:{bare}", f"SHA256:{bare.upper()}"):
+        assert count_looks(path, h) == 1 and planned_looks(path, h) is None
+    ledger = FileLedger(tmp_path / "experiments")
+    with pytest.raises(LookBudgetExceeded):  # the old look still uses the 1-look budget
+        ledger.record_look(f"sha256:{bare}", experiment_id="new-camp-confirm", planned=1, campaign_id="new-camp")
+    again = ledger.record_look(f"sha256:{bare}", experiment_id="old-camp-confirm", planned=1, campaign_id="old-camp")
+    assert again["look_no"] == 1 and again["eid"] == "old-camp-confirm"  # resumed confirm: idempotent
+    assert ledger.record_look(f"sha256:{bare}", experiment_id="new-camp-confirm", planned=2)["look_no"] == 2
+    assert count_looks(path, bare) == 2
+
+
+def test_record_look_legacy_key_without_eid(tmp_path: Path) -> None:
+    path = tmp_path / "holdout-looks.jsonl"
+    bare = "c" * 64
+    _legacy_look(path, "old-camp", bare)
+    assert record_look(path, f"sha256:{bare}", experiment_id="old-camp-confirm", campaign_id="old-camp")["look_no"] == 1
+    with pytest.raises(LookBudgetExceeded):
+        record_look(path, f"sha256:{bare}", experiment_id="x-confirm", campaign_id="x")
+
+
+@pytest.mark.parametrize("file_ledger", [True, False])
+def test_reserve_holdout_look_honours_legacy_ledger_entries(tmp_path: Path, file_ledger: bool) -> None:
+    deps = fake_deps(tmp_path)
+    digest = dataset_hash(deps.domain.splits()["heldout"])
+    assert digest.startswith("sha256:")
+    _legacy_look(tmp_path / "experiments" / "holdout-looks.jsonl", CID, digest, eid=f"{CID}-confirm")
+    if not file_ledger:
+        class Plain:  # LedgerStore without record_look
+            def __init__(self, inner: FileLedger) -> None:
+                self._inner = inner
+
+            def __getattr__(self, name: str):
+                if name in ("record_look", "record_decisions"):
+                    raise AttributeError(name)
+                return getattr(self._inner, name)
+
+        deps.ledger = Plain(deps.ledger)
+    env = CampaignEnv(CID, Profile.FAKE, {"holdout_looks": 1}, deps, tmp_path / "runs")
+    assert reserve_holdout_look(env, f"{CID}-confirm", "heldout") == {"dataset_hash": digest, "look_no": 1}
+    with pytest.raises(HoldoutExhausted):  # same campaign, different experiment: a second look
+        reserve_holdout_look(env, f"{CID}-r01", "heldout")
+    with pytest.raises(HoldoutExhausted):
+        reserve_holdout_look(env, "other-camp-confirm", "heldout")
+    assert len((tmp_path / "experiments" / "holdout-looks.jsonl").read_text().splitlines()) == 1
 
 
 def test_guard_extension_validates_and_lands_in_envelope(tmp_path: Path) -> None:

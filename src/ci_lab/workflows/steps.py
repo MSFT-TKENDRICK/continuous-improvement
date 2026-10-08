@@ -46,7 +46,7 @@ from ci_lab.contracts import (
     round_experiment_id,
 )
 from ci_lab.contracts import ArmContext as StrategyContext
-from ci_lab.ledger.looks import LookBudgetExceeded
+from ci_lab.ledger.looks import LookBudgetExceeded, is_same_look, normalize_hash
 from ci_lab.workflows import ARM_YAMLS
 from ci_lab.workflows.progress import HEARTBEAT_S, Progress, Tracker
 from ci_lab.workflows.runtime import GatedAgent, StepAborted
@@ -925,15 +925,17 @@ def reserve_holdout_look(env: CampaignEnv, eid: str, split: str) -> dict[str, An
             raise HoldoutExhausted(str(exc)) from exc
     else:
         key = f"{eid}|{digest}"
-        looks = [r for r in deps.ledger.read_jsonl(LOOKS) if r.get("dataset_hash") == digest]
-        keys = [r.get("key") for r in looks]
-        if key not in keys:
+        bare = normalize_hash(digest)
+        looks = [r for r in deps.ledger.read_jsonl(LOOKS)
+                 if isinstance(r.get("dataset_hash"), str) and normalize_hash(r["dataset_hash"]) == bare]
+        mine = next((i for i, r in enumerate(looks) if is_same_look(r, digest, eid, env.cid)), None)
+        if mine is None:
             if len(looks) >= planned:
                 raise HoldoutExhausted(f"held-out {digest[:19]} already looked at {len(looks)} time(s)")
             deps.ledger.append_jsonl(LOOKS, {"key": key, "campaign": env.cid, "dataset_hash": digest,
                                              "split": split, "eid": eid}, key="key")
-            keys.append(key)
-        look_no = keys.index(key) + 1
+            mine = len(looks)
+        look_no = mine + 1
     env.commit_ledger(f"{eid}-look", f"Reserve held-out look for {eid}", [LOOKS])
     return {"dataset_hash": digest, "look_no": look_no}
 
