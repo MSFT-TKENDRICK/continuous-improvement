@@ -1,0 +1,46 @@
+{
+  "tool": "s1eval 0.1.0",
+  "created_utc": "2026-10-07T16:40:31+00:00",
+  "git_commit": "3bee252846bc00b81c90f8bf1038b433527b2ea1",
+  "python": "3.13.15",
+  "platform": "Windows-11-10.0.26200-SP0",
+  "backend": {
+    "backend": "llamacpp-logprob",
+    "name": "llamacpp-logprob",
+    "base_url": "http://127.0.0.1:8081",
+    "model_file": "Qwen_Qwen3.5-4B-Q4_K_M.gguf",
+    "model_ftype": "Q4_K - Medium",
+    "llama_build": "b11455-abeada335",
+    "chat_template_sha256": "a4aee8afcf2e0711942cf848899be66016f8d14a889ff9ede07bca099c28f715",
+    "prompt_version": "s1-local-v1",
+    "system_prompt_sha256": "929f3887d19657bd9ecf9c4be89caeae82cf8194e807424e0942a714f96a3eb6",
+    "top_logprobs": 40,
+    "min_valid_mass": 0.5,
+    "choice_permutations": 1,
+    "code_seed": null,
+    "sampler": {
+      "temperature": 0,
+      "max_tokens": 1,
+      "enable_thinking": false
+    }
+  },
+  "rubric": {
+    "name": "order_support",
+    "version": "1",
+    "sha256": "47b169e80c2161581a1c4a92bc3350f6d93209e6b3f240530c81dceb197d63ff",
+    "min_confidence": 0.4,
+    "noul_threshold": 0.5
+  },
+  "dataset_sha256": "a1718a41638cb209053241db02761c0bda57d83eceaaec3bb466aa6b22aaf1dc",
+  "s1eval_version": "0.1.0",
+  "repeats": 1,
+  "n_cases": 30,
+  "probes": [
+    "complement",
+    "choice_order",
+    "code_permutation",
+    "distractor",
+    "batch_vs_single"
+  ],
+  "probe_cases": 30
+}

@@ -1,0 +1,41 @@
+{
+  "passed": true,
+  "failures": [],
+  "checks": {
+    "codes_single_token": true,
+    "thinking_disabled": true,
+    "template_tail": "|im_start|>assistant\n<think>\n\n</think>\n\n",
+    "noul_first_token_is_code": true,
+    "noul_valid_mass": 0.9994,
+    "noul_logprob_temp_invariant": true,
+    "noul_logprob_max_dev": 0.0,
+    "choice_first_token_is_code": true,
+    "choice_valid_mass": 0.9999,
+    "choice_logprob_temp_invariant": true,
+    "choice_logprob_max_dev": 0.0,
+    "score_first_token_is_code": true,
+    "score_valid_mass": 0.9847,
+    "score_logprob_temp_invariant": true,
+    "score_logprob_max_dev": 0.0
+  },
+  "provenance": {
+    "backend": "llamacpp-logprob",
+    "name": "llamacpp-logprob",
+    "base_url": "http://127.0.0.1:8081",
+    "model_file": "Qwen_Qwen3.5-4B-Q4_K_M.gguf",
+    "model_ftype": "Q4_K - Medium",
+    "llama_build": "b11455-abeada335",
+    "chat_template_sha256": "a4aee8afcf2e0711942cf848899be66016f8d14a889ff9ede07bca099c28f715",
+    "prompt_version": "s1-local-v1",
+    "system_prompt_sha256": "929f3887d19657bd9ecf9c4be89caeae82cf8194e807424e0942a714f96a3eb6",
+    "top_logprobs": 40,
+    "min_valid_mass": 0.5,
+    "choice_permutations": 1,
+    "code_seed": null,
+    "sampler": {
+      "temperature": 0,
+      "max_tokens": 1,
+      "enable_thinking": false
+    }
+  }
+}
