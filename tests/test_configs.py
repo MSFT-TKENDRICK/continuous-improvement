@@ -1,5 +1,6 @@
 """Static checks that every ASSERT suite config, taxonomy and judge contract is valid."""
 
+import inspect
 import json
 import re
 from pathlib import Path
@@ -80,6 +81,29 @@ def test_live_suite_targets_agent_and_context_matches_fixtures(path, tmp_path):
     assert data.TODAY.isoformat() in context
     for dim in stages["test_set"]["stratify"]["dimensions"]:
         assert len(dim["levels"]) >= 2  # explicit levels: no stratification LLM call
+
+
+def _agent_tool_signatures() -> dict[str, str]:
+    """``name(arg, ...)`` for every tool the agent really has (harness agent.yaml, bound to tools.TOOLS)."""
+    from order_support import agent, tools
+
+    names = [str(t["name"]) for t in agent._load_spec()["tools"]]
+    assert names and set(names) == set(tools.TOOLS) == {s["function"]["name"] for s in tools.TOOL_SCHEMAS}
+    return {n: f"{n}({', '.join(inspect.signature(tools.TOOLS[n]).parameters)})" for n in names}
+
+
+def test_agent_tool_signatures_cover_verify_identity():
+    assert _agent_tool_signatures()["verify_identity"] == "verify_identity(order_id, full_name, email_or_phone)"
+
+
+# The context block is what ASSERT's generator/tester/judge know about the agent: it must list
+# every real tool, with its real arguments, so it cannot drift from order_support again.
+@pytest.mark.parametrize("path", LIVE_SUITES, ids=lambda p: p.parent.name)
+def test_context_lists_every_agent_tool(path, tmp_path):
+    context = " ".join(_ctx(path, tmp_path)["context"].split())
+    sigs = _agent_tool_signatures()
+    missing = [sig for sig in sigs.values() if sig not in context]
+    assert not missing, f"{path.parent.name} context does not describe tools {missing}"
 
 
 def test_replay_config_is_judge_only(tmp_path):
