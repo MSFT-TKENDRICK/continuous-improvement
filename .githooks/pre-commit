@@ -1,0 +1,23 @@
+#!/bin/sh
+# R5 pre-commit gate (design §13.1, §13.4): lint the *staged* content against lint/rules/*.yaml.
+# Enable once per clone:   git config core.hooksPath .githooks
+# `git commit --no-verify` skips this hook; CI (.github/workflows/lint.yml) is authoritative and the
+# ci-guardrails Copilot CLI extension denies --no-verify for coding agents.
+set -u
+
+if ! command -v uv >/dev/null 2>&1; then
+	echo "[LINT][ERROR] pre-commit: 'uv' not found on PATH; install uv (https://docs.astral.sh/uv/)." >&2
+	exit 1
+fi
+
+if uv run --native-tls -q ci-lab lint --help >/dev/null 2>&1; then
+	uv run --native-tls -q ci-lab lint --staged
+else
+	uv run --native-tls -q python -m ci_lab.lint lint --staged
+fi
+status=$?
+
+if [ "$status" -ne 0 ]; then
+	echo "[LINT] commit blocked: fix the violations above (do not bypass with --no-verify; CI runs the same rules)." >&2
+fi
+exit "$status"
