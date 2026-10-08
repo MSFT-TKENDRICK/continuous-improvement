@@ -152,3 +152,36 @@ def test_agent_zero_budget_skips_proposer(tmp_path):
 
 def test_paths_are_paths(tmp_path):
     assert isinstance(ctx(tmp_path).worktree, Path)
+
+
+@pytest.mark.parametrize(("strategy", "files", "bad"), [
+    ("gepa", ["harness/prompt/x.md", "src/order_support/harness/guards/a.yaml"],
+     ["src/order_support/harness/guards/a.yaml"]),
+    ("agent", ["harness\\guards\\a.yaml"], ["harness\\guards\\a.yaml"]),
+    ("skillopt", ["harness/guardsx/a.md", "harness/guards"], []),
+    ("guard", ["harness/guards/a.yaml", "harness/guards/a.yaml"], []),
+    ("guard", ["harness/prompt/x.md", "harness/guards/BUNDLE.lock"],
+     ["harness/prompt/x.md", "harness/guards/BUNDLE.lock"]),
+])
+def test_edit_scope_violations(strategy, files, bad):
+    from ci_lab.strategies.base import edit_scope_violations
+
+    assert edit_scope_violations(strategy, files) == bad
+
+
+def test_evolve_cases_prefer_campaign_evolve_set(tmp_path):
+    from ci_lab.contracts import FailureRecord
+    from ci_lab.strategies.base import evolve_cases_for
+
+    class D:
+        def splits(self):
+            return {"evolve": ["d1"], "heldout": ["h1"]}
+
+    fail = FailureRecord("f1", "s", "c", (), {}, "")
+    ctx = ArmContext("e", ArmDirective("v1", "gepa", ("prompt",)), tmp_path, "b", [fail], Profile.FAKE, tmp_path,
+                     evolve_case_ids=("c1", "c2"))
+    assert evolve_cases_for(ctx, explicit=["x"], domain=D()) == ["x"]
+    assert evolve_cases_for(ctx, domain=D()) == ["c1", "c2"]
+    ctx.evolve_case_ids = ()
+    assert evolve_cases_for(ctx, domain=D()) == ["d1"]
+    assert evolve_cases_for(ctx) == ["f1"]

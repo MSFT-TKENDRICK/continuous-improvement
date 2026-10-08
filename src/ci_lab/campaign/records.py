@@ -125,6 +125,7 @@ def arm_from_dict(data: Mapping[str, Any]) -> ArmResult:
         eval=eval_from_dict(data["eval"]) if data.get("eval") else None,
         status=data.get("status", "pending"),
         strategy=data.get("strategy", "agent"),
+        cost=data.get("cost"),
     )
 
 

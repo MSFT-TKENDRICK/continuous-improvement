@@ -107,3 +107,44 @@ def test_guard_eval_is_stochastic_on_copilot_profile(tmp_path: Path) -> None:
     assert guard_eval_options(env) == {"k": 1, "trials": 3, "stochastic": True, "margin": 0.0}
     env = CampaignEnv("c", Profile.FAKE, {"k": 2, "guard_trials": 4, "guard_margin": 0.05}, deps, tmp_path)
     assert guard_eval_options(env) == {"k": 2, "trials": 4, "stochastic": False, "margin": 0.05}
+
+
+def test_text_strategy_may_not_write_guards(tmp_path: Path) -> None:
+    """N5/B2: a text strategy touching harness/guards/** is rejected before evaluation."""
+    camp, deps = _new(tmp_path, {"strategies": ["gepa"]})
+    deps.get_strategy("gepa").files = ("harness/prompt/x", "src/order_support/harness/guards/evil.yaml")
+    asyncio.run(camp.calibrate())
+    out = asyncio.run(camp.run(rounds=1))
+    assert out["rounds"][0]["decision"] != "ship"
+    run_dir = tmp_path / "runs" / f"{CID}-r01"
+    for arm in ("v1", "v2"):
+        ev = json.loads((run_dir / arm / "eval.json").read_text())
+        assert ev["skipped"] is True
+        assert ev["reason"] == "edit_scope: gepa may not write src/order_support/harness/guards/evil.yaml"
+        assert json.loads((run_dir / arm / "arm.done").read_text())["result"]["status"] == "rejected"
+    assert not [v for e, v, _ in deps.domain.calls if e == f"{CID}-r01" and v != "inc"]
+
+
+def test_guard_strategy_may_only_write_guard_rules(tmp_path: Path) -> None:
+    camp, deps = _new(tmp_path, {"strategies": ["guard"]})
+    deps.get_strategy("guard").files = ("harness/guards/BUNDLE.lock",)
+    asyncio.run(camp.calibrate())
+    asyncio.run(camp.run(rounds=1))
+    ev = json.loads((tmp_path / "runs" / f"{CID}-r01" / "v1" / "eval.json").read_text())
+    assert ev["reason"] == "edit_scope: guard may not write harness/guards/BUNDLE.lock"
+
+
+def test_strategy_context_carries_evolve_cases_and_cost(tmp_path: Path) -> None:
+    camp, deps = _new(tmp_path, {"strategies": ["gepa", "agent"]})
+    asyncio.run(camp.calibrate())
+    asyncio.run(camp.run(rounds=1))
+    ctx = deps.get_strategy.instances["gepa"].calls[0]
+    assert ctx.evolve_case_ids == tuple(deps.domain.splits()["evolve"])
+    assert not set(ctx.evolve_case_ids) & set(deps.domain.splits()["heldout"])
+    run_dir = tmp_path / "runs" / f"{CID}-r01"
+    done = json.loads((run_dir / "v1" / "arm.done").read_text())
+    assert done["result"]["cost"] == {"metric_calls": len(ctx.evolve_case_ids), "tokens_in": 0}
+    assert json.loads((run_dir / "v2" / "arm.done").read_text())["result"]["cost"] is None
+    from ci_lab.campaign import records
+
+    assert records.arm_from_dict(done["result"]).cost == done["result"]["cost"]

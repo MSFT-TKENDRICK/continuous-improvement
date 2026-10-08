@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import json
 import subprocess
-from collections.abc import Callable, Iterator, Mapping, Sequence
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 from ci_lab import obs
@@ -26,6 +26,29 @@ FALLBACK_IDENTITY = ("ci-lab arm", "ci-lab-arm@localhost")
 OPTIMIZER_DIR = "optimizer"
 GUARD_GLOBS = ("**/harness/guards/**",)
 """v2.4 §13 (B2): guard rule bundles are writable only by the ``guard`` strategy."""
+GUARD_STRATEGY = "guard"
+_GUARD_PARTS = ("harness", "guards")
+_GUARD_LOCK_NAME = "BUNDLE.lock"
+
+
+def is_guard_path(path: str) -> bool:
+    """True for a file under any ``harness/guards/`` directory (``GUARD_GLOBS``)."""
+    parts = PurePosixPath(str(path).replace("\\", "/")).parts
+    return any(parts[i:i + 2] == _GUARD_PARTS for i in range(len(parts) - 2))
+
+
+def edit_scope_violations(strategy: str, files: Iterable[str]) -> list[str]:
+    """Files ``strategy`` may not write (v2.4 §13 B2/N5): text strategies never touch
+    ``harness/guards/**``; the guard strategy writes only rule files there (never ``BUNDLE.lock``)."""
+    out = []
+    for f in dict.fromkeys(files):
+        guard = is_guard_path(f)
+        if strategy == GUARD_STRATEGY:
+            if not guard or PurePosixPath(str(f).replace("\\", "/")).name == _GUARD_LOCK_NAME:
+                out.append(f)
+        elif guard:
+            out.append(f)
+    return out
 
 Committer = Callable[[Path, Sequence[str], str], str]
 """``(worktree, files, message) -> commit sha``."""
@@ -74,10 +97,13 @@ def git_commit(worktree: Path, files: Sequence[str], message: str) -> str:
 
 def evolve_cases_for(ctx: ArmContext, *, explicit: Sequence[str] | None = None, domain: Domain | None = None,
                      scorer: Any = None) -> list[str]:
-    """Evolve case ids an optimizer may score: explicit > domain.splits()["evolve"] >
-    scorer.evolve_cases() > case ids of ``ctx.failures`` (assumed evolve, C15)."""
+    """Evolve case ids an optimizer may score: explicit > ``ctx.evolve_case_ids`` (set by the
+    campaign) > domain.splits()["evolve"] > scorer.evolve_cases() > case ids of ``ctx.failures``
+    (assumed evolve, C15)."""
     if explicit:
         return list(dict.fromkeys(explicit))
+    if ctx.evolve_case_ids:
+        return list(dict.fromkeys(ctx.evolve_case_ids))
     if domain is not None:
         return list(domain.splits()["evolve"])
     if callable(getattr(scorer, "evolve_cases", None)):

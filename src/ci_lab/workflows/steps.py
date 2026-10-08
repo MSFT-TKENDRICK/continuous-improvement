@@ -15,6 +15,7 @@ import functools
 import hashlib
 import inspect
 import random
+import subprocess
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
@@ -279,7 +280,24 @@ class ArmRun:
         return StrategyContext(experiment_id=self.eid, directive=directive_of(self.directive),
                                worktree=self.worktree, base_commit=self.base_commit, failures=failures,
                                profile=env.profile, run_dir=self.dir,
-                               budget_tokens=int(budget) if budget is not None else None)
+                               budget_tokens=int(budget) if budget is not None else None,
+                               evolve_case_ids=tuple(env.deps.domain.splits()["evolve"]))
+
+    def optimizer_cost(self) -> Mapping[str, Any] | None:
+        """The strategy's ``<arm dir>/optimizer/<arm>-<strategy>.json`` ``cost`` block (C18)."""
+        from ci_lab.strategies.base import OPTIMIZER_DIR
+
+        report = _done(self.dir / OPTIMIZER_DIR / f"{self.arm}-{self.strategy}.json")
+        cost = report.get("cost") if report else None
+        return dict(cost) if isinstance(cost, Mapping) else None
+
+    def edit_scope_violations(self, edits: Sequence[Mapping[str, Any]]) -> list[str]:
+        """B2/N5: declared edit files plus, for git worktrees, the actual ``base..HEAD`` diff."""
+        from ci_lab.strategies.base import edit_scope_violations
+
+        files = [f for e in edits for f in e.get("files", ())]
+        files += _changed_files(self.worktree, self.base_commit)
+        return edit_scope_violations(self.strategy, files)
 
     async def run_strategy(self, feedback: Sequence[str] = ()) -> list[Edit]:
         """Run the arm's :class:`~ci_lab.contracts.ArmStrategy` and record its edits
@@ -321,6 +339,17 @@ def step(name: str, fn: Callable[..., Any], tracker: Tracker | None = None) -> C
 
 def _done(path: Path) -> dict[str, Any] | None:
     return records.read_json(path)
+
+
+def _changed_files(worktree: Path, base: str) -> list[str]:
+    """``git diff --name-only base HEAD`` for git worktrees; ``[]`` otherwise (fake repos)."""
+    if not (Path(worktree) / ".git").exists() or not base:
+        return []
+    proc = subprocess.run(["git", "-C", str(worktree), "diff", "--name-only", "--no-renames", base, "HEAD"],
+                          capture_output=True, text=True, check=False)
+    if proc.returncode != 0:
+        raise RuntimeError(f"git diff {base[:12]}..HEAD failed in {worktree}: {proc.stderr.strip()[:200]}")
+    return [line for line in proc.stdout.splitlines() if line]
 
 
 # ------------------------------------------------------------------ arm.yaml
@@ -390,6 +419,9 @@ def arm_tools(ctx: ArmRun) -> dict[str, Callable[..., Awaitable[Any]]]:
             data = {"skipped": True, "reason": "critic_rejected", "head": head}
         elif head == ctx.base_commit:
             data = {"skipped": True, "reason": "no_edits", "head": head}
+        elif bad := ctx.edit_scope_violations((_done(ctx.proposal_path) or {}).get("edits", ())):
+            data = {"skipped": True, "reason": f"edit_scope: {ctx.strategy} may not write {', '.join(bad[:5])}",
+                    "head": head}
         else:
             tree = deps.harness_tree(ctx.worktree)
             result = await deps.domain.evaluate(ctx.worktree, split, int(hyper["k"]),
@@ -441,7 +473,7 @@ def arm_tools(ctx: ArmRun) -> dict[str, Callable[..., Awaitable[Any]]]:
             arm=ctx.arm, base_commit=ctx.base_commit, head_commit=ev.get("head"), harness_tree=ev.get("tree"),
             edits=edits, critic=verdict,
             eval=records.eval_from_dict(ev["eval"]) if ev.get("eval") else None,
-            status=status, strategy=ctx.strategy)
+            status=status, strategy=ctx.strategy, cost=ctx.optimizer_cost())
         done = {"result": records.arm_to_dict(result), "reason": reason, "directive": dict(ctx.directive)}
         if guard is not None:
             done["guard"] = guard

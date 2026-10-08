@@ -227,8 +227,11 @@ class FakeStrategy:
         self.repo = repo
         self.hypothesis_fn = hypothesis_fn
         self.calls: list[ArmContext] = []
+        self.files: tuple[str, ...] | None = None  # override the written paths (edit-scope tests)
 
     async def propose(self, ctx: ArmContext) -> list[Edit]:
+        from ci_lab.strategies.base import write_report
+
         self.calls.append(ctx)
         d = ctx.directive
         component = d.component_focus[0] if d.component_focus else "prompt"
@@ -238,7 +241,8 @@ class FakeStrategy:
             hypothesis += " (repaired)"
         commit = self.repo.apply(ctx.worktree, ctx.base_commit, hypothesis)
         path = f"harness/guards/{d.arm}.yaml" if self.name == "guard" else f"harness/{component}/x"
-        return [Edit(component, hypothesis, (path,), commit)]
+        write_report(ctx, self.name, {"cost": {"metric_calls": len(ctx.evolve_case_ids), "tokens_in": 0}})
+        return [Edit(component, hypothesis, self.files or (path,), commit)]
 
 
 class FakeStrategies:
