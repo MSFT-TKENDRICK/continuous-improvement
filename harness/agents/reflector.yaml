@@ -31,6 +31,6 @@ tools:
       - name: submit_reflection
 x-ci:
   purpose: reflector
-  instructions_files: [prompts/common.md, prompts/reflector.md]
+  instructions_files: [../prompts/common.md, ../prompts/reflector.md]
   terminal_tool: submit_reflection
   documents: [brief, results, analysis, history]

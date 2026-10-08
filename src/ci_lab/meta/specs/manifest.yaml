@@ -1,7 +1,10 @@
 # Meta-agent manifest (M8a). runtime=harness: each spec is parsed declaratively and run through
 # MAF create_harness_agent (ci_lab.maf.loader.build_agent(..., runtime="harness")).
 # `model` is an alias resolved by contracts.ChatClientFactory; tool sets are bound per run by
-# ci_lab.meta.run. Spec paths are relative to this file.
+# ci_lab.meta.run. Spec paths are relative to this file, except for the `evolvable` agents below,
+# whose specs (and prompts) live in the self-hosted harness tree: <harness_dir>/agents/<spec>, where
+# harness_dir is passed explicitly (default: the repo-root harness/, see ci_lab.harness_tree).
+# critic, judge, adversary and this manifest stay frozen here.
 version: 1
 runtime: harness
 # Default model for every meta agent and subagent. Operators may pick another one per run with
@@ -15,6 +18,7 @@ harness:
   disable_file_memory: true
   disable_web_search: true
   max_nudges: 2  # re-prompts when a run ends without the terminal submit_* call
+evolvable: [analyst, proposer, reflector, failure_analyst, student]
 agents:
   analyst:
     spec: analyst.yaml

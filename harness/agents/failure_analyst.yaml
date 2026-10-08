@@ -39,5 +39,5 @@ tools:
 x-ci:
   role: subagent
   purpose: proposer
-  instructions_files: [prompts/failure_analyst.md]
+  instructions_files: [../prompts/failure_analyst.md]
   documents: [brief, failures, analysis, history]

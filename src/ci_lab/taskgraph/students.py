@@ -27,14 +27,16 @@ def fake_student(spec: StudentSpec, middleware: Any) -> Any:
 
 
 class AgentStudentFactory:
-    """``meta/specs/student.yaml`` on ``profile``: file tools over a fresh per-attempt workspace seeded with
-    the task's ``file`` context refs (relative to ``context_root``); returns the written output artifact."""
+    """``<harness_dir>/agents/student.yaml`` on ``profile``: file tools over a fresh per-attempt workspace
+    seeded with the task's ``file`` context refs (relative to ``context_root``); returns the written output
+    artifact. ``harness_dir=None`` uses the repo-root ``harness/``."""
 
     def __init__(self, *, context_root: Path, work_root: Path, profile: str = "copilot",
-                 client: Any = None, builder: Callable[..., Any] | None = None) -> None:
-        from ci_lab.meta.spec_loader import SPECS_DIR, load_spec
+                 client: Any = None, builder: Callable[..., Any] | None = None,
+                 harness_dir: Path | None = None) -> None:
+        from ci_lab.meta.spec_loader import load_spec
 
-        self.meta = load_spec(SPECS_DIR / "student.yaml")
+        self.meta = load_spec("student", harness_dir=harness_dir)
         self.context_root, self.work_root, self.profile = Path(context_root), Path(work_root), profile
         self.client, self.builder = client, builder
 

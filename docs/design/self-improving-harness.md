@@ -34,7 +34,7 @@ I7 Evolvable surface is DATA ONLY (YAML/Markdown) -> arms cannot execute new Pyt
 | `rrsi/` | pure: schedule, stall, history, A/A delta, Alg.2 selection, frontier, attribution, readjudicate |
 | `domain/order_support.py` | splits (evolve / sealed held-out / OOD), `evaluate(harness_dir, split, k)` = ASSERT run per case inside a RolloutScope |
 | `tools/` | MAF function tools: `arm_fs` (read/list/write scoped to surface globs of ONE worktree), `commit_edit(component, hypothesis)` (tagged commit, trailers), `briefs` (read-only round brief/analysis/history), `critic_checks`, `submit` (terminal `submit_*` tools), `paths` |
-| `meta/` | analyst / proposer / critic / failure_analyst / reflector declarative specs in `meta/specs/*.yaml` (`manifest.yaml`; runtime=harness); proposer gets vendored AGL Skill (12 levers) via skills_paths |
+| `meta/` | analyst / proposer / critic / failure_analyst / reflector declarative specs in `harness/agents/*.yaml` (critic and `manifest.yaml` frozen in `meta/specs/`; runtime=harness); proposer gets vendored AGL Skill (12 levers) via skills_paths |
 | `workflows/*.yaml` | `round.yaml`, `arm_agent.yaml`, `arm_gepa.yaml`, `arm_skillopt.yaml`, `calibrate.yaml`, `confirm.yaml` (expression-free) + `steps.py` function tools; the sleep workflow is `sleep/sleep.yaml` |
 | `sleep/` | `CopilotSleepBackend(CliBackend)` (`_call` -> CopilotChatClient; `attempt*` -> order-support MAF agent in a RolloutScope), task harvest (AGL exports + reviewed tasks file), op validator (rejects unknown judge ops), staging -> PR |
 | `cli.py` | `ci-lab campaign new\|calibrate\|run\|status\|readjudicate\|confirm\|land`, `ci-lab sleep run`, `ci-lab copilot-serve`, `ci-lab oes validate`, `ci-lab doctor` (no .NET, auth, versions) |
