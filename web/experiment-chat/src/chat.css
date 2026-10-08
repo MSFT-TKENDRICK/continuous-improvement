@@ -1,0 +1,197 @@
+/* Experiment chat: maps CopilotKit's theme variables onto the canvas host tokens. */
+.xc-root {
+  --xc-bg: var(--bg, var(--background-color-default, #ffffff));
+  --xc-bg-muted: var(--bg-muted, var(--background-color-muted, #f6f8fa));
+  --xc-fg: var(--fg, var(--text-color-default, #1f2328));
+  --xc-fg-muted: var(--fg-muted, var(--text-color-muted, #59636e));
+  --xc-border: var(--border, var(--border-color-default, #d1d9e0));
+  --xc-accent: var(--accent, var(--color-accent-fg, #0969da));
+  --xc-ok: var(--ok, var(--color-success-fg, #1a7f37));
+  --xc-warn: var(--warn, var(--color-attention-fg, #9a6700));
+  --xc-bad: var(--bad, var(--color-danger-fg, #d1242f));
+  --xc-focus: var(--focus, var(--color-focus-outline, #0969da));
+  --xc-sans: var(--sans, var(--font-sans, system-ui, sans-serif));
+  --xc-mono: var(--mono, var(--font-mono, ui-monospace, monospace));
+  --xc-body: var(--body, var(--text-body-medium, 13px));
+  --xc-small: var(--small, var(--text-body-small, 12px));
+  --xc-radius: 6px;
+  display: block;
+  height: 100%;
+  min-height: 420px;
+  color: var(--xc-fg);
+  font-family: var(--xc-sans);
+  font-size: var(--xc-body);
+}
+
+.xc-root [data-copilotkit] {
+  --background: var(--xc-bg);
+  --foreground: var(--xc-fg);
+  --card: var(--xc-bg);
+  --card-foreground: var(--xc-fg);
+  --popover: var(--xc-bg);
+  --popover-foreground: var(--xc-fg);
+  --primary: var(--xc-fg);
+  --primary-foreground: var(--xc-bg);
+  --secondary: var(--xc-bg-muted);
+  --secondary-foreground: var(--xc-fg);
+  --muted: var(--xc-bg-muted);
+  --muted-foreground: var(--xc-fg-muted);
+  --accent: var(--xc-bg-muted);
+  --accent-foreground: var(--xc-fg);
+  --destructive: var(--xc-bad);
+  --border: var(--xc-border);
+  --input: var(--xc-border);
+  --ring: var(--xc-focus);
+  --radius: var(--xc-radius);
+  --cpk-default-font-family: var(--xc-sans);
+  font-family: var(--xc-sans);
+  color: var(--xc-fg);
+  background: var(--xc-bg);
+}
+
+.xc-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 300px);
+  gap: 12px;
+  height: 100%;
+  min-height: 420px;
+}
+
+.xc-chat {
+  min-width: 0;
+  min-height: 420px;
+  height: calc(100vh - 140px);
+  border: 1px solid var(--xc-border);
+  border-radius: var(--xc-radius);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.xc-chat > * {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.xc-side {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+@media (max-width: 720px) {
+  .xc-layout { grid-template-columns: minmax(0, 1fr); }
+  .xc-chat { height: 60vh; }
+}
+
+.xc-card {
+  border: 1px solid var(--xc-border);
+  border-radius: var(--xc-radius);
+  padding: 10px 12px;
+  background: var(--xc-bg);
+  color: var(--xc-fg);
+  font-family: var(--xc-sans);
+  font-size: var(--xc-body);
+  line-height: 1.45;
+}
+
+.xc-card h3 {
+  margin: 0 0 8px;
+  font-size: var(--xc-body);
+  font-weight: 600;
+}
+
+.xc-card p { margin: 6px 0; }
+
+.xc-card code {
+  font-family: var(--xc-mono);
+  font-size: var(--xc-small);
+}
+
+.xc-card--empty { color: var(--xc-fg-muted); }
+
+.xc-fields {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 2px 10px;
+  margin: 0;
+}
+
+.xc-field { display: contents; }
+.xc-field dt { color: var(--xc-fg-muted); font-size: var(--xc-small); }
+.xc-field dd { margin: 0; overflow-wrap: anywhere; }
+
+.xc-hyper {
+  width: 100%;
+  margin-top: 8px;
+  border-collapse: collapse;
+  font-size: var(--xc-small);
+}
+
+.xc-hyper caption {
+  text-align: left;
+  color: var(--xc-fg-muted);
+  padding-bottom: 2px;
+}
+
+.xc-hyper th, .xc-hyper td {
+  text-align: left;
+  padding: 2px 4px;
+  border-top: 1px solid var(--xc-border);
+  vertical-align: top;
+  overflow-wrap: anywhere;
+}
+
+.xc-hyper th { font-weight: 500; color: var(--xc-fg-muted); }
+
+.xc-rationale { color: var(--xc-fg-muted); white-space: pre-wrap; }
+
+.xc-approval { border-color: var(--xc-warn); margin: 8px 0; }
+.xc-approval h3 { color: var(--xc-warn); }
+
+.xc-actions { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+
+.xc-btn {
+  font: inherit;
+  font-size: var(--xc-small);
+  padding: 4px 10px;
+  border: 1px solid var(--xc-border);
+  border-radius: var(--xc-radius);
+  background: var(--xc-bg-muted);
+  color: var(--xc-fg);
+  cursor: pointer;
+}
+
+.xc-btn:hover:not(:disabled) { border-color: var(--xc-accent); }
+.xc-btn:focus-visible { outline: 2px solid var(--xc-focus); outline-offset: 1px; }
+.xc-btn:disabled { opacity: 0.6; cursor: default; }
+
+.xc-btn--primary {
+  background: var(--xc-accent);
+  border-color: var(--xc-accent);
+  color: var(--xc-bg);
+}
+
+.xc-launches { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.xc-launches li { display: grid; gap: 4px; }
+.xc-status { font-weight: 600; }
+.xc-status--running, .xc-status--started, .xc-status--launched { color: var(--xc-accent); }
+.xc-status--done, .xc-status--completed, .xc-status--dry-run { color: var(--xc-ok); }
+.xc-status--failed, .xc-status--error { color: var(--xc-bad); }
+
+.xc-muted { color: var(--xc-fg-muted); font-size: var(--xc-small); }
+.xc-error-text { color: var(--xc-bad); font-size: var(--xc-small); }
+
+.xc-error {
+  display: grid;
+  gap: 6px;
+  padding: 12px;
+  border: 1px solid var(--xc-bad);
+  border-radius: var(--xc-radius);
+  color: var(--xc-fg);
+}
+
+.xc-error button { justify-self: start; }
+.xc-warnings { margin: 0.5rem 0; padding-left: 1.1rem; color: var(--xc-warn, #b45309); font-size: 0.85em; }
+.xc-formula { margin: 0.25rem 0; font-family: var(--xc-mono, ui-monospace, monospace); font-size: 0.8em; overflow-wrap: anywhere; }

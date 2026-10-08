@@ -1,0 +1,3 @@
+/* Stylesheet entry: CopilotKit's (scoped to [data-copilotkit]) followed by the canvas theme mapping. */
+@import "@copilotkit/react-core/v2/styles.css";
+@import "./chat.css";
