@@ -14,6 +14,7 @@ CALLS = [
     ("issue_refund", {"order_id": "NW-10001", "amount": 89.5}),
     ("escalate_to_human", {"order_id": "NW-10002", "reason": "refund over limit"}),
     ("escalate_to_human", {"reason": "general question"}),
+    ("verify_identity", {"order_id": "NW-10001", "full_name": "Nobody", "email_or_phone": "x@example.com"}),
 ]
 
 
@@ -44,3 +45,22 @@ def test_binding_emits_one_tool_span_per_call(captured):
     assert span.name == "tool.issue_refund"
     assert json.loads(span.attributes["input.value"]) == {"order_id": "NW-10001", "amount": 89.5}
     assert json.loads(span.attributes["output.value"])["status"] == "processed"
+
+
+def test_verify_identity_is_the_frozen_guard_tool(captured):
+    from ci_lab.guards.domains.order_support import (
+        VERIFY_IDENTITY_DESCRIPTION,
+        verify_identity,
+    )
+    from order_support import data
+
+    order = data.ORDERS["NW-10001"]
+    args = {"order_id": "nw-10001", "full_name": order["customer"]["name"].upper(),
+            "email_or_phone": order["customer"]["email"]}
+    out = json.loads(maf_tools.bindings()["verify_identity"](**args))
+    assert out == verify_identity(**args) == {"verified": True, "order_id": "NW-10001"}
+    schema = next(s["function"] for s in tools.TOOL_SCHEMAS if s["function"]["name"] == "verify_identity")
+    assert schema["description"] == VERIFY_IDENTITY_DESCRIPTION
+    spans = [s for s in captured() if s.attributes.get("openinference.span.kind") == "TOOL"]
+    assert [s.name for s in spans] == ["tool.verify_identity"]
+    assert "@" not in spans[0].attributes["output.value"]  # never echoes PII

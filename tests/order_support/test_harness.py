@@ -49,6 +49,17 @@ def test_agent_tools_match_frozen_tool_schemas():
     assert built.name == "OrderSupport"
 
 
+def test_verify_identity_is_declared_and_instructed():
+    raw = yaml.safe_load((agent.HARNESS_DIR / "agent.yaml").read_text(encoding="utf-8"))
+    decl = next(t for t in raw["tools"] if t["name"] == "verify_identity")
+    assert decl["bindings"] == [{"name": "verify_identity"}]
+    assert raw["x-ci"]["instructions_files"] == ["prompts/system.md", "prompts/identity.md",
+                                                 "skills/order-support/SKILL.md"]
+    text = agent.instructions()
+    assert "call verify_identity" in text
+    assert text.index("verify_identity") > text.index(data.load_policy()) + len(data.load_policy()) - 1
+
+
 def test_model_routing_stays_out_of_the_factory():
     spec = agent._load_spec()
     factory_spec = agent._factory_spec(spec)

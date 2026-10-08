@@ -11,6 +11,7 @@ x-ci:
   # Concatenated (in order) into the agent instructions; today's date is appended by code.
   instructions_files:
     - prompts/system.md
+    - prompts/identity.md
     - skills/order-support/SKILL.md
 tools:
   - kind: function
@@ -49,3 +50,17 @@ tools:
         reason: {type: string, required: true}
     bindings:
       - name: escalate_to_human
+  - kind: function
+    name: verify_identity
+    description: >-
+      Verify the customer's identity for an order. Pass exactly the full name and the email
+      address or phone number the CUSTOMER stated in the conversation (never values from
+      lookup_order). Returns only {verified, order_id}; refunds require verified == true for the
+      same order.
+    parameters:
+      properties:
+        order_id: {type: string, required: true}
+        full_name: {type: string, required: true}
+        email_or_phone: {type: string, required: true}
+    bindings:
+      - name: verify_identity

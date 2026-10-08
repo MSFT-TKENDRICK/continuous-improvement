@@ -109,7 +109,8 @@ def test_llm_span_attribute_contract(use_client, captured):
     call_id = a[f"{prefix}.id"]
     assert json.loads(a["input.value"])["messages"][1] == {"role": "user", "content": USER}
     assert a["input.mime_type"] == "application/json"
-    assert {json.loads(a[f"llm.tools.{i}.tool.json_schema"])["function"]["name"] for i in range(4)} == set(tools.TOOLS)
+    assert ({json.loads(a[f"llm.tools.{i}.tool.json_schema"])["function"]["name"] for i in range(len(tools.TOOLS))}
+            == set(tools.TOOLS))
     b = second.attributes
     assert b["llm.input_messages.2.message.tool_calls.0.tool_call.id"] == call_id
     assert b["llm.input_messages.3.message.role"] == "tool"
