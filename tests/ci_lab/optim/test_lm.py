@@ -8,7 +8,8 @@ from ci_lab.optim import lm as lmmod
 
 
 def test_import_is_lazy():
-    code = ("import sys, ci_lab.optim, ci_lab.optim.lm, ci_lab.optim.scoring, ci_lab.optim.targets; "
+    code = ("import sys, ci_lab.optim, ci_lab.optim.lm, ci_lab.optim.scoring, ci_lab.optim.targets, "
+            "ci_lab.optim.gepa, ci_lab.optim.skillopt, ci_lab.strategies; "
             "bad=[m for m in ('dspy','gepa','skillopt_sleep','litellm') if m in sys.modules]; "
             "print(bad); sys.exit(1 if bad else 0)")
     r = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)

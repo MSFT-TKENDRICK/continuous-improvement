@@ -1,0 +1,119 @@
+import asyncio
+from pathlib import Path
+
+import pytest
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+from opentelemetry.trace import StatusCode
+
+from ci_lab import obs
+from ci_lab.contracts import (
+    ATTR_EXPERIMENT,
+    ATTR_STRATEGY,
+    ATTR_VARIANT,
+    SPAN_OPTIMIZER,
+    STRATEGIES,
+    ArmContext,
+    ArmDirective,
+    Edit,
+    Profile,
+)
+from ci_lab.strategies import (
+    AgentStrategy,
+    EditBudgetExceeded,
+    GepaStrategy,
+    SkillOptStrategy,
+    UnknownStrategy,
+    get_strategy,
+)
+
+
+@pytest.fixture
+def spans(monkeypatch):
+    exp = InMemorySpanExporter()
+    tp = TracerProvider()
+    tp.add_span_processor(SimpleSpanProcessor(exp))
+    monkeypatch.setattr(obs, "tracer", lambda: tp.get_tracer("ci_lab"))
+    return exp
+
+
+def ctx(tmp_path, budget=1, strategy="agent", focus=()):
+    return ArmContext("exp-1", ArmDirective("a1", strategy, tuple(focus), budget), tmp_path, "base", [],
+                      Profile.FAKE, tmp_path / "run")
+
+
+def edit(i=0):
+    return Edit("prompt", f"h{i}", ("p.md",), f"sha{i}")
+
+
+def test_registry_builds_each_strategy_from_shared_deps(domain):
+    async def proposer(c):
+        return []
+
+    deps = {"proposer": proposer, "domain": domain, "lm": object(), "committer": lambda *a: "x"}
+    built = {n: get_strategy(n, **deps) for n in STRATEGIES}
+    assert isinstance(built["agent"], AgentStrategy) and built["agent"].proposer is proposer
+    assert isinstance(built["gepa"], GepaStrategy) and built["gepa"].domain is domain
+    assert isinstance(built["skillopt"], SkillOptStrategy) and built["skillopt"].lm is deps["lm"]
+    assert {n: s.name for n, s in built.items()} == {n: n for n in STRATEGIES}
+
+
+def test_registry_errors():
+    with pytest.raises(UnknownStrategy):
+        get_strategy("evolution")
+    with pytest.raises(TypeError):
+        get_strategy("agent")
+    with pytest.raises(TypeError):
+        get_strategy("gepa", lm=object())
+
+
+def test_agent_strategy_span_and_budget(tmp_path, spans):
+    seen = []
+
+    async def proposer(c):
+        seen.append(c)
+        return [edit()]
+
+    s = AgentStrategy(proposer)
+    c = ctx(tmp_path)
+    assert asyncio.run(s.propose(c)) == [edit()]
+    assert seen == [c]
+    (sp,) = spans.get_finished_spans()
+    assert sp.name == SPAN_OPTIMIZER
+    assert sp.attributes[ATTR_STRATEGY] == "agent"
+    assert sp.attributes[ATTR_EXPERIMENT] == "exp-1" and sp.attributes[ATTR_VARIANT] == "a1"
+    assert sp.attributes["ci.edits"] == 1
+
+
+def test_agent_strategy_rejects_over_budget_and_bad_types(tmp_path, spans):
+    async def two(c):
+        return [edit(0), edit(1)]
+
+    async def bad(c):
+        return ["not an edit"]
+
+    with pytest.raises(EditBudgetExceeded):
+        asyncio.run(AgentStrategy(two).propose(ctx(tmp_path, budget=1)))
+    assert asyncio.run(AgentStrategy(two).propose(ctx(tmp_path, budget=2))) == [edit(0), edit(1)]
+    with pytest.raises(TypeError):
+        asyncio.run(AgentStrategy(bad).propose(ctx(tmp_path)))
+    statuses = [s.status.status_code for s in spans.get_finished_spans()]
+    assert statuses == [StatusCode.ERROR, StatusCode.UNSET, StatusCode.ERROR]
+
+
+def test_agent_zero_budget_skips_proposer(tmp_path):
+    called = []
+
+    async def proposer(c):
+        called.append(1)
+        return [edit()]
+
+    assert asyncio.run(AgentStrategy(proposer).propose(ctx(tmp_path, budget=0))) == []
+    assert called == []
+    with pytest.raises(TypeError):
+        AgentStrategy(None)
+
+
+def test_paths_are_paths(tmp_path):
+    assert isinstance(ctx(tmp_path).worktree, Path)
