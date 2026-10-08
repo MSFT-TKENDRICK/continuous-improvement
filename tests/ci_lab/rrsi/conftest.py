@@ -38,15 +38,16 @@ def edit(component: str = "prompt", hyp: str = "h") -> Edit:
 
 
 def arm(name: str, result: EvalResult | None, *, components: Sequence[str] = ("prompt",), base: str = "inc",
-        status: str = "evaluated") -> ArmResult:
+        status: str = "evaluated", strategy: str = "agent") -> ArmResult:
     return ArmResult(arm=name, base_commit=base, head_commit=f"head-{name}", harness_tree=f"tree-{name}",
-                     edits=[edit(c) for c in components], eval=result, status=status)  # type: ignore[arg-type]
+                     edits=[edit(c) for c in components], eval=result, status=status,  # type: ignore[arg-type]
+                     strategy=strategy)
 
 
 def rec(round_no: int, arm_name: str, components: Sequence[str], delta_s: float | None,
-        accepted: bool = False) -> HistoryRecord:
+        accepted: bool = False, strategy: str = "agent") -> HistoryRecord:
     return HistoryRecord(round=round_no, arm=arm_name, edits=tuple(edit(c) for c in components), score=0.5, cost=100.0,
-                         delta_s=delta_s, delta_c=0.0, accepted=accepted)
+                         delta_s=delta_s, delta_c=0.0, accepted=accepted, strategy=strategy)
 
 
 def hp(**kw):

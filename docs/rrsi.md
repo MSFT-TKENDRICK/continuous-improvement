@@ -9,7 +9,8 @@ Nothing in it calls models, git or a clock. The only I/O is the JSON/JSONL helpe
 | Module | Public API |
 |---|---|
 | `params` | `Hyperparams` (frozen; `with_`, `to_dict`, `from_dict`), `PROFILES` (`smoke`, `local`, `paper`), `profile(name, **overrides)`, `TABLE5`, `paper_reference(domain)` |
-| `schedule` | `edit_budget(t, T, b_min, b_max)`, `stall_flag(traj, t, w, delta)`, `untried(history)`, `component_yield`, `prune_set(history, t, n_prune)`, `exploration_slots`, `plan_round(t, hp, history, trajectory, delta, arms=None)` → `RoundSchedule`, `directives(...)` → `tuple[Directive, ...]` |
+| `schedule` | `edit_budget(t, T, b_min, b_max)`, `stall_flag(traj, t, w, delta)`, `untried(history)`, `component_yield`, `prune_set(history, t, n_prune)`, `exploration_slots`, `plan_round(t, hp, history, trajectory, delta, arms=None, *, experiment_id=None)` → `RoundSchedule` (`.directives` rich, `.arm_directives` contract), `directives(...)` → `tuple[contracts.ArmDirective, ...]` |
+| `strategies` | `strategy_stats(history)`, `starved(stats, t, K)`, `allocate_strategies(t, n_arms, history, hp)` → `StrategyAllocation` (strategy + reason + Thompson draws per slot) |
 | `history` | `HistoryRecord` (round, arm, edits, score, cost, delta_s, delta_c, accepted = *a*, novelty, admissible, reasons), `read_jsonl`, `append_jsonl` (rejects a duplicate (round, arm)), `write_jsonl` (atomic), `accepted_counts`, `tried_components`, `before`, `replace_round` |
 | `stats` | `paired_bootstrap`, `bootstrap_means`, `mean_missing_zero`, `task_score`, `missing_rate`, `mean_cost`, `aa_delta`, `aa_repeats_for_precision`, `confirm_test`, `non_inferiority`, `derive_seed` |
 | `selection` | `SelectionInputs`, `select(inputs, guard=None)` → `SelectionDecision` (`decision` ∈ ship / do_not_ship / rerun, a per-arm `ArmTrace` rule trace, `to_dict()` that is JSON-safe) |
@@ -85,6 +86,25 @@ The paper accepts an arm on the point estimate alone. The C16 gate only *narrows
 - **Prune set (B).** B holds components whose best ΔS over the last `n_prune` rounds is ≤ 0. A component that was not tried in that window counts as −∞.
 - **Exploration.** When stalled, the first m = min(m_draft, |U|, N) arms explore one untried component each.
 - **Exploitation.** The other arms focus on non-pruned components, ranked by success rate, then mean ΔS, then vocabulary order.
+- **Output.** `directives(...)` emits one `contracts.ArmDirective(arm, strategy, component_focus, edit_budget, explore)` per arm.
+- **Telemetry.** `plan_round` runs inside `obs.span(SPAN_STEP, {ci.phase: "plan", rrsi.round, oes.experiment_id})` and also records `ci.strategy` (comma-joined, in arm order), `rrsi.budget` and `rrsi.stalled`. Without a telemetry provider the span is a no-op.
+
+### Arm strategies (design §11.2, C23)
+
+The strategy assignment is orthogonal to the component schedule: slot *i* receives both a component focus and a strategy.
+
+- **Evidence.** Each strategy has its own statistics, kept separate from the per-component statistics.
+  - The unit is the measured arm: one arm counts as one trial for its `HistoryRecord.strategy`, however many edits or components it carries.
+  - Success means the arm was elected (*a* = 1).
+  - The posterior is Beta(a0 + successes, b0 + failures), with `hp.strategy_prior` defaulting to (1, 1).
+- **Floor.** A strategy with no measured arm in the last K = `hp.strategy_floor_every` rounds (default 3), or never, is forced first, oldest first.
+  - This also rotates untried strategies into the early rounds.
+  - `Hyperparams` rejects configurations where |strategies| > N·K, because the floor would be infeasible.
+- **Thompson sampling.** The remaining slots each take a fresh draw θ_s ~ Beta per strategy and pick the argmax, with ties going to vocabulary order.
+  - `hp.strategy_cap` optionally caps how many arms one strategy can get in a round.
+  - The draws are seeded by `derive_seed(hp.seed, t, "strategy")`, so a plan is a pure function of (t, hp, history < t).
+- **Strategy-blind selection.** Selection never reads `ArmResult.strategy`. The strategy is carried only into attribution (`HistoryRecord.strategy`) and the stored round record. A test proves that relabelling strategies leaves the decision byte-identical.
+- **Limitation.** An arm that fails before evaluation leaves no history record, so its strategy stays "starved" and is retried in the next round.
 
 ### Re-adjudication
 

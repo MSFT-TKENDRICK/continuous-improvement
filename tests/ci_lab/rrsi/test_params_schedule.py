@@ -3,7 +3,7 @@ import random
 
 import pytest
 
-from ci_lab.contracts import COMPONENTS
+from ci_lab.contracts import COMPONENTS, ArmDirective
 from ci_lab.rrsi import schedule as S
 from ci_lab.rrsi.history import tried_components
 from ci_lab.rrsi.params import PROFILES, TABLE5, Hyperparams, paper_reference, profile
@@ -124,7 +124,9 @@ def test_directives_when_stalled(mk):
     assert d[0].explore and d[0].focus == sched.untried[0] == "skill"
     assert not d[1].explore and d[1].focus == "prompt"  # accepted before -> highest success rate
     assert all(x.avoid == ("config",) and x.budget == sched.budget for x in d)
-    assert S.directives(3, hp, hist, traj, 0.017) == d
+    assert S.directives(3, hp, hist, traj, 0.017) == sched.arm_directives
+    assert sched.arm_directives[0] == ArmDirective(arm="v1", strategy=d[0].strategy, component_focus=("skill",),
+                                                   edit_budget=sched.budget, explore=True)
     assert sched.to_dict()["directives"][0]["focus"] == "skill"
 
 

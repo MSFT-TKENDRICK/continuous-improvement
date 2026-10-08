@@ -71,7 +71,7 @@ def arm_to_dict(a: ArmResult) -> dict[str, Any]:
                                             "repairs": a.critic.repairs}
     return {"arm": a.arm, "base_commit": a.base_commit, "head_commit": a.head_commit, "harness_tree": a.harness_tree,
             "edits": [edit_to_dict(e) for e in a.edits], "critic": critic,
-            "eval": None if a.eval is None else eval_to_dict(a.eval), "status": a.status}
+            "eval": None if a.eval is None else eval_to_dict(a.eval), "status": a.status, "strategy": a.strategy}
 
 
 def arm_from_dict(d: dict[str, Any]) -> ArmResult:
@@ -81,4 +81,4 @@ def arm_from_dict(d: dict[str, Any]) -> ArmResult:
                      critic=None if c is None else CriticVerdict(passed=c["passed"], reasons=list(c.get("reasons", ())),
                                                                  repairs=int(c.get("repairs", 0))),
                      eval=None if d.get("eval") is None else eval_from_dict(d["eval"]),
-                     status=d.get("status", "pending"))
+                     status=d.get("status", "pending"), strategy=d.get("strategy", "agent"))

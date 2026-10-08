@@ -31,7 +31,7 @@ class HistoryRecord:
     novelty: int = 0
     admissible: bool = False
     reasons: tuple[str, ...] = field(default=())
-
+    strategy: str = "agent"      # ArmResult.strategy that produced the edits (C23)
     @property
     def components(self) -> tuple[str, ...]:
         return tuple(dict.fromkeys(e.component for e in self.edits))
@@ -44,14 +44,15 @@ class HistoryRecord:
         return {"round": self.round, "arm": self.arm, "edits": [edit_to_dict(e) for e in self.edits],
                 "score": finite(self.score), "cost": finite(self.cost), "delta_s": finite(self.delta_s),
                 "delta_c": finite(self.delta_c), "accepted": self.accepted, "novelty": self.novelty,
-                "admissible": self.admissible, "reasons": list(self.reasons)}
+                "admissible": self.admissible, "reasons": list(self.reasons), "strategy": self.strategy}
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> HistoryRecord:
         return cls(round=int(d["round"]), arm=d["arm"], edits=tuple(edit_from_dict(e) for e in d.get("edits", ())),
                    score=d.get("score"), cost=d.get("cost"), delta_s=d.get("delta_s"), delta_c=d.get("delta_c"),
                    accepted=bool(d.get("accepted", False)), novelty=int(d.get("novelty", 0)),
-                   admissible=bool(d.get("admissible", False)), reasons=tuple(d.get("reasons", ())))
+                   admissible=bool(d.get("admissible", False)), reasons=tuple(d.get("reasons", ())),
+                   strategy=d.get("strategy", "agent"))
 
 
 @dataclass(frozen=True)

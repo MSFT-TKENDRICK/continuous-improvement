@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, fields, replace
 from typing import Any, Literal
 
+from ci_lab.contracts import STRATEGIES
+
 CiThreshold = Literal["zero", "delta"]
 
 
@@ -44,8 +46,15 @@ class Hyperparams:
     require_ci_lower: bool = True  # C16: cost-rule acceptance needs CI lower bound > threshold
     ci_lower_threshold: CiThreshold = "zero"
     seed: int = 0
+    # v2.2 arm strategies (design §11.2, C23): Thompson allocation over these strategies.
+    strategies: tuple[str, ...] = STRATEGIES
+    strategy_floor_every: int = 3  # K: every strategy gets >= 1 arm in any K consecutive rounds
+    strategy_prior: tuple[float, float] = (1.0, 1.0)  # Beta(a0, b0) prior on accepted rate
+    strategy_cap: int | None = None  # max arms per strategy per round (None = unlimited)
 
     def __post_init__(self) -> None:
+        object.__setattr__(self, "strategies", tuple(self.strategies))
+        object.__setattr__(self, "strategy_prior", tuple(float(x) for x in self.strategy_prior))
         if self.T < 1 or self.k < 1 or self.n_arms < 1:
             raise ValueError("T, k and n_arms must be >= 1")
         if not 1 <= self.b_min <= self.b_max:
@@ -58,12 +67,26 @@ class Hyperparams:
             raise ValueError("ci_lower_threshold must be 'zero' or 'delta'")
         if self.delta is not None and self.delta < 0:
             raise ValueError("delta must be >= 0")
+        s = self.strategies
+        if not s or len(set(s)) != len(s) or any(x not in STRATEGIES for x in s):
+            raise ValueError(f"strategies must be a non-empty, unique subset of {STRATEGIES}")
+        if self.strategy_floor_every < 1:
+            raise ValueError("strategy_floor_every must be >= 1")
+        if len(s) > self.n_arms * self.strategy_floor_every:
+            raise ValueError(f"floor infeasible: {len(s)} strategies need >= 1 arm every "
+                             f"{self.strategy_floor_every} rounds with only {self.n_arms} arms/round")
+        if len(self.strategy_prior) != 2 or min(self.strategy_prior) <= 0:
+            raise ValueError("strategy_prior must be (a0, b0) with both > 0")
+        if self.strategy_cap is not None and (self.strategy_cap < 1 or self.strategy_cap * len(s) < self.n_arms):
+            raise ValueError("strategy_cap must be >= 1 and cap * len(strategies) >= n_arms")
 
     def with_(self, **changes: Any) -> Hyperparams:
         return replace(self, **changes)
 
     def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
+        d = asdict(self)
+        d["strategies"], d["strategy_prior"] = list(self.strategies), list(self.strategy_prior)
+        return d
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> Hyperparams:

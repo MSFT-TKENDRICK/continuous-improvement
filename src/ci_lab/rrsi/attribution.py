@@ -75,5 +75,5 @@ def attribute(decision: SelectionDecision, arms: Sequence[ArmResult]) -> list[Hi
         out.append(HistoryRecord(round=decision.round, arm=tr.arm, edits=tuple(arm.edits), score=tr.score,
                                  cost=tr.cost, delta_s=tr.delta_s, delta_c=tr.delta_c,
                                  accepted=decision.winner == tr.arm, novelty=tr.novelty,
-                                 admissible=tr.admissible, reasons=tuple(tr.reasons)))
+                                 admissible=tr.admissible, reasons=tuple(tr.reasons), strategy=arm.strategy))
     return out

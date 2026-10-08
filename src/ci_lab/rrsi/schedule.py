@@ -1,5 +1,6 @@
 """Algorithm 1 schedule: annealed budget b_t, stall flag, untried/prune sets, exploration
-slots and one directive per arm (paper Eq. 4, 11, 13, 14)."""
+slots and one directive per arm (paper Eq. 4, 11, 13, 14), each carrying an arm strategy
+allocated by ``strategies.allocate_strategies`` (design §11.2)."""
 
 from __future__ import annotations
 
@@ -8,11 +9,13 @@ from collections.abc import Iterable, Sequence
 from dataclasses import asdict, dataclass
 from typing import Any
 
-from ci_lab.contracts import COMPONENTS
+from ci_lab import obs
+from ci_lab.contracts import ATTR_EXPERIMENT, ATTR_PHASE, ATTR_ROUND, ATTR_STRATEGY, COMPONENTS, SPAN_STEP, ArmDirective
 
 from .attribution import component_stats
 from .history import HistoryRecord, tried_components
 from .params import Hyperparams
+from .strategies import StrategyAllocation, allocate_strategies
 
 
 def edit_budget(t: int, T: int, b_min: int, b_max: int) -> int:
@@ -73,6 +76,13 @@ class Directive:
     focus: str | None           # suggested component (None = proposer's choice)
     avoid: tuple[str, ...]      # prune set B_t: unproductive components, candidates for deletion
     stalled: bool
+    strategy: str = "agent"     # arm strategy (contracts.STRATEGIES); allocated independently of focus
+    strategy_reason: str = ""   # "floor" | "thompson"
+
+    def to_contract(self) -> ArmDirective:
+        return ArmDirective(arm=self.arm, strategy=self.strategy,
+                            component_focus=() if self.focus is None else (self.focus,),
+                            edit_budget=self.budget, explore=self.explore)
 
     def to_dict(self) -> dict[str, Any]:
         d = asdict(self)
@@ -90,11 +100,17 @@ class RoundSchedule:
     exploration_slots: int
     delta: float
     directives: tuple[Directive, ...]
+    allocation: StrategyAllocation | None = None
+
+    @property
+    def arm_directives(self) -> tuple[ArmDirective, ...]:
+        return tuple(d.to_contract() for d in self.directives)
 
     def to_dict(self) -> dict[str, Any]:
         return {"round": self.round, "budget": self.budget, "stalled": self.stalled, "untried": list(self.untried),
                 "prune": list(self.prune), "exploration_slots": self.exploration_slots, "delta": self.delta,
-                "directives": [d.to_dict() for d in self.directives]}
+                "directives": [d.to_dict() for d in self.directives],
+                "allocation": None if self.allocation is None else self.allocation.to_dict()}
 
 
 def default_arms(n: int) -> tuple[str, ...]:
@@ -111,10 +127,22 @@ def _exploit_order(records: Sequence[HistoryRecord], components: Sequence[str], 
 
 
 def plan_round(t: int, hp: Hyperparams, history: Sequence[HistoryRecord], trajectory: Sequence[float],
-             delta: float, arms: Sequence[str] | None = None,
-             components: Sequence[str] = COMPONENTS) -> RoundSchedule:
-    """Everything Algorithm 1 lines 2-7 compute for round t, plus per-arm directives.
-    Only history from rounds < t is considered."""
+               delta: float, arms: Sequence[str] | None = None,
+               components: Sequence[str] = COMPONENTS, *, experiment_id: str | None = None) -> RoundSchedule:
+    """Everything Algorithm 1 lines 2-7 compute for round t, plus per-arm directives with an
+    allocated strategy. Only history from rounds < t is considered. Runs inside a
+    ``ci.step`` span (phase ``plan``); the span is a no-op without a telemetry provider."""
+    attrs = {ATTR_PHASE: "plan", ATTR_ROUND: t, ATTR_EXPERIMENT: experiment_id}
+    with obs.span(SPAN_STEP, attrs) as sp:
+        sched = _plan(t, hp, history, trajectory, delta, arms, components)
+        sp.set_attribute("rrsi.budget", sched.budget)
+        sp.set_attribute("rrsi.stalled", sched.stalled)
+        sp.set_attribute(ATTR_STRATEGY, ",".join(d.strategy for d in sched.directives))
+        return sched
+
+
+def _plan(t: int, hp: Hyperparams, history: Sequence[HistoryRecord], trajectory: Sequence[float],
+          delta: float, arms: Sequence[str] | None, components: Sequence[str]) -> RoundSchedule:
     records = [r for r in history if r.round < t]
     arms = tuple(arms) if arms is not None else default_arms(hp.n_arms)
     if len(set(arms)) != len(arms) or not arms:
@@ -125,6 +153,7 @@ def plan_round(t: int, hp: Hyperparams, history: Sequence[HistoryRecord], trajec
     b = prune_set(records, t, hp.n_prune, components)
     m = exploration_slots(stalled, u, hp.m_draft, len(arms))
     exploit = _exploit_order(records, components, b)
+    alloc = allocate_strategies(t, len(arms), records, hp)
     out = []
     for i, arm in enumerate(arms):
         if i < m:
@@ -132,13 +161,15 @@ def plan_round(t: int, hp: Hyperparams, history: Sequence[HistoryRecord], trajec
         else:
             j = i - m
             focus, explore = (exploit[j % len(exploit)] if exploit else None), False
-        out.append(Directive(arm=arm, round=t, budget=budget, explore=explore, focus=focus, avoid=b, stalled=stalled))
+        out.append(Directive(arm=arm, round=t, budget=budget, explore=explore, focus=focus, avoid=b, stalled=stalled,
+                             strategy=alloc.strategies[i], strategy_reason=alloc.reasons[i]))
     return RoundSchedule(round=t, budget=budget, stalled=stalled, untried=u, prune=b, exploration_slots=m,
-                         delta=delta, directives=tuple(out))
+                         delta=delta, directives=tuple(out), allocation=alloc)
 
 
 def directives(t: int, hp: Hyperparams, history: Sequence[HistoryRecord], trajectory: Sequence[float],
                delta: float, arms: Sequence[str] | None = None,
-               components: Sequence[str] = COMPONENTS) -> tuple[Directive, ...]:
-    """One directive per arm (component focus, budget, explore flag)."""
-    return plan_round(t, hp, history, trajectory, delta, arms, components).directives
+               components: Sequence[str] = COMPONENTS, *, experiment_id: str | None = None
+               ) -> tuple[ArmDirective, ...]:
+    """One contract ``ArmDirective`` per arm (strategy, component focus, budget, explore flag)."""
+    return plan_round(t, hp, history, trajectory, delta, arms, components, experiment_id=experiment_id).arm_directives
