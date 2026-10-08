@@ -35,18 +35,20 @@ def _parse_hyper(items: list[str]) -> dict[str, Any]:
 
 def load_deps(profile: Profile, *, run_root: Path, ledger_dir: Path | None, repo: str,
               dry_run_publish: bool) -> CampaignDeps:
-    """Build :class:`CampaignDeps` for a profile. Only ``fake`` is self-contained here;
-    ``copilot``/``offline`` are wired by integration (M1/M4/M6/M7/M8a)."""
+    """Build :class:`CampaignDeps` for a profile: ``fake`` from :mod:`.fakes`, ``copilot`` /
+    ``offline`` from :mod:`.wiring` (offline is network-free and never publishes)."""
     if profile is Profile.FAKE:
         from ci_lab.campaign.fakes import fake_deps
 
         state = run_root / "_fake"
         return fake_deps(state, repo=repo, ledger_root=ledger_dir or state / "experiments")
-    raise IntegrationPending(
-        f"integration pending: profile {profile.value!r} needs the integrated modules "
-        "(maf, gitops/ledger, rrsi, oes, meta); "
-        "wire them in ci_lab.campaign.cli.load_deps. dry_run_publish="
-        f"{dry_run_publish} would select GitHubPublisher(dry_run=...).")
+    from ci_lab.campaign.wiring import NetworkPolicyError, wired_deps
+
+    try:
+        return wired_deps(profile, run_root=run_root, ledger_dir=ledger_dir, repo=repo,
+                          dry_run_publish=dry_run_publish)
+    except (NetworkPolicyError, ImportError) as exc:
+        raise IntegrationPending(f"profile {profile.value!r}: {exc}") from exc
 
 
 def _setup_telemetry(profile: Profile, run_root: Path) -> Callable[[], None]:

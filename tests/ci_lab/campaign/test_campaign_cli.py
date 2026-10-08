@@ -33,11 +33,6 @@ def test_cli_fake_profile_lifecycle(tmp_path: Path, capsys: pytest.CaptureFixtur
     assert (tmp_path / "_fake" / "experiments" / "campaigns" / "cli-camp" / "land.json").exists()
 
 
-def test_cli_real_profiles_report_integration_pending(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    code, out = _run(capsys, "campaign", "status", "cli-camp", "--profile", "copilot", "--run-dir", str(tmp_path))
-    assert code == 2 and "integration" in out["error"]
-
-
 def test_cli_rejects_bad_hyper(tmp_path: Path) -> None:
     with pytest.raises(ValueError):
         main(["campaign", "new", "cli-camp", "--profile", "fake", "--run-dir", str(tmp_path), "--hyper", "bogus=1"])
