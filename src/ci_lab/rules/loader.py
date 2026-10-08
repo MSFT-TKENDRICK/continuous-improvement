@@ -55,6 +55,11 @@ def _construct_mapping(loader: _UniqueKeyLoader, node: yaml.MappingNode, deep: b
 _UniqueKeyLoader.add_constructor(yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG, _construct_mapping)
 
 
+def load_yaml(text: str) -> Any:
+    """Parse rule/extractor YAML the way the engine does (YAML 1.2 booleans, duplicate keys rejected)."""
+    return yaml.load(text, Loader=_UniqueKeyLoader)
+
+
 def _sha256(data: bytes) -> str:
     return "sha256:" + hashlib.sha256(data).hexdigest()
 

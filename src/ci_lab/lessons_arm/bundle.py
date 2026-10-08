@@ -52,7 +52,9 @@ def rule_files(guards_dir: Path) -> list[Path]:
 
 
 def read_rule_file(path: Path) -> RuleFile:
-    return RuleFile.model_validate(yaml.safe_load(path.read_text(encoding="utf-8")) or {})
+    from ci_lab.rules.loader import load_yaml
+
+    return RuleFile.model_validate(load_yaml(path.read_text(encoding="utf-8")) or {})
 
 
 def dump_rule_file(rules: Sequence[RuleSpec]) -> str:

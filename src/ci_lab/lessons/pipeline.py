@@ -76,14 +76,14 @@ def run_validate(rules_path: Path, in_dir: Path, *, cluster: LessonCluster | Non
     import yaml
     from pydantic import ValidationError
 
+    from ci_lab.rules.loader import load_yaml
     from ci_lab.rulespec import RuleFile
 
-    raw = yaml.safe_load(rules_path.read_text(encoding="utf-8"))
     trajs = load_trajectories(in_dir)
     with _span("replay", **({contracts.ATTR_LESSON: cluster.id} if cluster else {})) as s:
         try:
-            rules: Any = RuleFile.model_validate(raw)
-        except (ValidationError, ValueError, TypeError) as exc:
+            rules: Any = RuleFile.model_validate(load_yaml(rules_path.read_text(encoding="utf-8")))
+        except (ValidationError, ValueError, TypeError, yaml.YAMLError) as exc:
             return ReplayReport(verdict="reject", ok=False, reasons=[f"invalid rule file: {str(exc)[:300]}"])
         report = validate(rules, trajs, cluster=cluster, dataset_texts=dataset_texts, config=config,
                           engine=engine, work_dir=work_dir, extractors=extractors)
