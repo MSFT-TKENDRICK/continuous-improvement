@@ -76,7 +76,23 @@ middleware ends the turn with the terminal message. There are no remediation loo
 | Read-only tool or response | Degraded warn-only: the call proceeds, and a `GuardDecision(rule_id="guards.degraded", degraded=True)` is recorded with `ATTR_GUARD_DEGRADED`. |
 
 If loading the bundle fails, `load_guard_bundle` falls back to LKG (`rules.load_with_lkg`) and sets
-`degraded=True`. If no LKG exists, it returns `(None, True)`.
+`degraded=True`. If no LKG exists, it returns `(None, True)` and logs every
+`RuleLoadError.details` problem as `[GUARDS][ERROR] <file>: <violation> Fix: <fix>`.
+
+Engine semantics are in `docs/rules.md` (M14) and are binding. The ones that matter for guards:
+
+- Flags come only from extractors, so always pass `extractor_paths`. `load_order_support_bundle()`
+  does this.
+- A later `verified: false` revokes the flag. TTL counts `tool_call` steps, including blocked ones.
+- `prior status: any` ignores blocked calls.
+- Guards evaluate only `tool_call` and `response` online. R4 `trajectory` rules (`target: "*"` →
+  `step_index = -1`) are offline-only (`rules.evaluate_trajectory`).
+
+To validate seed rules, run:
+
+```text
+python -m ci_lab.rules.cli rules check src/order_support/harness/guards/order_support.yaml --extractors src/ci_lab/guards/domains/order_support/extractors.yaml
+```
 
 ## Telemetry and metrics
 

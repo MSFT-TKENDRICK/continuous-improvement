@@ -57,6 +57,9 @@ def load_guard_bundle(guards_dir: Path | str, lock: Path | str | None = None,
         bundle, degraded = rules.load_with_lkg(guards_dir, lock_path, tuple(Path(p) for p in extractor_paths))
     except Exception as exc:  # noqa: BLE001 - any loader failure is availability, not a crash
         log.error("guard bundle load failed (%s); guards degraded", type(exc).__name__)
+        for problem in getattr(exc, "details", None) or ():  # rules.RuleLoadError: list[Problem]
+            log.error("[GUARDS][ERROR] %s: %s Fix: %s", getattr(problem, "file", "?"),
+                      getattr(problem, "violation", problem), getattr(problem, "fix", ""))
         return None, True
     return bundle, bool(degraded)
 

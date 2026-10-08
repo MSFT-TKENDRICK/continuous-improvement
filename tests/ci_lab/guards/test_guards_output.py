@@ -174,6 +174,15 @@ def test_load_bundle_lkg_and_unavailable(tmp_path) -> None:
     assert seeded is not None and not degraded
 
 
+def test_state_flags_require_extractors_and_problems_are_logged(tmp_path, caplog) -> None:
+    gdir = tmp_path / "guards"
+    gdir.mkdir()
+    (gdir / "order_support.yaml").write_bytes(SEED_RULES.read_bytes())
+    with caplog.at_level("ERROR", logger="ci_lab.guards.engine"):
+        assert load_guard_bundle(gdir) == (None, True)  # identity_verified has no extractor
+    assert "[GUARDS][ERROR]" in caplog.text and "identity_verified" in caplog.text
+
+
 def test_session_state_is_json_and_pii_free() -> None:
     agent, *_ = make_agent([[Call("lookup_order", {"order_id": "NW-10001"})], LEAKY])
     session = AgentSession(session_id="pii")
