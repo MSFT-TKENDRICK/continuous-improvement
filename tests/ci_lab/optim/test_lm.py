@@ -62,7 +62,8 @@ def test_fake_profile_is_dummy_lm():
     lm = lmmod.make_lm("fake", fake_answers=[{"answer": "hi"}])
     assert isinstance(lm, DummyLM) and lm.cache is False
     out = lm("question?")
-    assert "hi" in out[0]
+    assert out[0] == "hi"
+    assert lm("again?")[0] == "No more responses"
     with pytest.raises(ValueError):
         lmmod.resolve_endpoint("fake", {})
 

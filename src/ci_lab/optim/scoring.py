@@ -85,6 +85,15 @@ def stable_split(case_ids: Sequence[str], val_fraction: float = 0.34, *, salt: s
     return ids[n_val:], ids[:n_val]
 
 
+def subsample(case_ids: Sequence[str], n: int | None, *, salt: str = "") -> list[str]:
+    """Deterministic evolve *sub*-split of at most ``n`` cases (stable-hash order)."""
+    ids = list(dict.fromkeys(case_ids))
+    if n is None or n >= len(ids):
+        return ids
+    keep = set(sorted(ids, key=lambda c: hashlib.sha256(f"sub|{salt}|{c}".encode()).hexdigest())[:max(0, n)])
+    return [c for c in ids if c in keep]
+
+
 class MetricBudget:
     """Thread-safe hard cap on per-case metric calls (C18)."""
 

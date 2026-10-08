@@ -36,6 +36,7 @@ from ci_lab.optim.scoring import (
     MetricBudget,
     render_failure,
     stable_split,
+    subsample,
 )
 
 log = logging.getLogger(__name__)
@@ -51,6 +52,7 @@ class GepaConfig:
     candidate_selection_strategy: str = "pareto"
     module_selector: str = "round_robin"
     skip_perfect_score: bool = True
+    max_cases: int | None = 24          # evolve sub-split size (stable hash)
     seed: int = 0
 
 
@@ -116,8 +118,9 @@ class DspyReflectionLM:
         self.est_tokens = 0
         self._hist0 = len(getattr(lm, "history", []) or [])
 
-    def __call__(self, prompt: str | list[dict[str, Any]]) -> str:
+    def __call__(self, prompt: str | list[dict[str, Any]], **call_kwargs: Any) -> str:
         kw: dict[str, Any] = {"messages": prompt} if isinstance(prompt, list) else {"prompt": prompt}
+        kw.update(call_kwargs)
         if headers := obs.carrier():
             kw["extra_headers"] = headers  # per-request trace propagation (§12.5)
         out = self.lm(**kw)
@@ -191,7 +194,7 @@ async def optimize_texts(seed: Mapping[str, str], scorer: EvolveScorer, evolve_c
     cost = OptimizerCost("gepa")
     seed = dict(seed)
     t0 = time.monotonic()
-    evolve = list(dict.fromkeys(evolve_cases))
+    evolve = subsample(evolve_cases, config.max_cases, salt=f"gepa{config.seed}")
     train, val = stable_split(evolve, config.val_fraction, salt=f"gepa{config.seed}")
     mb = max(1, min(config.reflection_minibatch_size, len(train)))
     cap = metric_cap(config.max_metric_calls, budget_tokens, config.tokens_per_metric_call)

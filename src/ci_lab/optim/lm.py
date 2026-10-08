@@ -90,7 +90,9 @@ def make_lm(profile: Profile | str, purpose: Purpose = "optimizer", *, model: st
     """Build the DSPy LM for ``purpose`` under ``profile`` (see module doc).
 
     ``fake_answers`` scripts the ``fake`` profile's ``DummyLM`` (list = in order,
-    dict = keyed by a substring of the last message); exhausted scripts answer
+    dict = keyed by a substring of the last message); each answer's values are
+    returned verbatim (raw completion text; pass ``fake_adapter=dspy.ChatAdapter()``
+    to get DSPy field formatting instead). Exhausted scripts answer
     ``"No more responses"`` deterministically.
     """
     import dspy  # C26: lazy
@@ -100,7 +102,8 @@ def make_lm(profile: Profile | str, purpose: Purpose = "optimizer", *, model: st
     if profile is Profile.FAKE:
         from dspy.utils.dummies import DummyLM
 
-        lm = DummyLM(list(fake_answers) if isinstance(fake_answers, Sequence) else dict(fake_answers or {}))
+        answers = list(fake_answers) if isinstance(fake_answers, Sequence) else dict(fake_answers or {})
+        lm = DummyLM(answers, adapter=lm_kwargs.pop("fake_adapter", None) or _RawTextAdapter())
         lm.cache = False
         return lm
     base, key = resolve_endpoint(profile, env)
@@ -112,6 +115,13 @@ def make_lm(profile: Profile | str, purpose: Purpose = "optimizer", *, model: st
         engine="litellm",  # C24: LiteLLM -> AGL proxy -> copilot-serve | llama-server
         **lm_kwargs,
     )
+
+
+class _RawTextAdapter:
+    """DummyLM output formatter emitting answer values verbatim (raw LM text)."""
+
+    def format_field_with_value(self, fields_with_values: Mapping[Any, Any], role: str = "assistant") -> str:
+        return "\n\n".join(str(v) for v in fields_with_values.values())
 
 
 def disable_dspy_cache() -> None:

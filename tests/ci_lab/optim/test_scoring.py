@@ -15,6 +15,7 @@ from ci_lab.optim.scoring import (
     render_failure,
     resolve_scorer_result,
     stable_split,
+    subsample,
 )
 
 PROMPT = "src/order_support/harness/prompts/system.md"
@@ -48,6 +49,13 @@ def test_stable_split_deterministic_and_disjoint():
     assert set(tr) | set(va) == set(ids) and not set(tr) & set(va)
     assert len(va) == 3
     assert stable_split(["x"]) == (["x"], ["x"])
+
+
+def test_subsample_deterministic_order_preserving():
+    ids = [f"c{i}" for i in range(10)]
+    a = subsample(ids, 4, salt="s")
+    assert len(a) == 4 and a == subsample(ids, 4, salt="s") and a == [c for c in ids if c in a]
+    assert subsample(ids, None) == ids and subsample(ids + ["c1"], 99) == ids
 
 
 def test_render_failure_typed_and_bounded():
