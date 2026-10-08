@@ -267,11 +267,17 @@ ATTR_SCORE = "ci.score"
 ATTR_DELTA_S = "rrsi.delta_s"
 ATTR_DELTA_C = "rrsi.delta_c"
 
-# Run-dir progress markers the dashboard canvas reads live (spans arrive only on end):
-# <run_dir>/<experiment_id>/status.json  {"phase", "arms": {arm: {"strategy", "state",
-#   "phase", "updated"}}, "trace_id", "updated"}  — written atomically by step functions.
-RUN_STATUS_FILE = "status.json"
+# Run-dir progress markers the dashboard canvas reads live (spans arrive only on end).
+# One file per writer (no cross-process lost updates):
+#   <run_dir>/<experiment_id>/status.d/<writer>.json
+#   {"writer", "seq", "updated", "phase", "arms": {arm: {"strategy","state","phase","updated"}},
+#    "trace": {"trace_id","span_id"}, ...}
+# Readers aggregate with ``ci_lab.obs.read_status`` (latest top-level fields win; arms merged
+# per arm by ``updated``). Payloads must not contain PII/secrets.
+RUN_STATUS_DIR = "status.d"
+RUN_STATUS_FILE = "status.json"  # legacy single-file marker; readers still accept it
 DASHBOARD_STATE_ENV = "CI_DASHBOARD_STATE"  # default ~/.ci-lab/dashboard.json
+SPAN_SCHEMA_VERSION = 1  # versioned internal span record (see design §12.5)
 
 
 @dataclass

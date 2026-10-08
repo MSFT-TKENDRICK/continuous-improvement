@@ -196,3 +196,15 @@ One trace per **round / night / calibration / confirm / evaluator experiment** (
 | C36 | Stale/crashed runs look "running" forever | `status.json.updated` age > 2× heartbeat ⇒ "stale"; process liveness via pid where recorded |
 | C37 | fs.watch unreliable (Windows recursive limits, network drives, CoW worktrees) | Watch only known dirs, debounce, periodic poll fallback, manual `refresh` |
 | C38 | Canvas Node code vs "no second language" | Runs inside the GHCP host (Node is the only supported extension runtime), zero deps, read-only; Python remains the only harness language |
+
+### 12.5 Rubber-duck fixes (v2.3.1)
+
+| # | Finding | Resolution |
+|---|---|---|
+| D1 | `status.json` read-merge-replace loses updates across processes | Per-writer markers `status.d/<writer>.json` (+`seq`); `obs.read_status` aggregates (arms by `updated`); legacy `status.json` still read. Multiprocess stress test. |
+| D2 | Attaching `TRACEPARENT` once in long-lived services mis-parents later requests; threads/checkpoints drop context | `obs.carrier()` per request/message + `obs.use_carrier()` request-scoped attach/detach; `obs.wrap_ctx()` for thread pools; durable MAF messages/checkpoints store `carrier()`. `child_env()` is for one-shot children only. |
+| D3 | Resume links need span id; trace id never replaced | Status records `trace: {trace_id, span_id}` on every write; `obs.previous_link()` validates width/hex/non-zero and returns `[]` otherwise. |
+| D4 | Provider ownership import-order dependent | `telemetry.setup()` must run first at every CLI entry; fails fast if a non-SDK global provider already exists; idempotent; MAF/AGL get processors via `span_processors()`; tests for repeated setup and flush. |
+| D5 | CI runs not visible in Desktop | `ci-lab telemetry pull --run <id>` downloads the `spans` artifact via `gh`, verifies digest + schema version, caches under `~/.ci-lab/imports/`, then imports; canvas lists imported runs. |
+| D6 | PII via `str()` attrs and exception messages | `_clean` keeps bounded scalars/homogeneous scalar lists only, else `<TypeName>`; spans record exception *type* only (no message/stack). |
+| D7 | JSONL vs OTLP shape contradictory | Versioned internal span record (`SPAN_SCHEMA_VERSION`) with adapters for Aspire API, JSONL and OTLP replay; golden fixtures; unknown versions rejected. |
