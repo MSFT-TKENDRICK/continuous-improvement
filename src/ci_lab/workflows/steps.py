@@ -1004,3 +1004,74 @@ def reserve_holdout_look(env: CampaignEnv, eid: str, split: str) -> dict[str, An
     return {"dataset_hash": digest, "look_no": look_no}
 
 
+def confirm_tools(ctx: ConfirmContext) -> dict[str, Callable[..., Awaitable[Any]]]:
+    env = ctx.env
+    deps = env.deps
+    hyper = env.hyper
+
+    def reserve_look(split: str = "heldout") -> dict[str, Any]:
+        marker = ctx.dir / "look.json"
+        if (data := _done(marker)) is not None:
+            return data
+        look = reserve_holdout_look(env, ctx.eid, split)
+        data = {"dataset_hash": look["dataset_hash"], "split": split, "look_no": look["look_no"],
+                "planned": int(hyper["holdout_looks"])}
+        records.write_json(marker, data)
+        return data
+
+    async def evaluate_heldout(split: str = "heldout") -> dict[str, Any]:
+        if _done(ctx.dir / "look.json") is None:
+            raise RuntimeError("evaluate_heldout before reserve_look")
+        campaign = deps.ledger.read_json(env.rel("campaign.json"))
+        frontier = env.frontier()
+        targets = {"h0": campaign["base_commit"], "final": frontier["incumbent_commit"]}
+        for name, commit in targets.items():
+            path = ctx.dir / f"{name}.json"
+            if path.exists():
+                continue
+            if name == "final" and commit == targets["h0"]:
+                records.write_json(path, _done(ctx.dir / "h0.json"))
+                continue
+            worktree = deps.provision_slot(ctx.eid, name, commit)
+            result = await deps.domain.evaluate(worktree, split, int(hyper["k"]),
+                                                experiment_id=ctx.eid, variant=name)
+            records.write_json(path, records.eval_to_dict(result))
+        return {"evaluated": sorted(targets)}
+
+    def decide() -> dict[str, Any]:
+        marker = ctx.dir / "decision.json"
+        if (data := _done(marker)) is not None:
+            return data
+        h0 = records.eval_from_dict(_done(ctx.dir / "h0.json"))
+        final = records.eval_from_dict(_done(ctx.dir / "final.json"))
+        data = dict(deps.confirm_test(h0, final, hyper))
+        if data.get("decision") not in ("ship", "do_not_ship"):
+            raise ValueError(f"bad confirm decision {data!r}")
+        records.write_json(marker, data)
+        return data
+
+    def record() -> dict[str, Any]:
+        marker = ctx.dir / "record.done"
+        if (data := _done(marker)) is not None:
+            return data
+        decision = _done(ctx.dir / "decision.json")
+        rec = {"eid": ctx.eid, "campaignId": env.cid, **decision, "look": _done(ctx.dir / "look.json"),
+               "h0": _done(ctx.dir / "h0.json"), "final": _done(ctx.dir / "final.json")}
+        campaign = deps.ledger.read_json(env.rel("campaign.json")) or {}
+        history = deps.ledger.read_jsonl(env.rel("history.jsonl"))
+        envelope_rec = {**rec, "baseline_commit": campaign.get("base_commit"),
+                        "final_commit": env.frontier()["incumbent_commit"], "look_ledger_ref": LOOKS,
+                        "planned_looks": int(hyper["holdout_looks"]), "split_hashes": env.split_hashes(),
+                        "accepted_rounds": [h["eid"] for h in history if h.get("decision") == "ship"]}
+        deps.ledger.write_json(env.rel("confirm", "envelope.json"), deps.build_envelope("confirm", envelope_rec))
+        deps.ledger.write_json(env.rel("confirm.json"), {"eid": ctx.eid, **decision})
+        env.commit_ledger(ctx.eid, f"Confirm {env.cid}: {decision['decision']}",
+                          [env.rel("confirm.json"), env.rel("confirm", "envelope.json")])
+        data = {"decision": decision["decision"]}
+        records.write_json(marker, data)
+        return data
+
+    tracker = ctx.tracker
+    return {name: step(name, fn, tracker) for name, fn in {
+        "reserve_look": reserve_look, "evaluate_heldout": evaluate_heldout, "decide": decide,
+        "record": record}.items()}
