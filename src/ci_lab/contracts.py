@@ -201,7 +201,7 @@ class CriticVerdict:
 # surface of its arm worktree and commits typed Edits; critique, ASSERT evaluation and
 # RRSI/OES selection are strategy-agnostic and authoritative (an optimizer's internal
 # acceptance gate is diagnostic only).
-STRATEGIES = ("agent", "gepa", "skillopt")
+STRATEGIES = ("agent", "gepa", "skillopt", "guard")  # guard: v2.4 §13 (writes harness/guards/*.yaml only)
 
 
 @dataclass(frozen=True)
@@ -266,6 +266,20 @@ ATTR_NIGHT = "sleep.night"
 ATTR_SCORE = "ci.score"
 ATTR_DELTA_S = "rrsi.delta_s"
 ATTR_DELTA_C = "rrsi.delta_c"
+
+# v2.4 §13 guards/lessons. One `ci.guard` span event per matching rule (all-match telemetry);
+# enforced blocks also set ATTR_GUARD_ACTION on the enclosing execute_tool / invoke_agent span.
+SPAN_GUARD = "ci.guard"             # event name on the current span (not a span) for each match
+SPAN_LESSONS = "ci.lessons"         # attr ci.phase = harvest|cluster|route|synthesize|replay|propose
+SPAN_LINT = "ci.lint"
+ATTR_GUARD_RULE = "ci.guard.rule"
+ATTR_GUARD_VERSION = "ci.guard.version"
+ATTR_GUARD_MODE = "ci.guard.mode"   # shadow|enforce
+ATTR_GUARD_ACTION = "ci.guard.action"  # warn|block|redact
+ATTR_GUARD_ENFORCED = "ci.guard.enforced"
+ATTR_GUARD_BUNDLE = "ci.guard.bundle"
+ATTR_GUARD_DEGRADED = "ci.guard.degraded"
+ATTR_LESSON = "ci.lesson_id"
 
 # Run-dir progress markers the dashboard canvas reads live (spans arrive only on end).
 # One file per writer (no cross-process lost updates):
