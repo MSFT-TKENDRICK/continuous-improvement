@@ -55,10 +55,13 @@ def lessons_touching(files: Iterable[str], registry: Sequence[LessonEntry]) -> s
     return out
 
 
-def default_replay(trajectories: Any = None, *, dataset_texts: Sequence[str] = ()) -> ReplayFn | None:
+def default_replay(trajectories: Any = None, *, dataset_texts: Sequence[str] = (),
+                   extractors: Sequence[Path] = ()) -> ReplayFn | None:
     """M16 ``ci_lab.lessons.replay.validate_ok`` bound to an evolve trajectory corpus, or ``None``
     when the module / corpus is unavailable. ``trajectories``: a sequence of ``Trajectory`` or a
-    path accepted by ``ci_lab.lessons.common.load_trajectories``."""
+    path accepted by ``ci_lab.lessons.common.load_trajectories``. ``extractors`` (ExtractorFile
+    paths) are forwarded when ``rules`` is not already a compiled Bundle, since state-flag rules only load
+    with their extractors."""
     try:
         from ci_lab.lessons.replay import validate_ok  # type: ignore[import-not-found]
     except ImportError:
@@ -77,8 +80,9 @@ def default_replay(trajectories: Any = None, *, dataset_texts: Sequence[str] = (
             else:
                 corpus = list(trajectories)
         subject = rules if hasattr(rules, "rules") and not isinstance(rules, (list, tuple)) else list(rules)
+        extra = {"extractors": list(extractors)} if extractors and isinstance(subject, list) else {}
         ok, reasons = validate_ok(subject, corpus, cluster=cluster, dataset_texts=list(dataset_texts),
-                                  work_dir=work_dir)
+                                  work_dir=work_dir, **extra)
         return bool(ok), [str(r) for r in reasons]
 
     return replay

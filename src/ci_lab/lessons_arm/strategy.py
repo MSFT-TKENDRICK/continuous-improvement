@@ -154,7 +154,8 @@ class GuardStrategy:
         self.synthesizer = synthesizer
         self.client_factory = client_factory
         self.committer = committer or git_commit
-        self.replay = replay if replay is not None else default_replay(trajectories, dataset_texts=dataset_texts)
+        self.replay = replay if replay is not None else default_replay(trajectories, dataset_texts=dataset_texts,
+                                                                        extractors=list(extractor_paths))
         self.candidates_path = candidates_path
         self.registry_path = registry_path
         self.extractor_paths = list(extractor_paths)

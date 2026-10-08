@@ -189,3 +189,20 @@ def test_fallback_bundle_errors(tmp_path: Path):
     p2.write_text("schema_version: 1\nrules: [{id: bad}]\n", encoding="utf-8")
     with pytest.raises(BundleError):
         load_rules([p1, p2])
+
+
+def test_replay_forwards_extractors_for_state_flag_rules(tmp_path: Path):
+    pytest.importorskip("ci_lab.lessons.replay")
+    from ci_lab.lessons_arm.seams import default_replay
+
+    oracle = next(o for o, f in ORACLE_FEATURES.items() if f.kind == "state_flag")
+    c = cluster(oracle)
+    rule = synthesize(c, ORACLE_FEATURES[oracle])
+    ex = tmp_path / "extractors.yaml"
+    ex.write_text(EXTRACTORS, encoding="utf-8")
+    (tmp_path / "a").mkdir()
+    (tmp_path / "b").mkdir()
+    _, without = default_replay([])([rule], c, tmp_path / "a")
+    _, with_ex = default_replay([], extractors=[ex])([rule], c, tmp_path / "b")
+    assert any("extractor" in r for r in without)
+    assert not any("extractor" in r for r in with_ex)
