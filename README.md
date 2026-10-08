@@ -13,6 +13,10 @@ The repo contains two kinds of eval:
   `calibrate` command then compares ASSERT's verdicts with the reference labels. This suite measures the
   judge, not the agent.
 
+The evals are also the scoring layer of `ci_lab`, a self-improving harness. **Start at
+[docs/harness.md](docs/harness.md)** for its overview, architecture diagram, an index of every module
+doc, and known limitations.
+
 ## Contents
 
 * [Quick start](#quick-start)
