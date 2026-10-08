@@ -90,9 +90,16 @@ def case_attributes(test_case_id: str, env: Mapping[str, str] | None = None) -> 
 def _with_case_span(run: Any) -> Any:
     @functools.wraps(run)
     async def wrapped(*args: Any, **kwargs: Any) -> Any:
+        from order_support import guarding
+
         test_case = kwargs.get("test_case") or (args[0] if args else {})
-        with obs.span(SPAN_CASE, case_attributes(str(test_case.get("test_case_id", "?")))):
-            return await run(*args, **kwargs)
+        case_id = str(test_case.get("test_case_id", "?"))
+        token = guarding.bind_case(case_id)  # one guard conversation scope per case run (M3)
+        try:
+            with obs.span(SPAN_CASE, case_attributes(case_id)):
+                return await run(*args, **kwargs)
+        finally:
+            guarding.reset_case(token)
 
     wrapped.__ci_case_span__ = True  # type: ignore[attr-defined]
     return wrapped

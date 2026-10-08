@@ -51,7 +51,7 @@ except Exception:  # pragma: no cover - tracing is best-effort outside ASSERT
 from agent_framework import ChatContext, ChatMiddleware, ChatResponse, Message
 
 from ci_lab import obs
-from order_support import data, maf_tools, otel
+from order_support import data, guarding, maf_tools, otel
 
 _tracer = trace.get_tracer("order_support.agent")
 
@@ -312,12 +312,22 @@ async def _run_turn(spec: Mapping[str, Any], client: Any, model_name: str, provi
     options: dict[str, Any] = {}
     if (temp := os.environ.get("ORDER_AGENT_TEMPERATURE")) is not None:
         options["temperature"] = float(temp)
+    if (seed := guarding.seed()) is not None:
+        options["seed"] = seed
+    # HOOK(M3): process-wide guards after the turn bound and the OpenInference LLM spans; one
+    # persistent session per conversation. Prior turns load through a history provider ahead of
+    # the current input, so the model sees exactly the text-seeded messages it saw before.
+    installed = guarding.install(harness_dir(), tool_policies(spec))
+    conv = guarding.conversation(message, history)
+    seeded = _seed_messages(message, history)
+    agent.context_providers.append(guarding.transcript(seeded[:-1]))
     middleware = [_TurnGuard(MAX_TOOL_LOOP_ITERATIONS, timeout_s),
-                  otel.OpenInferenceChatMiddleware(model_name, provider)]
+                  otel.OpenInferenceChatMiddleware(model_name, provider), *installed.guards]
     try:
-        response = await agent.run(_seed_messages(message, history), middleware=middleware,
+        response = await agent.run(seeded[-1:], session=conv.session, middleware=middleware,
                                    options=options or None)
     finally:
+        guarding.flush(installed, conv)
         if client is not _client_override and (inner := getattr(client, "client", None)) is not None:
             close = getattr(inner, "close", None)
             if close is not None:
