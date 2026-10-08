@@ -77,6 +77,10 @@ jobs:
         name: Run one SkillOpt-Sleep night
         env:
           COPILOT_GITHUB_TOKEN: ${{ github.token }}
+          # HOOK(M16) lessons mining: OFF unless the repo variable SLEEP_LESSONS is 1/true. Candidates
+          # land in the bundle as experiments/sleep/lessons/<night>.json proposals (draft PR only);
+          # they are never adopted or enforced automatically (design §13.3, B8).
+          SLEEP_LESSONS: ${{ vars.SLEEP_LESSONS }}
         run: uv run ci-lab sleep run --profile copilot --out out/sleep-bundle --run-dir "$CI_RUN_DIR" --max-minutes 60
       - name: Redact night spans (replay with `ci-lab telemetry import`)
         if: ${{ !cancelled() }}

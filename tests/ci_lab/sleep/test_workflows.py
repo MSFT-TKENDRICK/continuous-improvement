@@ -63,6 +63,9 @@ def test_nightly_jobs_and_permissions():
     assert "agentlightning.server" in runs and "redact-spans" in runs
     night = next(s for s in steps(ev) if s.get("id") == "night")
     assert night["env"]["COPILOT_GITHUB_TOKEN"] == "${{ github.token }}"
+    # HOOK(M16) lessons hook: opt-in via repo variable only (unset -> off), never a dispatch input
+    assert night["env"]["SLEEP_LESSONS"] == "${{ vars.SLEEP_LESSONS }}"
+    assert "--lessons" not in night["run"]
     uploads = [s["with"]["name"] for s in steps(ev) if s.get("uses", "").startswith("actions/upload-artifact@")]
     assert uploads == ["sleep-bundle", "sleep-spans"]
     pub = jobs["publish"]

@@ -114,6 +114,20 @@ def test_publishes_accepted_candidate_as_draft_pr(sleep_repo, tmp_path, h, monke
     assert [c for c in run.calls if "push" in c][0][-1] == "HEAD:refs/heads/exp/sleep-20260921-3/cand"
 
 
+def test_lessons_proposal_file_is_published_with_note(sleep_repo, tmp_path, h, monkeypatch):
+    lessons = "experiments/sleep/lessons/sleep-20260921-1.json"
+    patch = make_patch([FileChange(STATE, (sleep_repo / STATE).read_text(encoding="utf-8"),
+                                   (sleep_repo / STATE).read_text(encoding="utf-8").replace('"night": 0', '"night": 1')),
+                        FileChange(lessons, None, '{"status": "proposed"}\n')])
+    b = bundle(tmp_path, patch=patch, base_sha=head(sleep_repo, h), accepted=False)
+    run = FakeRun()
+    assert run_main(b, sleep_repo, run, monkeypatch) == 0
+    assert sorted(h.git(sleep_repo, "show", "--name-only", "--format=", "HEAD").splitlines()) == sorted([STATE, lessons])
+    assert "--draft" in run.gh("pr", "create")[0]
+    assert "never adopted or enforced" in run.body and f"`{lessons}`" in run.body
+    assert not any("merge" in a for c in run.calls for a in c)
+
+
 def test_ledger_only_rejected_night_and_existing_pr(sleep_repo, tmp_path, h, monkeypatch):
     b = bundle(tmp_path, patch=state_only(sleep_repo), base_sha=head(sleep_repo, h), accepted=False)
     run = FakeRun(existing_pr="https://github.com/o/r/pull/2\n")

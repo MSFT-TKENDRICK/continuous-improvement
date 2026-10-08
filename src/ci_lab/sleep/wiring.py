@@ -194,7 +194,9 @@ def _real_target_deps(profile: Profile, cfg: SleepConfig, target: SkillTarget) -
     )
 
 
-def build_deps(profile: Profile, cfg: SleepConfig, agl_exports: Iterable[Path] = ()) -> SleepDeps:
+def build_deps(profile: Profile, cfg: SleepConfig, agl_exports: Iterable[Path] = (), *,
+               lessons_dir: Path | None = None,
+               lessons_sources: Iterable[tuple[str, Path]] = ()) -> SleepDeps:
     paths = list(agl_exports)
     if profile is Profile.FAKE:
         deps = fake_deps(cfg)
@@ -209,6 +211,11 @@ def build_deps(profile: Profile, cfg: SleepConfig, agl_exports: Iterable[Path] =
             deps.per_target = lambda t: per[t.name]
     if paths:
         deps.agl_records = lambda: read_jsonl_rows(paths)
+    if cfg.lessons_hook:
+        from ci_lab.sleep.lessons_hook import make_lessons_hook
+
+        store = Path(lessons_dir) if lessons_dir else Path(cfg.work_dir or cfg.out_dir) / "lessons"
+        deps.lessons = make_lessons_hook(store, list(lessons_sources))
     return deps
 
 

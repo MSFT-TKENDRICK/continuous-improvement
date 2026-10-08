@@ -32,6 +32,14 @@ def register(sub: Any) -> None:
                      help="status.d markers + telemetry JSONL (default: $CI_RUN_DIR or <out>-work)")
     run.add_argument("--date", default=None, help="night date yyyymmdd (default: UTC today)")
     run.add_argument("--base-sha", default=None, help="base commit (default: git rev-parse HEAD)")
+    run.add_argument("--lessons", action="store_true", default=None,
+                     help="HOOK(M16): mine lesson candidates into the bundle as proposals "
+                          "(default: $SLEEP_LESSONS, else off)")
+    run.add_argument("--lessons-dir", type=Path, default=None,
+                     help="local trajectory store, accumulated across nights; keep it gitignored "
+                          "(default: <work-dir>/lessons; e.g. artifacts/lessons/sleep)")
+    run.add_argument("--lessons-source", action="append", default=[],
+                     help="extra local harvest input SOURCE:PATH (e.g. usage:DIR); repeatable")
     run.set_defaults(func=_run)
 
     dry = ssub.add_parser("dry-run", help="harvest + validate tasks only (no model calls)")
@@ -108,13 +116,19 @@ def _attempt() -> int:
     return int(raw) if raw.isdigit() and 1 <= int(raw) <= 9999 else 1
 
 
+def _env_flag(name: str) -> bool:
+    return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "on"}
+
+
 def _run(args: argparse.Namespace) -> int:
     from ci_lab.contracts import Profile
     from ci_lab.sleep.budget import BudgetLimits
+    from ci_lab.sleep.lessons_hook import parse_source
     from ci_lab.sleep.night import SleepConfig, run_night
     from ci_lab.sleep.registry import RegistryError
     from ci_lab.sleep.wiring import WiringError, build_deps
 
+    lessons = _env_flag("SLEEP_LESSONS") if args.lessons is None else bool(args.lessons)
     out = args.out.resolve()
     run_dir = (args.run_dir or (Path(os.environ["CI_RUN_DIR"]) if os.environ.get("CI_RUN_DIR")
                                 else out.parent / f"{out.name}-work")).resolve()
@@ -124,8 +138,11 @@ def _run(args: argparse.Namespace) -> int:
             tasks_file=args.tasks_file.resolve() if args.tasks_file else None, run_dir=run_dir,
             limits=BudgetLimits(max_tasks=args.max_tasks, max_rollouts=args.max_rollouts,
                                 max_tokens=args.max_tokens, max_aiu=args.max_aiu, max_minutes=args.max_minutes),
-            night_date=args.date, run_attempt=_attempt(), base_sha=args.base_sha)
-        deps = build_deps(Profile(args.profile), cfg, args.agl_export)
+            night_date=args.date, run_attempt=_attempt(), base_sha=args.base_sha, lessons_hook=lessons)
+        sources = [parse_source(s) for s in args.lessons_source] if lessons else []
+        deps = build_deps(Profile(args.profile), cfg, args.agl_export,
+                          lessons_dir=args.lessons_dir.resolve() if args.lessons_dir else None,
+                          lessons_sources=sources)
     except (WiringError, RegistryError, ValueError) as exc:
         print(f"sleep: setup failed: {exc}", file=sys.stderr)
         _gh_output(accepted=False, ledger_update=False, status="error")

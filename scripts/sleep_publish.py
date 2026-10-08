@@ -234,6 +234,9 @@ def pr_title(b: dict[str, Any]) -> str:
     return f"[sleep] {m['night_id']}: {what}"
 
 
+LESSONS_PREFIX = "experiments/sleep/lessons/"
+
+
 def pr_body(b: dict[str, Any], paths: Sequence[str]) -> str:
     m, res, exp = b["manifest"], b["results"], b["experiment"]
     out: list[str] = []
@@ -259,6 +262,9 @@ def pr_body(b: dict[str, Any], paths: Sequence[str]) -> str:
         reasons = [r for r in (res.get("reasons") or []) if isinstance(r, str)][:10]
         if reasons:
             out += ["", "**Reasons**", *[f"- {_clean(r)}" for r in reasons]]
+    if any(p.startswith(LESSONS_PREFIX) for p in paths):
+        out += ["", "**Lesson candidates** (HOOK(M16)): proposals only. They are never adopted or enforced",
+                "automatically; confirm with `ci-lab lessons confirm` and land rules in a separate reviewed PR."]
     out += ["", "**Files**", *[f"- `{p}`" for p in paths], "",
             f"Base: `{m['base_sha']}` · bundle manifest sha256: `{b['manifest_sha256']}`", "",
             "_Draft opened by `scripts/sleep_publish.py`; a human must review and merge (C10)._"]

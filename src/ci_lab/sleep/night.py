@@ -22,7 +22,7 @@ from contextlib import contextmanager
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from opentelemetry import context as otel_context
 from skillopt_sleep.dream import dream_consolidate
@@ -52,6 +52,9 @@ from ci_lab.sleep.gate import CanaryResult, GateDecision, decide, static_canarie
 from ci_lab.sleep.harvest import HarvestResult, from_agl_exports, harvest, reviewed_ids
 from ci_lab.sleep.registry import ORDER_SUPPORT, SkillTarget, load_targets, validate_targets
 from ci_lab.sleep.runner import RunWorkflow, default_runner
+
+if TYPE_CHECKING:
+    from ci_lab.sleep.lessons_hook import LessonsReport, LessonsRequest
 
 WORKFLOW_PATH = Path(__file__).with_name("sleep.yaml")
 SKILL_REL = ORDER_SUPPORT.skill_path
@@ -89,7 +92,7 @@ class SleepConfig:
     night_date: str | None = None  # yyyymmdd (UTC today when None)
     run_attempt: int = 1
     base_sha: str | None = None
-    lessons_hook: bool = False  # HOOK(M16): lessons mine/replay seam, off by default
+    lessons_hook: bool = False  # HOOK(M16): mine lesson candidates into the bundle; off by default
 
     def __post_init__(self) -> None:
         self.repo_root = Path(self.repo_root)
@@ -130,8 +133,9 @@ class SleepDeps:
     # target-specific callables (run_target, oracle, reflector, assert_eval, scorer,
     # run_canaries, latest_delta); None = these deps serve every target
     per_target: Callable[[SkillTarget], SleepDeps] | None = None
-    # HOOK(M16): (target, typed TaskRecords) -> typed TaskRecords; used only when cfg.lessons_hook
-    lessons: Callable[[SkillTarget, list[TaskRecord]], Iterable[TaskRecord]] | None = None
+    # HOOK(M16): typed rollouts -> sanitized lesson candidates (ci_lab.sleep.lessons_hook);
+    # used only when cfg.lessons_hook. Per-target deps fall back to the night-level hook.
+    lessons: Callable[[LessonsRequest], LessonsReport] | None = None
 
 @dataclass
 class NightResult:
@@ -160,6 +164,7 @@ class _TargetRun:
     candidate_skill: str = ""
     candidate_memory: str = ""
     decision: GateDecision | None = None
+    lessons: LessonsReport | None = None
     gate_skipped: str = ""
     no_tasks: str = ""
     evals: dict[str, EvalResult] = field(default_factory=dict)
@@ -390,13 +395,6 @@ def _consolidate(night: _Night, gate_mode: str) -> dict[str, Any]:
             run.backend = OrderSupportSleepBackend(run_target=d.run_target, oracle=d.oracle,
                                                    reflector=d.reflector, scorer=d.scorer, budget=night.budget)
             tasks: list[TaskRecord] = run.harvest.tasks
-            # HOOK(M16): lessons mine/replay step (design §13/§13.6, ci_lab.lessons on dev/lessons).
-            # Seam between trajectory collection (harvest) and proposal (dream_consolidate/reflect).
-            # Gated OFF by default (cfg.lessons_hook); not implemented here. Inputs/outputs must stay
-            # local and typed-only (§13.6 B8): typed TaskRecords in, typed TaskRecords out; nothing
-            # from reflect/usage data is written to the bundle, envelope, spans or status.
-            if cfg.lessons_hook and d.lessons is not None:
-                tasks = list(d.lessons(run.target, tasks))
             with obs.span(SPAN_OPTIMIZER, {ATTR_STRATEGY: "skillopt", ATTR_COMPONENT: run.name,
                                            ATTR_TARGET: run.name, ATTR_NIGHT: night.night_no}) as s:
                 res = dream_consolidate(
@@ -409,9 +407,37 @@ def _consolidate(night: _Night, gate_mode: str) -> dict[str, Any]:
                 s.set_attribute("skillopt.gate_action", res.gate_action)
         run.consolidation = res
         run.candidate_skill, run.candidate_memory = res.new_skill, res.new_memory
+        if cfg.lessons_hook:
+            _lessons(night, run)
         out[run.name] = {"accepted": bool(res.accepted), "gate_action": str(res.gate_action)}
     _status(night, skillopt={k: v["accepted"] for k, v in out.items()})
     return out
+
+
+def _lessons(night: _Night, run: _TargetRun) -> None:
+    """HOOK(M16): mine lesson candidates from this target's judged rollouts (design §13.3).
+
+    Runs after ``dream_consolidate`` because the trajectories are the rollouts it judged. The hook
+    keeps raw trajectories in a local store (B8) and returns only sanitized typed candidates, which
+    ``_record`` proposes in the draft-PR bundle. Nothing is adopted or enforced here. Failures are
+    soft: the error type is counted and the night continues."""
+    from ci_lab.sleep.lessons_hook import LessonsReport, LessonsRequest
+
+    hook = run.deps.lessons or night.deps.lessons
+    if hook is None or run.backend is None:
+        return
+    with _target_span(night, run, "lessons") as s:
+        req = LessonsRequest(target=run.name, night_id=night.night_id, date=night.date,
+                             profile=night.cfg.profile, rollouts=tuple(run.backend.judged_rollouts()))
+        try:
+            report = hook(req)
+        except BudgetExceeded:
+            raise
+        except Exception as exc:  # noqa: BLE001 - proposals must never fail the night
+            s.set_attribute("error.type", type(exc).__name__)
+            report = LessonsReport(counts={"error": type(exc).__name__})
+        run.lessons = report
+        s.set_attribute("ci.lessons.candidates", len(report.candidates))
 
 
 def _gate_target(night: _Night, run: _TargetRun, suite_split: str) -> None:
@@ -525,6 +551,16 @@ def _record(night: _Night, envelope_kind: str) -> dict[str, Any]:
                 raise ValueError(f"target {r.name} evolved memory but has no memory path")
             changes.append(FileChange(r.target.memory_path, r.memory if r.memory_exists else None,
                                       _match_eol(r.memory, r.candidate_memory)))
+    lessons = {r.name: r.lessons for r in night.runs if r.lessons is not None}
+    if lessons:
+        from ci_lab.sleep.lessons_hook import LESSONS_REL, proposal_document
+
+        doc = proposal_document(night.night_id, lessons)
+        if doc is not None:
+            rel = f"{LESSONS_REL}/{night.night_id}.json"
+            old = _read(repo / rel)
+            new = json.dumps(doc, indent=2, sort_keys=True, ensure_ascii=False) + "\n"
+            changes.append(FileChange(rel, old, _match_eol(old, new)))
     night.changes = changes
     return {"status": status, "night": night_no}
 
@@ -544,7 +580,8 @@ def _bundle(night: _Night, layout: str) -> dict[str, Any]:
         "targets": {r.name: {**r.target.to_dict(),
                              "harvest": r.harvest.summary() if r.harvest else None,
                              "skillopt": _consolidation_summary(r.consolidation),
-                             "reflect_log": r.backend.reflect_log if r.backend else []}
+                             "reflect_log": r.backend.reflect_log if r.backend else [],
+                             "lessons": dict(r.lessons.counts) if r.lessons else None}
                     for r in night.runs},
         "budget": night.budget.snapshot(),
         "steps": list(night.steps_run),

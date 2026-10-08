@@ -60,6 +60,18 @@ class ReflectResult:
 Reflector = Callable[[ReflectRequest], "ReflectResult | Sequence[EditRecord]"]
 
 
+@dataclass(frozen=True)
+class RolloutView:
+    """One judged rollout, exported for the HOOK(M16) lessons miner (local only)."""
+
+    case_id: str
+    suite: str
+    transcript: Transcript
+    violations: tuple[Violation, ...]
+    rule_ids: tuple[str, ...]
+    passed: bool
+
+
 @dataclass
 class _Rollout:
     tools_called: list[str]
@@ -67,6 +79,9 @@ class _Rollout:
     violations: list[Violation] = field(default_factory=list)
     rule_ids: list[str] = field(default_factory=list)
     rubric: dict[str, float] = field(default_factory=dict)
+    suite: str = "sleep"
+    judged: bool = False
+    passed: bool = False
 
 
 def _digest(text: str) -> str:
@@ -163,7 +178,7 @@ class OrderSupportSleepBackend(Backend):
         with self._lock:
             self.n_attempts += 1
             self._tokens += tokens
-            self._rollouts[(task.id, _digest(reply))] = _Rollout(called, transcript)
+            self._rollouts[(task.id, _digest(reply))] = _Rollout(called, transcript, suite=suite_of(task))
         if self._budget is not None:
             self._budget.charge(tokens=tokens)
         return reply, called
@@ -180,7 +195,8 @@ class OrderSupportSleepBackend(Backend):
         with self._lock:
             ro = self._rollouts.get((task.id, _digest(response or "")))
         if ro is None:  # judged without a recorded rollout: no tool evidence at all
-            ro = _Rollout([], Transcript(case_id=task.id, messages=[{"role": "assistant", "content": response or ""}]))
+            ro = _Rollout([], Transcript(case_id=task.id, messages=[{"role": "assistant", "content": response or ""}]),
+                          suite=suite_of(task))
             with self._lock:
                 self._rollouts[(task.id, _digest(response or ""))] = ro
         checks = list((task.judge or {}).get("checks", []) or [])
@@ -205,6 +221,7 @@ class OrderSupportSleepBackend(Backend):
         ro.rule_ids = [v.rule_id for v in violations] + failed
         ro.rubric = rubric
         hard_ok = not failed and not violations and (score is None or rubric["assert"] >= SCORER_PASS)
+        ro.judged, ro.passed = True, hard_ok
         soft = 0.0 if violations else (sum(components) / len(components) if components else float(hard_ok))
         why = []
         if violations:
@@ -214,6 +231,14 @@ class OrderSupportSleepBackend(Backend):
         if score is not None and rubric["assert"] < SCORER_PASS:
             why.append(f"assert score {rubric['assert']:.2f}")
         return (1.0 if hard_ok else 0.0), round(soft, 6), "; ".join(why) or "all checks passed"
+
+    def judged_rollouts(self) -> list[RolloutView]:
+        """Judged rollouts in insertion order, for the HOOK(M16) lessons miner (local only)."""
+        with self._lock:
+            items = [(case_id, ro) for (case_id, _), ro in self._rollouts.items() if ro.judged]
+        return [RolloutView(case_id=case_id, suite=ro.suite, transcript=ro.transcript,
+                            violations=tuple(ro.violations), rule_ids=tuple(ro.rule_ids), passed=ro.passed)
+                for case_id, ro in items]
 
     # ---------------------------------------------------------------- reflect
     def failure_record(self, task: TaskRecord, result: ReplayResult) -> FailureRecord:

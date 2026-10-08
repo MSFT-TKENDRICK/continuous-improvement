@@ -121,9 +121,13 @@ Leak findings carry digests only, never literals. Only `evolve` trajectories are
   `output.value` (OpenInference) or `gen_ai.tool.*` (OTel GenAI), agent output via `output.value`.
 * `# HOOK(M5)` AGL: `--source agl` reads a `FileRolloutJournal` directory (`<rollout_id>.jsonl` with
   `kind: start|event|finish` records); latest attempt per rollout; OpenAI-style messages → steps.
-* `# HOOK(M9)` sleep nightly: after the eval night, run `harvest --source assert` (and `spans`) with
-  `--slice <night id>`, then `mine --run <night run dir>`; surface `candidates.jsonl` in the morning
-  digest. Not wired here (sleep is M9-owned).
+* `# HOOK(M9)` / `HOOK(M16)` sleep nightly: **wired** in `ci_lab.sleep.lessons_hook` and enabled
+  with `ci-lab sleep run --lessons` or `SLEEP_LESSONS=1`; it is off by default. The night's judged
+  rollouts are converted with `make_trajectory(source="assert", split="evolve", slice=<night date>)`
+  into a local store. Optional local `--lessons-source` inputs go through `run_harvest`. The hook
+  then calls `run_mine`. Sanitized candidates (B8) are proposed in the sleep draft-PR bundle as
+  `experiments/sleep/lessons/<night>.json` and are never adopted automatically. See
+  [sleep.md](sleep.md#pipeline).
 * `# HOOK(M8b)` campaign: before adopting several arms, call `registry.conflicts({arm: lesson_ids})`
   (lesson ids via `Registry.touched_lessons(rule_ids, prose_anchors)`); refuse non-empty results unless
   the arms' interaction was evaluated.

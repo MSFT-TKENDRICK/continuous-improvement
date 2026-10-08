@@ -44,12 +44,34 @@ modules (`wiring.py`).
 is hit it raises `BudgetExceeded`. The night then ends with status `budget_exceeded` and keeps its
 partial results.
 
-**Seam for M16 lessons.** A `# HOOK(M16)` seam in `night._consolidate` sits after trajectory
-collection (harvest) and before the proposal step (`dream_consolidate` / reflect). It is reserved
-for a lessons mine/replay step (design §13). The seam is off by default and runs only when both
-`SleepConfig.lessons_hook=True` and `SleepDeps.lessons` are set. It accepts and returns typed
-`TaskRecord`s only. Data it handles stays local and is never written to the bundle, envelope or
-spans (§13.6 B8).
+**M16 lessons hook (`lessons_hook.py`).** When `SleepConfig.lessons_hook=True` (CLI `--lessons`,
+or env `SLEEP_LESSONS=1|true|yes|on`; **off by default**), each target runs a `lessons` step right
+after `dream_consolidate`. The step works as follows:
+
+1. The night's judged evolve-split rollouts (`backend.judged_rollouts()`: case id, suite, transcript,
+   oracle violations, judge rule ids, pass/fail) become `ci_lab.rulespec.Trajectory` records through
+   the `ci_lab.lessons` harvest adapters. Each record is sliced by night date and pinned
+   `sleep-<profile>`.
+2. The records are appended (deduplicated by id) to a **local** trajectory store,
+   `<store>/<target>/trajectories.jsonl`. The default store is `<work-dir>/lessons`; use
+   `--lessons-dir artifacts/lessons/sleep` (gitignored) to accumulate across local nights.
+3. Optional local inputs are harvested into the same store: `--lessons-source usage:DIR`, `agl:`,
+   `spans:`, `assert:` or `pr:`. Usage data is reduced to typed features and stays untrusted (B3).
+4. `ci_lab.lessons` mines and routes the store.
+
+Only a sanitized, typed summary leaves the hook (§13.6 B8). It holds cluster id, rung, status,
+support/family/slice counts, oracle/rubric ids, tool-name n-grams and typed feature slots. It never
+holds transcripts, tool arguments, excerpts or member ids. When any target has candidates, the night
+adds `experiments/sleep/lessons/<night_id>.json` (`ci_lab.sleep.lessons.v1`, `status: proposed`) to
+the bundle. `experiment.json` records per-target counts under `targets.<name>.lessons`.
+
+The publisher opens the usual **draft** PR and notes that lesson candidates are proposals only:
+nothing is adopted or enforced automatically. A human confirms clusters with
+`ci-lab lessons confirm`, then synthesizes and validates rules in a separate reviewed PR (§13.3).
+
+The hook is fail-soft: an exception is recorded as `{"error": "<type>"}` and the night continues.
+Clustering needs support, family and slice convergence, so a single ephemeral CI night usually
+yields no candidates. Accumulate a local store (`--lessons-dir`) for useful results.
 
 ## Skill targets registry
 
@@ -89,6 +111,7 @@ locally to create the draft PR on `exp/usage-<date>/tasks`.
 ```
 ci-lab sleep run --profile copilot|offline|fake --out DIR [--max-tasks N --max-minutes M]
                  [--targets YAML --run-dir DIR --tasks-file F --agl-export F ...]
+                 [--lessons --lessons-dir DIR --lessons-source SOURCE:PATH ...]   # $SLEEP_LESSONS
 ci-lab sleep dry-run            # harvest + validate only
 ci-lab sleep usage-gate         # threshold: --threshold / $SLEEP_USAGE_THRESHOLD (default 1); --force / $SLEEP_FORCE
 ci-lab sleep harvest-usage --source agl:P|spans:RUN_DIR|artifacts:DIR [--bundle DIR | --open-pr]
@@ -118,7 +141,8 @@ always uses `persist-credentials: false`.
 2. **`evaluate`** (`contents: read`, `copilot-requests: write`) does the following:
    - runs `uv sync`;
    - starts a loopback `agl-server` with a random masked key;
-   - runs `ci-lab sleep run --profile copilot` with `COPILOT_GITHUB_TOKEN=${{ github.token }}`;
+   - runs `ci-lab sleep run --profile copilot` with `COPILOT_GITHUB_TOKEN=${{ github.token }}`
+     and `SLEEP_LESSONS=${{ vars.SLEEP_LESSONS }}` (the lessons hook; unset means off);
    - uploads two artifacts: `sleep-bundle`, and `sleep-spans` (the redacted span JSONL, which can
      be replayed with `ci-lab telemetry import`).
 3. **`publish`** (`environment: sleep-publish`, `contents: write`, `pull-requests: write`) runs
