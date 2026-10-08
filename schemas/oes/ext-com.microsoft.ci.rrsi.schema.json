@@ -1,0 +1,203 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/MSFT-TKENDRICK/continuous-improvement/schemas/oes/ext-com.microsoft.ci.rrsi.schema.json",
+  "title": "OES extension com.microsoft.ci.rrsi",
+  "description": "RRSI (regularized recursive self-improvement) record carried in extensions[\"com.microsoft.ci.rrsi\"] of an OES 0.1.0 envelope. kind=calibration: A/A delta calibration; kind=round: one exploratory selection round; kind=confirm: the pre-registered held-out confirmation.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "kind", "campaignId", "round", "split", "multipleTesting", "harnessTree", "evaluatorPin", "splitHashes"],
+  "properties": {
+    "version": { "const": "0.1.0" },
+    "kind": { "enum": ["calibration", "round", "confirm"] },
+    "campaignId": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{2,40}$" },
+    "round": { "type": "integer", "minimum": 0, "maximum": 99 },
+    "split": { "enum": ["evolve", "heldout", "ood", "aa"] },
+    "multipleTesting": {
+      "description": "OES 0.1.0 design.multipleTestingPolicy has no 'exploratory' value; envelopes set it to 'custom' and record the real policy here.",
+      "enum": ["exploratory", "confirmatory", "none"]
+    },
+    "repeats": { "type": "integer", "minimum": 2 },
+    "budget": { "type": "integer", "minimum": 0 },
+    "stall": { "type": "boolean" },
+    "explorationSlots": { "type": "integer", "minimum": 0 },
+    "pruneSet": { "type": "array", "items": { "$ref": "#/$defs/component" }, "uniqueItems": true },
+    "delta": { "type": "number", "minimum": 0 },
+    "deltaMethod": { "type": "string", "minLength": 1 },
+    "costRule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["beta0", "beta1"],
+      "properties": { "beta0": { "type": "number" }, "beta1": { "type": "number" } }
+    },
+    "weights": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ws", "wc", "wn"],
+      "properties": { "ws": { "type": "number" }, "wc": { "type": "number" }, "wn": { "type": "number" } }
+    },
+    "selection": { "$ref": "#/$defs/selection" },
+    "variants": {
+      "description": "Per-variant RRSI detail keyed by OES variants[].id.",
+      "type": "object",
+      "additionalProperties": { "$ref": "#/$defs/variant" }
+    },
+    "harnessTree": { "$ref": "#/$defs/gitObject", "description": "Incumbent (baseline) harness tree hash." },
+    "evaluatorPin": { "$ref": "#/$defs/evaluatorPin" },
+    "splitHashes": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": { "enum": ["evolve", "heldout", "ood", "aa"] },
+      "additionalProperties": { "$ref": "#/$defs/digest" }
+    },
+    "holdout": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["datasetHash", "plannedLooks", "looksUsed"],
+      "properties": {
+        "datasetHash": { "$ref": "#/$defs/digest" },
+        "plannedLooks": { "type": "integer", "minimum": 1 },
+        "looksUsed": { "type": "integer", "minimum": 0, "description": "Looks at this held-out dataset including this one (global look ledger, all campaigns)." }
+      }
+    },
+    "lookLedgerRef": { "type": "string", "minLength": 1 },
+    "preRegistration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["alpha", "sided", "primaryMetric", "nonInferiorityMargin"],
+      "properties": {
+        "alpha": { "type": "number", "exclusiveMinimum": 0, "exclusiveMaximum": 1 },
+        "sided": { "enum": ["one", "two"] },
+        "primaryMetric": { "type": "string", "minLength": 1 },
+        "nonInferiorityMargin": { "type": "number", "minimum": 0, "description": "Safety guardrail: candidate safety_violations may exceed baseline by at most this many." },
+        "registeredAt": { "type": "string", "format": "date-time" },
+        "stats": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "method": { "type": "string" },
+            "pValue": { "type": "number", "minimum": 0, "maximum": 1 },
+            "ciLevel": { "type": "number", "exclusiveMinimum": 0, "exclusiveMaximum": 1 },
+            "ciLower": { "type": "number" },
+            "ciUpper": { "type": ["number", "null"] }
+          }
+        }
+      }
+    },
+    "supersedes": { "type": ["string", "null"], "description": "OES experiment.id this envelope supersedes (OES 0.1.0 has no such field)." },
+    "lineage": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "parentExperimentId": { "type": ["string", "null"] },
+        "incumbentCommit": { "$ref": "#/$defs/gitObject" },
+        "incumbentTree": { "$ref": "#/$defs/gitObject" },
+        "finalCommit": { "$ref": "#/$defs/gitObject" },
+        "finalTree": { "$ref": "#/$defs/gitObject" },
+        "acceptedRounds": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "ciLowerBound": { "type": ["number", "null"], "description": "Lower bootstrap CI bound of the winner's delta-S (null when no winner)." }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "kind": { "const": "round" } }, "required": ["kind"] },
+      "then": {
+        "required": ["budget", "stall", "explorationSlots", "pruneSet", "delta", "deltaMethod", "costRule", "weights", "selection", "variants", "lineage", "ciLowerBound"],
+        "properties": { "round": { "minimum": 1 }, "split": { "const": "evolve" }, "multipleTesting": { "const": "exploratory" } }
+      }
+    },
+    {
+      "if": { "properties": { "kind": { "const": "calibration" } }, "required": ["kind"] },
+      "then": {
+        "required": ["delta", "deltaMethod", "repeats"],
+        "properties": { "round": { "const": 0 }, "split": { "enum": ["evolve", "aa"] } }
+      }
+    },
+    {
+      "if": { "properties": { "kind": { "const": "confirm" } }, "required": ["kind"] },
+      "then": {
+        "required": ["holdout", "lookLedgerRef", "preRegistration", "lineage"],
+        "properties": { "split": { "const": "heldout" }, "multipleTesting": { "const": "confirmatory" } }
+      }
+    }
+  ],
+  "$defs": {
+    "component": { "enum": ["prompt", "skill", "client_tool", "config", "memory", "context_mgmt", "guard"] },
+    "gitObject": { "type": "string", "pattern": "^[0-9a-f]{7,64}$" },
+    "digest": { "type": "string", "pattern": "^[a-z0-9]+:[0-9a-f]{16,128}$" },
+    "evaluatorPin": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["evaluatorTree", "judgeModel", "judgeProvider", "servedJudgeModels"],
+      "properties": {
+        "evaluatorTree": { "$ref": "#/$defs/gitObject" },
+        "judgeModel": { "type": "string", "minLength": 1 },
+        "judgeProvider": { "type": "string", "minLength": 1 },
+        "servedJudgeModels": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true }
+      }
+    },
+    "edit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["component", "hypothesis", "commit"],
+      "properties": {
+        "component": { "$ref": "#/$defs/component" },
+        "hypothesis": { "type": "string", "minLength": 1 },
+        "commit": { "$ref": "#/$defs/gitObject" },
+        "files": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "critic": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["passed", "reasons", "repairs"],
+      "properties": {
+        "passed": { "type": "boolean" },
+        "reasons": { "type": "array", "items": { "type": "string" } },
+        "repairs": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "variant": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "baseCommit", "edits", "critic"],
+      "properties": {
+        "status": { "enum": ["incumbent", "pending", "proposed", "rejected", "evaluated", "failed"] },
+        "baseCommit": { "$ref": "#/$defs/gitObject" },
+        "headCommit": { "anyOf": [{ "$ref": "#/$defs/gitObject" }, { "type": "null" }] },
+        "harnessTree": { "anyOf": [{ "$ref": "#/$defs/gitObject" }, { "type": "null" }] },
+        "edits": { "type": "array", "items": { "$ref": "#/$defs/edit" } },
+        "critic": { "anyOf": [{ "$ref": "#/$defs/critic" }, { "type": "null" }] },
+        "archiveRef": { "type": ["string", "null"] }
+      }
+    },
+    "candidate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["variantId", "admissible"],
+      "properties": {
+        "variantId": { "type": "string", "minLength": 1 },
+        "deltaS": { "type": ["number", "null"] },
+        "deltaC": { "type": ["number", "null"] },
+        "novelty": { "type": ["number", "null"] },
+        "ciLowerBound": { "type": ["number", "null"] },
+        "ciLevel": { "type": "number", "exclusiveMinimum": 0, "exclusiveMaximum": 1 },
+        "rule": { "enum": ["cost", "weighted", "none"] },
+        "objective": { "type": ["number", "null"] },
+        "admissible": { "type": "boolean" },
+        "reasons": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "selection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["winner", "candidates"],
+      "properties": {
+        "winner": { "type": ["string", "null"] },
+        "incumbentScore": { "type": "number" },
+        "newIncumbentScore": { "type": "number" },
+        "candidates": { "type": "array", "items": { "$ref": "#/$defs/candidate" } }
+      }
+    }
+  }
+}

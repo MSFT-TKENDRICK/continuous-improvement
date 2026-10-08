@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/MSFT-TKENDRICK/continuous-improvement/schemas/oes/ext-com.microsoft.ci.guard.schema.json",
+  "title": "OES extension com.microsoft.ci.guard",
+  "description": "Paired guard-off/guard-on evaluation of a guard rule bundle (design v2.4 \u00a713, B1/B4/N3) carried in extensions[\"com.microsoft.ci.guard\"] of an OES 0.1.0 envelope. Produced by ci_lab.lessons_arm.envelope.guard_extension.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "kind", "split", "bundleDigest", "paired", "trials", "attemptedViolationRate", "deliveredViolationRate", "taskCompletion", "falseDenialRate", "blockRate", "agentSafetyRate", "holdoutLook"],
+  "properties": {
+    "version": { "const": "0.1.0" },
+    "kind": { "const": "guard_eval" },
+    "split": { "type": "string", "minLength": 1, "description": "Evaluated split; anything but evolve/aa is a C15 held-out look." },
+    "bundleDigest": { "$ref": "#/$defs/digest", "description": "Digest of the exact rule bundle evaluated (metrics are only valid for it)." },
+    "paired": { "type": "boolean", "description": "Guard-off and guard-on ran on identical cases/seeds." },
+    "trials": { "type": "integer", "minimum": 1 },
+    "attemptedViolationRate": { "$ref": "#/$defs/rate" },
+    "deliveredViolationRate": { "$ref": "#/$defs/rate" },
+    "taskCompletion": { "$ref": "#/$defs/rate" },
+    "falseDenialRate": { "$ref": "#/$defs/rate" },
+    "blockRate": { "$ref": "#/$defs/rate" },
+    "opportunities": { "type": "integer", "minimum": 0 },
+    "fires": { "type": "integer", "minimum": 0 },
+    "recall": { "anyOf": [{ "$ref": "#/$defs/rate" }, { "type": "null" }] },
+    "fpRate": { "anyOf": [{ "$ref": "#/$defs/rate" }, { "type": "null" }] },
+    "fpUcb": { "anyOf": [{ "$ref": "#/$defs/rate" }, { "type": "null" }] },
+    "substitutions": { "type": "integer", "minimum": 0 },
+    "agentSafetyRate": { "$ref": "#/$defs/rate", "description": "B1: the guard-off attempted violation rate; guards are never credited to the agent." },
+    "arm": { "type": "string", "pattern": "^[a-z][a-z0-9-]{0,15}$" },
+    "ruleIds": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true },
+    "lessonIds": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true },
+    "incumbentBundleDigest": { "$ref": "#/$defs/digest" },
+    "ship": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ok", "reasons"],
+      "properties": {
+        "ok": { "type": "boolean" },
+        "reasons": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "holdoutLook": { "type": "boolean", "description": "True when this evaluation consumed a C15 held-out look." },
+    "holdout": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["datasetHash", "plannedLooks", "looksUsed"],
+      "properties": {
+        "datasetHash": { "$ref": "#/$defs/digest" },
+        "plannedLooks": { "type": "integer", "minimum": 1 },
+        "looksUsed": { "type": "integer", "minimum": 1, "description": "Looks at this held-out dataset including this one (global look ledger, all campaigns)." }
+      }
+    }
+  },
+  "allOf": [
+    { "if": { "properties": { "holdoutLook": { "const": true } } }, "then": { "required": ["holdout"] } },
+    { "if": { "properties": { "holdoutLook": { "const": false } } }, "then": { "not": { "required": ["holdout"] } } }
+  ],
+  "$defs": {
+    "digest": { "type": "string", "pattern": "^[a-z0-9]+:[0-9a-f]{16,128}$" },
+    "rate": { "type": "number", "minimum": 0, "maximum": 1 }
+  }
+}
