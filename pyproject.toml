@@ -1,11 +1,19 @@
 [project]
 name = "order-support-evals"
 version = "0.2.0"
-description = "Microsoft ASSERT evals for a tool-using order-support agent, with judge-vs-reference-label calibration"
+description = "Self-improving order-support agent harness: Microsoft ASSERT evals, OES/RRSI experiments, Agent Lightning, SkillOpt-Sleep, Microsoft Agent Framework"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 dependencies = [
+    "agent-framework-core>=1.19,<2",
+    "agent-framework-declarative>=1.1,<2",
+    "agent-framework-github-copilot>=2.0,<3",
+    "agent-framework-openai>=1.14,<2",
+    "agentlightning>=1.0.2,<1.1",
     "assert-ai>=0.3.0,<0.4",
+    "jsonschema>=4.23",
+    "pydantic>=2.11,<2.14",
+    "skillopt>=0.2.0,<0.3",
     "litellm>=1.84.1,<2",
     "python-dotenv>=1.2",
     "pyyaml>=6.0",
@@ -13,22 +21,29 @@ dependencies = [
 
 [project.scripts]
 order-support-evals = "order_support.cli:main"
+ci-lab = "ci_lab.cli:main"
 
 [dependency-groups]
 dev = [
     "pytest>=8",
 ]
 
+[tool.uv]
+# No .NET (design-v2 I3): agent-framework-declarative hard-depends on powerfx (pythonnet + .NET)
+# only to evaluate `=` PowerFx expressions. Our workflow YAML is expression-free, so drop it.
+override-dependencies = ["powerfx; sys_platform == 'never'"]
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/order_support"]
+packages = ["src/order_support", "src/ci_lab"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 markers = [
     "live: requires a running OpenAI-compatible model server (see README)",
+    "copilot: requires GitHub Copilot ambient auth (gh login / GITHUB_TOKEN with copilot-requests)",
 ]
-addopts = "-m 'not live'"
+addopts = "-m 'not live and not copilot' --import-mode=importlib"
