@@ -1,0 +1,65 @@
+import asyncio
+
+import pytest
+
+from ci_lab import cli
+from ci_lab.contracts import (ARM_BRANCH_RE, RolloutKey, arm_branch, op_id, round_experiment_id)
+from ci_lab.testing import Call, FakeChatClient, MemoryJournal, MemoryOutbox
+
+
+def test_ids_are_validated_and_deterministic():
+    exp = round_experiment_id("tone-a1", 3)
+    assert exp == "tone-a1-r03"
+    assert arm_branch(exp, "v1") == "exp/tone-a1-r03/v1"
+    assert ARM_BRANCH_RE.match(arm_branch(exp, "inc"))
+    for bad in ("../x", "V1", "a" * 17, "v1/x"):
+        with pytest.raises(ValueError):
+            arm_branch(exp, bad)
+    with pytest.raises(ValueError):
+        round_experiment_id("Bad_Campaign", 1)
+    assert op_id("a", 1) == op_id("a", 1) != op_id("a", 2)
+    key = RolloutKey("e", "v1", "c01", 0)
+    assert key.rollout_id == RolloutKey("e", "v1", "c01", 0, attempt=1).rollout_id
+    assert key.rollout_id != RolloutKey("e", "v1", "c01", 1).rollout_id
+
+
+def test_fake_client_drives_a_real_maf_tool_loop():
+    from agent_framework import Agent
+
+    seen = []
+
+    def lookup(order_id: str) -> str:
+        """Look up an order."""
+        seen.append(order_id)
+        return "shipped"
+
+    client = FakeChatClient([[Call("lookup", {"order_id": "NW-1"})], "It shipped."])
+    agent = Agent(client=client, instructions="sys", tools=[lookup])
+    result = asyncio.run(agent.run("where is NW-1?"))
+    assert seen == ["NW-1"]
+    assert result.text == "It shipped."
+    last_msgs, _ = client.requests[-1]
+    assert any(c.type == "function_result" for m in last_msgs for c in m.contents)
+
+
+def test_memory_outbox_and_journal_dedupe():
+    box = MemoryOutbox()
+    assert box.run_once("op", lambda: 1) == 1
+    assert box.run_once("op", lambda: 2) == 1
+    assert box.run_once("op2", lambda: 3, reconcile=lambda: "found") == "found"
+    assert box.calls == ["op"]
+    j = MemoryJournal()
+    k = RolloutKey("e", "v", "c")
+    j.start(k, {"x": 1})
+    j.event(k, "reward", {"value": 1.0}, event_id="a")
+    j.event(k, "reward", {"value": 9.0}, event_id="a")
+    assert [e["data"]["value"] for e in j.events(k)] == [1.0]
+
+
+def test_no_dotnet_bridge_installed():
+    report = cli.doctor()
+    assert report["no_dotnet"], report["dotnet_bridges"]
+
+
+def test_cli_doctor_runs():
+    assert cli.main(["doctor"]) == 0
