@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import shutil
+import warnings
 
 import pytest
 import yaml
@@ -9,9 +10,11 @@ from ci_lab.meta.spec_loader import (
     AGENTS,
     SPECS_DIR,
     SpecError,
+    default_builder,
     load_manifest,
     load_spec,
     loader_builder,
+    manifest_allowed_models,
 )
 
 EXPECTED = {
@@ -107,3 +110,46 @@ def test_loader_builder_passes_only_accepted_kwargs():
     loader_builder(lambda spec_path, **kw: loose.update(kw))(spec, client="c", bindings=bindings,
                                                              loop_should_continue=print, loop_next_message=print)
     assert {"loop_should_continue", "loop_next_message", "middleware", "runtime"} <= set(loose)
+
+
+def test_loader_builder_passes_allowed_models_when_accepted():
+    seen = {}
+
+    def build_agent(spec_path, *, client, bindings, runtime="prompt", allowed_models, allowed_providers=()):
+        seen.update(allowed_models=allowed_models, allowed_providers=allowed_providers)
+        return "agent"
+
+    spec = load_spec("critic")
+    bindings = {t: (lambda: "x") for t in spec.tools}
+    loader_builder(build_agent)(spec, client="c", bindings=bindings)
+    assert seen == {"allowed_models": manifest_allowed_models(), "allowed_providers": ("GitHubCopilot",)}
+    loader_builder(build_agent, allowed_models=["m1"])(spec, client="c", bindings=bindings)
+    assert seen["allowed_models"] == ("m1",)
+
+
+def test_manifest_allowlist_covers_every_spec():
+    allowed = manifest_allowed_models()
+    assert allowed and all(load_spec(k).model in allowed for k in AGENTS)
+
+
+@pytest.mark.parametrize("key", sorted(EXPECTED))
+def test_default_builder_validates_via_maf_without_warnings(key):
+    from ci_lab.testing import FakeChatClient
+
+    spec = load_spec(key)
+    bindings = {t: (lambda: "x") for t in spec.tools}
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", RuntimeWarning)
+        agent = default_builder()(spec, client=FakeChatClient(), bindings=bindings,
+                                  loop_should_continue=lambda **_: False, loop_next_message=lambda **_: "x")
+    assert agent.additional_properties["ci_lab"]["model"] == spec.model
+    assert len(agent.additional_properties["ci_lab"]["spec_digest"]) == 64
+
+
+def test_default_builder_rejects_models_outside_the_allowlist():
+    from ci_lab.testing import FakeChatClient
+
+    spec = load_spec("critic")
+    with pytest.raises(SpecError, match="allowlist"):
+        default_builder(allowed_models=["gpt-5-mini"])(spec, client=FakeChatClient(),
+                                                       bindings={t: (lambda: "x") for t in spec.tools})

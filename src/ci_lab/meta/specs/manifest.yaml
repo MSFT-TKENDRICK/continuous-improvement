@@ -5,6 +5,7 @@
 version: 1
 runtime: harness
 model: claude-sonnet-4.5
+allowed_models: [claude-sonnet-4.5]  # model allowlist, enforced via ci_lab.maf.specs
 harness:
   disable_todo: true
   disable_mode: true

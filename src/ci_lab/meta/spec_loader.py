@@ -11,8 +11,9 @@ top-level keys, so it is popped before validation):
 
 The agents run as MAF harness agents (``runtime: harness`` in ``manifest.yaml``). A builder
 (:class:`AgentBuilder`) turns a spec + bound tool functions into a runnable agent; the default
-prefers ``ci_lab.maf.loader.build_agent(..., runtime="harness")`` and falls back to
-:func:`harness_builder` (``agent_framework.create_harness_agent``).
+(:func:`validated_harness_builder`) validates the spec with ``ci_lab.maf.specs`` against the
+manifest's ``allowed_models`` and builds with :func:`harness_builder`
+(``agent_framework.create_harness_agent``).
 """
 
 from __future__ import annotations
@@ -38,6 +39,8 @@ __all__ = [
     "load_manifest",
     "load_spec",
     "loader_builder",
+    "manifest_allowed_models",
+    "validated_harness_builder",
 ]
 
 SPECS_DIR = Path(__file__).resolve().parent / "specs"
@@ -225,19 +228,32 @@ def harness_builder(spec: MetaAgentSpec, *, client: Any, bindings: Mapping[str, 
                                     tools=[bindings[t] for t in spec.tools], middleware=list(middleware), **kwargs)
 
 
-def loader_builder(build_agent: Callable[..., Any]) -> AgentBuilder:
-    """Adapt ``ci_lab.maf.loader.build_agent(spec_path, client=, bindings=, runtime="harness", ...)``.
+def manifest_allowed_models(manifest: Mapping[str, Any] | None = None) -> tuple[str, ...]:
+    """Model allowlist for the meta agents: manifest ``allowed_models`` (else its ``model``)."""
+    manifest = manifest if manifest is not None else load_manifest()
+    models = manifest.get("allowed_models") or ([manifest["model"]] if manifest.get("model") else [])
+    return tuple(str(m) for m in models)
+
+
+def loader_builder(build_agent: Callable[..., Any], *,
+                   allowed_models: Sequence[str] | None = None) -> AgentBuilder:
+    """Adapt ``ci_lab.maf.loader.build_agent(spec_path, client=, bindings=, runtime="harness",
+    allowed_models=, ...)``.
 
     Only keyword arguments the loader accepts are passed (it must honor ``x-ci``).
+    ``allowed_models`` defaults to :func:`manifest_allowed_models` from the manifest.
     """
     params = inspect.signature(build_agent).parameters
     open_kwargs = any(p.kind is inspect.Parameter.VAR_KEYWORD for p in params.values())
+    models = tuple(allowed_models) if allowed_models is not None else None
 
     def build(spec: MetaAgentSpec, *, client: Any, bindings: Mapping[str, Callable[..., Any]],
               middleware: Sequence[Any] = (), loop_should_continue: Callable[..., Any] | None = None,
               loop_next_message: Callable[..., Any] | None = None) -> Any:
         extra = {"middleware": list(middleware), "loop_should_continue": loop_should_continue,
-                 "loop_next_message": loop_next_message}
+                 "loop_next_message": loop_next_message,
+                 "allowed_models": models if models is not None else manifest_allowed_models(),
+                 "allowed_providers": (spec.provider,) if spec.provider else None}
         kwargs = {k: v for k, v in extra.items() if v is not None and (open_kwargs or k in params)}
         return build_agent(spec.path, client=client, bindings={t: bindings[t] for t in spec.tools},
                            runtime=spec.runtime, **kwargs)
@@ -245,23 +261,48 @@ def loader_builder(build_agent: Callable[..., Any]) -> AgentBuilder:
     return build
 
 
-def default_builder() -> AgentBuilder:
-    """``ci_lab.maf.loader`` when present (built in parallel, M2); else :func:`harness_builder`.
+def validated_harness_builder(*, allowed_models: Sequence[str] | None = None) -> AgentBuilder:
+    """Validate the spec with ``ci_lab.maf.specs`` (model allowlist, providers, bindings,
+    expressions), then build with :func:`harness_builder`.
 
-    A loader build error falls back to the local builder (building has no side effects).
+    ``ci_lab.maf.loader.build_agent`` cannot build meta specs directly: its ``x-ci`` schema is
+    strict (no ``terminal_tool``/``purpose``/``documents``) and its harness path has no
+    terminal-submit nudge loop. A disallowed spec raises :class:`SpecError` (no fallback).
     """
-    try:
-        from ci_lab.maf.loader import build_agent  # type: ignore[import-not-found]
-    except Exception:  # noqa: BLE001
-        return harness_builder
-    via_loader = loader_builder(build_agent)
+    from ci_lab.maf.specs import SpecError as MafSpecError
+    from ci_lab.maf.specs import parse_agent_spec
 
-    def build(spec: MetaAgentSpec, **kwargs: Any) -> Any:
+    def build(spec: MetaAgentSpec, *, client: Any, bindings: Mapping[str, Callable[..., Any]],
+              middleware: Sequence[Any] = (), loop_should_continue: Callable[..., Any] | None = None,
+              loop_next_message: Callable[..., Any] | None = None) -> Any:
+        models = tuple(allowed_models) if allowed_models is not None else manifest_allowed_models()
+        doc = yaml.safe_load(spec.path.read_text(encoding="utf-8")) or {}
+        doc.pop("x-ci", None)
+        doc["instructions"] = spec.instructions
         try:
-            return via_loader(spec, **kwargs)
-        except Exception as exc:  # noqa: BLE001
-            warnings.warn(f"ci_lab.maf.loader could not build {spec.key} ({exc}); using local harness builder",
-                          RuntimeWarning, stacklevel=2)
-            return harness_builder(spec, **kwargs)
+            loaded = parse_agent_spec(doc, base_dir=spec.path.parent, allowed_models=models,
+                                      allowed_providers=(spec.provider,) if spec.provider else (),
+                                      allowed_bindings=spec.tools)
+        except MafSpecError as exc:
+            raise SpecError(f"{spec.path.name}: {exc}") from exc
+        agent = harness_builder(spec, client=client, bindings=bindings, middleware=middleware,
+                                loop_should_continue=loop_should_continue, loop_next_message=loop_next_message)
+        props = getattr(agent, "additional_properties", None)
+        if isinstance(props, dict):
+            props["ci_lab"] = {"spec_digest": loaded.spec.digest(), "runtime": spec.runtime,
+                               "model": loaded.spec.model.id, "provider": loaded.spec.model.provider}
+        return agent
 
     return build
+
+
+def default_builder(*, allowed_models: Sequence[str] | None = None) -> AgentBuilder:
+    """:func:`validated_harness_builder` when ``ci_lab.maf`` is importable, else :func:`harness_builder`.
+
+    ``allowed_models`` defaults to the manifest allowlist (:func:`manifest_allowed_models`).
+    """
+    try:
+        import ci_lab.maf.specs  # noqa: F401
+    except ImportError:  # pragma: no cover - maf is a hard dependency today
+        return harness_builder
+    return validated_harness_builder(allowed_models=allowed_models)
