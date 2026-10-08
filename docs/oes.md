@@ -112,6 +112,17 @@ sleep_envelope(night, incumbent=, candidate=, incumbent_commit=, skillopt_versio
 `Envelope.from_dict(doc).to_dict() == doc` holds for every builder output (pydantic models in
 `ci_lab.oes.models`).
 
+### Observability
+
+Each builder records its decision on the caller's current OTel span, for example the
+`ci.round` span (design §12.3):
+- always `oes.experiment_id` and `oes.decision`;
+- `ci.campaign_id` and `rrsi.round` (rrsi envelopes) or `sleep.night` (sleep envelopes);
+- `oes.variant`, only when something is shipped.
+
+Without a recording span (no `ci_lab.telemetry.setup`) this is a no-op. The builders never
+create a span or install a tracer provider.
+
 ## Hash lock
 
 `contentHash = "sha256:" + sha256(canonical_json(envelope without contentHash))`.

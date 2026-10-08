@@ -3,7 +3,9 @@
 Every builder takes contract types (``EvalResult``/``TaskScore``/``EvaluatorPin``/
 ``ArmResult``) plus already-computed statistics (delta, selection trace, confirm
 stats come from ``ci_lab.rrsi``), does no I/O, and returns a schema-valid, hash-locked
-(``contentHash``) JSON dict. Pass ``exported_at`` for deterministic output.
+(``contentHash``) JSON dict. Pass ``exported_at`` for deterministic output. The decision
+is also recorded as ``oes.experiment_id``/``oes.decision`` (+ campaign/round/night/shipped
+variant) attributes on the caller's current OTel span, if one is recording.
 
 Envelope kinds
 - ``calibration_envelope``: ``<cid>-cal``, A/A repeats of the incumbent.
@@ -21,7 +23,23 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
-from ci_lab.contracts import ARM_RE, CAMPAIGN_RE, ArmResult, EvalResult, EvaluatorPin, TaskScore, round_experiment_id
+from opentelemetry import trace
+
+from ci_lab.contracts import (
+    ARM_RE,
+    ATTR_CAMPAIGN,
+    ATTR_DECISION,
+    ATTR_EXPERIMENT,
+    ATTR_NIGHT,
+    ATTR_ROUND,
+    ATTR_VARIANT,
+    CAMPAIGN_RE,
+    ArmResult,
+    EvalResult,
+    EvaluatorPin,
+    TaskScore,
+    round_experiment_id,
+)
 
 from . import canonical
 from .models import (
@@ -303,11 +321,28 @@ def _data_sources(stats: Mapping[str, ArmStats], results: Mapping[str, EvalResul
              **pin_dict(r.pin)} for v, r in results.items()]
 
 
+def _record_decision(doc: Mapping[str, Any]) -> None:
+    """Annotate the caller's current span (design §12.3); a no-op without a recording span."""
+    span = trace.get_current_span()
+    if not span.is_recording():
+        return
+    rrsi = doc.get("extensions", {}).get(RRSI_EXT, {})
+    sleep = doc.get("extensions", {}).get(SLEEP_EXT, {})
+    shipped = [r["comparison"]["variantId"] for r in doc.get("results", {}).get("metricResults", [])
+               if r.get("decisionImpact") == "supports_ship"]
+    attrs = {ATTR_EXPERIMENT: doc["experiment"]["id"], ATTR_DECISION: doc["decision"].get("outcome"),
+             ATTR_CAMPAIGN: rrsi.get("campaignId"), ATTR_ROUND: rrsi.get("round"), ATTR_NIGHT: sleep.get("night"),
+             ATTR_VARIANT: shipped[0] if shipped else None}
+    span.set_attributes({k: v for k, v in attrs.items() if v is not None})
+
+
 def _finish(env: Envelope) -> dict[str, Any]:
     doc = env.to_dict()
     if "results" in doc:
         doc.setdefault("provenance", {})["resultHash"] = canonical.digest(doc["results"])
-    return canonical.seal(doc)
+    doc = canonical.seal(doc)
+    _record_decision(doc)
+    return doc
 
 
 def _envelope(*, exp: Experiment, design: Design, variants: list[Variant], metrics: list[Metric],
