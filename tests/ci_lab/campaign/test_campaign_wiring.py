@@ -14,6 +14,7 @@ from ci_lab.campaign import records
 from ci_lab.campaign.driver import Campaign
 from ci_lab.campaign.wiring import (
     GitOps,
+    HarnessDomain,
     MetaAgents,
     NetworkPolicyError,
     check_offline_endpoints,
@@ -52,7 +53,10 @@ def make_repo(root: Path) -> Path:
 
 
 class GitDomain:
-    """Scores 0.9 per case when the prompt says to verify identity, else 0.1."""
+    """Scores 0.9 per case when the prompt says to verify identity, else 0.1.
+
+    Like ``OrderSupportDomain``, ``evaluate`` takes the harness directory (not the repo-root slot)
+    and labels results with its own content hash; ``HarnessDomain`` maps both."""
 
     name = "git-stub"
     surface_globs = ("harness/**",)
@@ -60,19 +64,26 @@ class GitDomain:
     component_globs: ClassVar[dict[str, tuple[str, ...]]] = {"prompt": ("harness/prompts/*.md",),
                                                              "skill": ("harness/skills/**",)}
 
+    def __init__(self) -> None:
+        self.harness_dirs: list[Path] = []
+
     def splits(self):
         return {"evolve": ("c1", "c2", "c3", "c4"), "heldout": ("h1", "h2")}
 
     async def evaluate(self, harness_dir: Path, split: str, k: int, *, experiment_id: str,
                        variant: str) -> EvalResult:
-        text = (Path(harness_dir) / PROMPT).read_text(encoding="utf-8")
+        from ci_lab.domain.order_support import tree_hash
+
+        self.harness_dirs.append(Path(harness_dir))
+        text = (Path(harness_dir) / "prompts" / "system.md").read_text(encoding="utf-8")
         score = 0.9 if "verify identity" in text else 0.1
-        tree = git(Path(harness_dir), "rev-parse", "HEAD:harness").strip()
-        return EvalResult(tree, split, EvaluatorPin("stub-evaluator", "stub-judge", "fake"),  # type: ignore[arg-type]
+        return EvalResult(tree_hash(Path(harness_dir)), split,  # type: ignore[arg-type]
+                          EvaluatorPin("stub-evaluator", "stub-judge", "fake"),
                           [TaskScore(c, t, "stub", score, tokens_in=5) for c in self.splits()[split]
                            for t in range(k)])
 
     def failures(self, result: EvalResult) -> list[FailureRecord]:
+        assert result.harness_tree.startswith("sha256:"), "failures() must see the domain's own tree label"
         return [FailureRecord(s.case_id, s.suite, "low_score", (), {"score": s.score or 0.0})
                 for s in result.scores if (s.score or 0.0) < 0.5]
 
@@ -158,9 +169,11 @@ def test_gitops_slots_trees_and_incumbent(tmp_path: Path) -> None:
 def test_offline_round_with_meta_agents(tmp_path: Path, no_offline_env: None, no_remote_network: list[Any]) -> None:
     repo = make_repo(tmp_path / "repo")
     clients = ScriptedClients()
+    domain = GitDomain()
     deps = wired_deps("offline", run_root=tmp_path / "runs", ledger_dir=tmp_path / "experiments", repo_root=repo,
-                      domain=GitDomain(), client_factory=clients, wt_root=tmp_path / "wt", schedule=one_agent_arm)
+                      domain=domain, client_factory=clients, wt_root=tmp_path / "wt", schedule=one_agent_arm)
     assert isinstance(deps.make_agent, MetaAgents) and deps.publisher.dry_run
+    assert isinstance(deps.domain, HarnessDomain) and deps.domain.inner is domain
     assert deps.strategy_kwargs["domain"] is deps.domain
     camp = Campaign.new(CID, "offline", {"arms": 1, "aa_repeats": 2, "max_rounds": 1}, deps=deps,
                         run_root=tmp_path / "runs")
@@ -180,8 +193,93 @@ def test_offline_round_with_meta_agents(tmp_path: Path, no_offline_env: None, no
     assert {p for _, _, p in clients.calls} == {"analyst", "proposer", "critic"}
     assert {pr for pr, _, _ in clients.calls} == {Profile.OFFLINE}
     assert no_remote_network == []
+    assert domain.harness_dirs and all(d.name == "harness" and (d / "prompts").is_dir()
+                                       for d in domain.harness_dirs)
     publish = [json.loads(line) for line in (tmp_path / "runs" / "publish-calls.jsonl").read_text().splitlines()]
     assert publish  # dry-run journal only
+
+
+class RepoRootDomain(GitDomain):
+    """``OrderSupportDomain``-shaped layout: the harness lives at ``src/order_support/harness``."""
+
+    surface_globs = ("src/order_support/harness/**",)
+    component_globs: ClassVar[dict[str, tuple[str, ...]]] = {
+        "prompt": ("src/order_support/harness/prompts/*.md",)}
+
+    async def evaluate(self, harness_dir: Path, split: str, k: int, *, experiment_id: str,
+                       variant: str) -> EvalResult:
+        assert (Path(harness_dir) / "agent.yaml").is_file(), f"{harness_dir} is not the harness directory"
+        return await super().evaluate(harness_dir, split, k, experiment_id=experiment_id, variant=variant)
+
+
+def test_repo_root_slot_evaluates_the_harness_subdir(tmp_path: Path) -> None:
+    harness = "src/order_support/harness"
+    files = {f"{harness}/agent.yaml": "name: order-support\n", f"{harness}/prompts/system.md": NEW_PROMPT,
+             "README.md": "repo\n"}
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    git(repo, "init", "-q")
+    for key, value in (("user.name", "test"), ("user.email", "test@example.com"), ("commit.gpgsign", "false"),
+                       ("core.autocrlf", "false")):
+        git(repo, "config", key, value)
+    for rel, text in files.items():
+        (repo / rel).parent.mkdir(parents=True, exist_ok=True)
+        (repo / rel).write_text(text, encoding="utf-8", newline="\n")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "base")
+    repo = repo.resolve()
+
+    inner = RepoRootDomain()
+    deps = wired_deps("offline", run_root=tmp_path / "runs", ledger_dir=tmp_path / "experiments", repo_root=repo,
+                      domain=inner, client_factory=ScriptedClients(), wt_root=tmp_path / "wt")
+    head, base_tree = deps.resolve_incumbent()
+    slot = deps.provision_slot(f"{CID}-r01", "v1", head)
+    assert (slot / harness / "agent.yaml").is_file() and not (slot / "agent.yaml").exists()
+
+    result = asyncio.run(deps.domain.evaluate(slot, "evolve", 1, experiment_id=f"{CID}-r01", variant="v1"))
+    assert inner.harness_dirs == [slot / harness]
+    assert result.harness_tree == deps.harness_tree(slot) == base_tree  # agrees with ArmResult.harness_tree
+    assert [s.score for s in result.scores] == [0.9] * 4
+    assert deps.domain.failures(result) == []  # failures() sees the inner domain's own label
+
+    (slot / harness / "prompts" / "system.md").write_text(BASE_PROMPT, encoding="utf-8")  # dirty: no git label
+    dirty = asyncio.run(deps.domain.evaluate(slot, "evolve", 1, experiment_id=f"{CID}-r01", variant="v1"))
+    assert dirty.harness_tree.startswith("sha256:") and len(deps.domain.failures(dirty)) == 4
+
+    with pytest.raises(FileNotFoundError, match="no harness directory"):
+        asyncio.run(deps.domain.evaluate(tmp_path / "runs", "evolve", 1, experiment_id=f"{CID}-r01", variant="v1"))
+
+
+def test_order_support_domain_gets_harness_dir_env(tmp_path: Path) -> None:
+    import contextlib
+
+    from ci_lab.domain.order_support import (
+        HARNESS_ROOT,
+        CaseOutcome,
+        OrderSupportDomain,
+        TestCase,
+        stable_case_id,
+    )
+
+    seen: list[tuple[Path, str | None]] = []
+
+    async def runner(case, *, harness_dir, key, env):  # type: ignore[no-untyped-def]
+        seen.append((Path(harness_dir), env.get("ORDER_SUPPORT_HARNESS_DIR")))
+        return CaseOutcome(verdict={"policy_violation": False})
+
+    row = {"type": "prompt", "behavior": "refund", "seed": {"title": "t", "description": "d"}}
+    case = TestCase(stable_case_id("order_support_refund_authorization", row), "order_support_refund_authorization",
+                    "refund", "prompt", row, tmp_path / "eval_config.yaml")
+    inner = OrderSupportDomain(cases=[case], runner=runner, work_dir=tmp_path / "work", use_default_oracle=False,
+                               scope_factory=lambda key: contextlib.nullcontext(), heldout_fraction=0.0,
+                               ood_fraction=0.0)
+    slot = tmp_path / "slot"
+    (slot / HARNESS_ROOT).mkdir(parents=True)
+    (slot / HARNESS_ROOT / "agent.yaml").write_text("name: x\n", encoding="utf-8")
+    wrapped = HarnessDomain(inner, harness_root(OrderSupportDomain))  # type: ignore[arg-type]
+    split = next(name for name, ids in wrapped.splits().items() if ids)
+    asyncio.run(wrapped.evaluate(slot, split, 1, experiment_id=f"{CID}-r01", variant="v1"))
+    assert seen and all(d == slot / HARNESS_ROOT and env == str(slot / HARNESS_ROOT) for d, env in seen)
 
 
 def test_load_deps_copilot_uses_copilot_chat_clients(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

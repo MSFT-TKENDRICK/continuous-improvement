@@ -3,7 +3,9 @@
 ========================  ===========================================================
 field                     wiring
 ========================  ===========================================================
-domain                    :class:`ci_lab.domain.order_support.OrderSupportDomain`
+domain                    :class:`ci_lab.domain.order_support.OrderSupportDomain` behind
+                          :class:`HarnessDomain` (slots are repo checkouts; ``evaluate`` gets
+                          ``<slot>/<harness root>`` and results carry the git harness tree)
 make_agent / critique     :class:`MetaAgents` — ``ci_lab.meta.run`` analyst/proposer/critic
                           over ``client_factory`` (``providers.factory.make_chat_client``)
 provision_slot ...        :class:`GitOps` — ``ci_lab.gitops.slots.SlotPool`` per campaign;
@@ -31,12 +33,20 @@ from urllib.parse import urlsplit
 from ci_lab.campaign import records
 from ci_lab.campaign.deps import CampaignDeps
 from ci_lab.campaign.local import FileLedger, FileOutbox
-from ci_lab.contracts import ArmContext, CriticVerdict, Domain, Edit, Profile
+from ci_lab.contracts import (
+    ArmContext,
+    CriticVerdict,
+    Domain,
+    Edit,
+    EvalResult,
+    FailureRecord,
+    Profile,
+)
+from ci_lab.domain.layout import harness_root
 
 META_DIR = "meta"  # meta-agent run dir inside an arm/round dir (its proposal.json is not the arm's)
 ANALYST_DIR = "analyst"
 OFFLINE_ENDPOINT_ENVS = ("OPENAI_API_BASE", "OPENAI_BASE_URL", "AGL_OPENAI_BASE_URL")
-_GLOB_CHARS = re.compile(r"[*?\[]")
 _EID_RE = re.compile(r"^(?P<cid>.+)-(?:r\d{2}|cal|confirm)$")  # round / calibration / confirm experiment ids
 
 ClientFactory = Callable[..., Any]
@@ -72,19 +82,57 @@ def check_loopback(name: str, url: str | None) -> None:
                                  f"not {host or url!r}")
 
 
-def harness_root(domain: Domain) -> str:
-    """Directory prefix shared by the domain's surface globs (the harness tree, design §3)."""
-    roots = set()
-    for glob in domain.surface_globs:
-        parts = []
-        for part in glob.split("/"):
-            if _GLOB_CHARS.search(part):
-                break
-            parts.append(part)
-        roots.add("/".join(parts))
-    if len(roots) != 1:
-        raise ValueError(f"surface globs {list(domain.surface_globs)} do not share one harness root")
-    return roots.pop()
+class HarnessDomain:
+    """The campaign's view of a :class:`~ci_lab.contracts.Domain` over repo-root slot worktrees.
+
+    Slots (``GitOps.provision_slot``) and GEPA scratch copies are full repository checkouts,
+    but ``Domain.evaluate`` takes the harness directory. ``evaluate(worktree, ...)`` runs the
+    inner domain on ``worktree/<harness>`` and, for a clean checkout rooted at ``worktree``,
+    labels the result with the git harness tree (``tree_of``, i.e. ``GitOps.harness_tree``) so
+    ``EvalResult.harness_tree`` agrees with ``ArmResult.harness_tree``. Everything else is
+    delegated unchanged.
+    """
+
+    def __init__(self, inner: Domain, harness: str, tree_of: Callable[[Path], str | None] | None = None) -> None:
+        self.inner = inner
+        self.harness = harness
+        self.tree_of = tree_of
+        self.name = inner.name
+        self.surface_globs = inner.surface_globs
+        self.frozen_globs = inner.frozen_globs
+        self.component_globs = inner.component_globs
+        self._inner_trees: dict[str, str] = {}  # git tree -> the inner domain's own tree label
+
+    def __getattr__(self, name: str) -> Any:
+        if name == "inner":
+            raise AttributeError(name)
+        return getattr(self.inner, name)
+
+    def harness_path(self, worktree: Path) -> Path:
+        path = Path(worktree) / self.harness
+        if not path.is_dir():
+            raise FileNotFoundError(f"{worktree}: no harness directory {self.harness!r}")
+        return path
+
+    def splits(self) -> Mapping[str, Any]:
+        return self.inner.splits()
+
+    async def evaluate(self, harness_dir: Path, split: str, k: int, *, experiment_id: str,
+                       variant: str) -> EvalResult:
+        worktree = Path(harness_dir)
+        tree = self.tree_of(worktree) if self.tree_of is not None else None
+        result = await self.inner.evaluate(self.harness_path(worktree), split, k, experiment_id=experiment_id,
+                                           variant=variant)
+        if tree and tree != result.harness_tree:
+            self._inner_trees[tree] = result.harness_tree
+            result = dataclasses.replace(result, harness_tree=tree)
+        return result
+
+    def failures(self, result: EvalResult) -> list[FailureRecord]:
+        inner_tree = self._inner_trees.get(result.harness_tree)
+        if inner_tree is not None:
+            result = dataclasses.replace(result, harness_tree=inner_tree)
+        return self.inner.failures(result)
 
 
 class GitOps:
@@ -135,6 +183,21 @@ class GitOps:
 
     def harness_tree(self, worktree: Path) -> str:
         return self.tree_of(worktree, self.head_commit(worktree))
+
+    def clean_harness_tree(self, worktree: Path) -> str | None:
+        """:meth:`harness_tree` when ``worktree`` is the root of a checkout whose harness has no
+        uncommitted changes (so the tree names exactly what is on disk), else ``None``."""
+        from ci_lab.gitops import git
+
+        wt = Path(worktree)
+        try:
+            if not os.path.samefile(git.toplevel(wt), wt):
+                return None
+            if git.out(wt, "status", "--porcelain", "--untracked-files=all", "--", self.harness):
+                return None
+            return self.harness_tree(wt)
+        except (git.GitError, OSError, RuntimeError):
+            return None
 
     def resolve_incumbent(self) -> tuple[str, str]:
         from ci_lab.gitops import git
@@ -274,6 +337,8 @@ def wired_deps(profile: Profile | str, *, run_root: Path, ledger_dir: Path | Non
         domain = OrderSupportDomain(repo_root=repo_root, work_dir=run_root / "domain")
     repo_root = Path(repo_root) if repo_root is not None else Path.cwd()
     gitops = GitOps(repo_root, harness_root(domain), wt_root=wt_root, incumbent_ref=incumbent_ref)
+    if not isinstance(domain, HarnessDomain):
+        domain = HarnessDomain(domain, gitops.harness, gitops.clean_harness_tree)
     client_factory = client_factory or default_client_factory(profile)
     agents = MetaAgents(domain, client_factory)
     outbox = FileOutbox(run_root / "outbox.jsonl")
