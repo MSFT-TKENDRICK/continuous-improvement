@@ -43,7 +43,12 @@ rules:
     kind: banned_text
     pattern: "[\"']TRACEPARENT[\"']|\\bTRACEPARENT_ENV\\b"
     include: ["src/**/*.py"]
-    exclude: ["src/ci_lab/obs.py"]
+    exclude:
+      - "src/ci_lab/obs.py"
+      # Long-lived services strip an inherited startup TRACEPARENT from their child env (the D2 intent;
+      # obs.child_env() would inject one). Per-request context travels via obs.carrier() headers.
+      - "src/ci_lab/agl/server.py"
+      - "src/ci_lab/providers/copilot.py"
     message: TRACEPARENT read/written directly instead of through the obs facade.
     fix: Use obs.child_env() for one-shot children, obs.carrier()/obs.use_carrier() per request.
     see: design §12.5 D2

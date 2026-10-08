@@ -94,6 +94,8 @@ rules:
 Current allowlists, each pre-existing and legitimate:
 - `src/order_support/agent.py`: the order-support CLI installs its own provider.
 - `src/order_support/{assert_wrapper,cli}.py`: one-shot entrypoints that may attach `TRACEPARENT`.
+- `src/ci_lab/agl/server.py`, `src/ci_lab/providers/copilot.py` (`obs.no-raw-traceparent-env`): long-lived services strip an inherited `TRACEPARENT` from their child env.
+- `tests/ci_lab/maf/test_no_dotnet.py` (`dotnet.no-powerfx-imports`): asserts `powerfx` is not importable.
 
 ## ci-guardrails (Copilot CLI extension)
 

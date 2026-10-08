@@ -12,6 +12,9 @@ rules:
     kind: banned_import
     modules: [powerfx, pythonnet, clr, clr_loader]
     include: ["**/*.py"]
+    exclude:
+      # Asserts powerfx is NOT importable (importlib.import_module inside pytest.raises).
+      - "tests/ci_lab/maf/test_no_dotnet.py"
     message: .NET bridge imported (powerfx/pythonnet); the harness is Python-only.
     fix: Remove the import; express the logic in Python (see `ci-lab doctor` no_dotnet).
     see: design §0 I3

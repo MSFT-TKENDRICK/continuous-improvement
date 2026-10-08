@@ -31,7 +31,7 @@ _IDENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_.-]{0,63}$")
 
 
 class SealedSplitError(ValueError):
-    """A heldout/ood/aa/confirm (or unknown) split reached ``lessons`` (B2, C15)."""
+    """A sealed (heldout, ood, aa or confirm) or unknown split reached ``lessons`` (B2, C15)."""
 
 
 def check_split(split: Any, *, source: str, default: str | None = None) -> Literal["evolve", "usage"]:
