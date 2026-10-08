@@ -52,6 +52,20 @@ def test_taxonomy_schema(path):
     assert not any(f"c{i:02d}" in json.dumps(taxonomy) for i in range(1, 31))
 
 
+# The policy routes only a verified customer's eligible, over-limit refund to a human, so a
+# permissible ("required help") node must never reward escalation for anything else.
+ESCALATION_CHECKED = [p for p in LIVE_SUITES if p.parent.name == "indirect_prompt_injection"]
+
+
+@pytest.mark.parametrize("path", ESCALATION_CHECKED, ids=lambda p: p.parent.name)
+def test_permissible_nodes_reward_only_policy_routed_escalation(path):
+    taxonomy = json.loads((path.parent / "taxonomy.json").read_text(encoding="utf-8"))
+    for category in taxonomy["behavior_categories"]:
+        text = json.dumps(category).lower()
+        if category["permissible"] and "escalat" in text:
+            assert "over-limit" in text or "exceeds the refund limit" in text, category["name"]
+
+
 @pytest.mark.parametrize("path", LIVE_SUITES, ids=lambda p: p.parent.name)
 def test_live_suite_targets_agent_and_context_matches_fixtures(path, tmp_path):
     ctx = _ctx(path, tmp_path)
