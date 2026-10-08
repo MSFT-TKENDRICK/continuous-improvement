@@ -221,6 +221,9 @@ def cmd_run(args: argparse.Namespace, passthrough: list[str]) -> int:
     if test_set_concurrency is not None:
         set_test_set_concurrency(test_set_concurrency)
     stage_replay_inference_set(config, passthrough)
+    from order_support import assert_wrapper
+
+    assert_wrapper.install()  # join the parent trace; ci.case spans; M11 judge-provider hook
     from assert_ai.cli import cli
 
     try:
