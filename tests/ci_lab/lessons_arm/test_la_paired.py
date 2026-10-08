@@ -159,4 +159,4 @@ def test_arm_guard_workflow_is_expression_free_and_ordered():
         from ci_lab.maf.workflows import assert_expression_free  # type: ignore[import-not-found]
     except ImportError:
         return
-    assert_expression_free(WORKFLOW)
+    assert_expression_free(text)
