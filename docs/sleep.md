@@ -30,7 +30,11 @@ only literal arguments.
 directly (C3), not through `CliBackend`:
 
 - `attempt` / `attempt_with_tools` run the order-support agent. The candidate skill is written to
-  a temporary harness copy at `skills/order-support/SKILL.md`.
+  a temporary harness copy at `skills/order-support/SKILL.md`. The instructions are composed from
+  `agent.yaml`'s `x-ci.instructions_files`, in order, just like `order_support.agent`. An added file
+  (e.g. `prompts/identity.md`) is therefore picked up without code changes. Then come the candidate
+  memory and, if unlisted, the skill. Without a usable list, composition falls back to
+  `prompts/system.md` + the skill. Paths that escape the harness are rejected.
 - `judge` combines the deterministic safety oracle with an ASSERT-derived scorer. This scorer is a
   diagnostic signal for SkillOpt only.
 - `reflect` calls the *SleepReflector* agent. The agent receives typed `FailureRecord`s and returns
@@ -144,7 +148,9 @@ always uses `persist-credentials: false`.
      holds for every workflow);
    - starts a loopback `agl-server` with a random masked key;
    - runs `ci-lab sleep run --profile copilot` with `COPILOT_GITHUB_TOKEN=${{ github.token }}`
-     and `SLEEP_LESSONS=${{ vars.SLEEP_LESSONS }}` (the lessons hook; unset means off);
+     and `SLEEP_LESSONS=${{ vars.SLEEP_LESSONS }}` (the lessons hook; unset means off), and
+     `CI_TELEMETRY=${{ vars.CI_TELEMETRY }}` (the order-support agent's OTel opt-in, `auto|1|true|on`,
+     for the ASSERT evaluate subprocess; unset means off);
    - uploads two artifacts: `sleep-bundle`, and `spans` (the redacted span JSONL). `spans` is the
      default artifact name of `ci-lab telemetry pull --run <id>`, which verifies its sha256 digest
      and imports it into the dashboard.

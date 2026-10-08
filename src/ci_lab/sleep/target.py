@@ -2,7 +2,8 @@
 
 Each candidate (skill, memory) pair is materialized into a temp harness copy at
 ``<root>/<hash>/skills/order-support/SKILL.md`` (+ ``memory.md``); the agent's
-instructions are composed from that copy, so what is evaluated is exactly what would be
+instructions are composed from that copy (in ``agent.yaml``'s ``x-ci.instructions_files``
+order, plus the memory), so what is evaluated is exactly what would be
 committed. The tool loop is MAF's own (real ``order_support.tools`` simulators); every call
 is recorded as a :class:`~ci_lab.contracts.ToolCallRecord` for the safety oracle.
 """
@@ -24,6 +25,7 @@ from ci_lab.contracts import ToolCallRecord, Transcript
 SKILL_REL = Path("skills") / "order-support" / "SKILL.md"
 MEMORY_REL = Path("skills") / "order-support" / "memory.md"
 SYSTEM_REL = Path("prompts") / "system.md"
+AGENT_YAML = "agent.yaml"
 
 
 def _hash(skill: str, memory: str) -> str:
@@ -57,16 +59,59 @@ def default_system_prompt() -> str:
     return data.load_policy() + f"\nToday's date is {data.TODAY.isoformat()}."
 
 
+def instruction_files(harness_dir: Path) -> list[Path]:
+    """Relative instruction files, in order, from ``agent.yaml``'s ``x-ci.instructions_files``.
+
+    Mirrors ``order_support.agent`` so a new file in that list (e.g. ``prompts/identity.md``) is
+    evaluated without code changes here. Falls back to ``system.md`` + the skill when the harness
+    copy has no ``agent.yaml``, no list, or an unreadable one. Entries escaping the harness are
+    rejected, as in production.
+    """
+    default = [SYSTEM_REL, SKILL_REL]
+    spec_path = Path(harness_dir) / AGENT_YAML
+    if not spec_path.is_file():
+        return default
+    import yaml
+
+    try:
+        spec = yaml.safe_load(spec_path.read_text(encoding="utf-8"))
+    except yaml.YAMLError:
+        return default
+    x_ci = spec.get("x-ci") if isinstance(spec, dict) else None
+    files = x_ci.get("instructions_files") if isinstance(x_ci, dict) else None
+    if not isinstance(files, list) or not files:
+        return default
+    root = Path(harness_dir).resolve()
+    out: list[Path] = []
+    for f in files:
+        rel = Path(str(f))
+        if rel.is_absolute() or not (root / rel).resolve().is_relative_to(root):
+            raise ValueError(f"harness instructions file {str(f)!r} escapes {root}")
+        out.append(rel)
+    return out
+
+
 def compose_instructions(harness_dir: Path, system_prompt: str | None = None) -> str:
+    """System prompt, then every other listed instruction file, then the candidate memory.
+
+    ``system_prompt`` replaces ``prompts/system.md``; when neither is available the frozen
+    policy is used. The skill keeps its ``## Skill`` heading; other files are included verbatim.
+    """
+    harness_dir = Path(harness_dir)
     system = system_prompt
     if system is None:
         sys_path = harness_dir / SYSTEM_REL
         system = sys_path.read_text(encoding="utf-8") if sys_path.exists() else default_system_prompt()
     parts = [system.rstrip()]
-    for rel, title in ((SKILL_REL, "Skill: order-support"), (MEMORY_REL, "Memory")):
+    files = [rel for rel in instruction_files(harness_dir) if rel != SYSTEM_REL]
+    if SKILL_REL not in files:
+        files.append(SKILL_REL)
+    for rel in [*files, MEMORY_REL]:
         p = harness_dir / rel
-        if p.exists() and (text := p.read_text(encoding="utf-8").strip()):
-            parts.append(f"## {title}\n\n{text}")
+        if not (p.is_file() and (text := p.read_text(encoding="utf-8").strip())):
+            continue
+        title = {SKILL_REL: "Skill: order-support", MEMORY_REL: "Memory"}.get(rel)
+        parts.append(f"## {title}\n\n{text}" if title else text)
     return "\n\n".join(parts) + "\n"
 
 

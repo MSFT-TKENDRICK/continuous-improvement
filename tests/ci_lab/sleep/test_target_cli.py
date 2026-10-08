@@ -27,6 +27,65 @@ def test_materialize_harness_writes_skill_path(tmp_path):
     assert text.startswith("SYSTEM") and "SKILL A" in text
 
 
+
+def _harness_with_identity(base: Path, files: list[str] | str | None) -> Path:
+    (base / "prompts").mkdir(parents=True)
+    (base / "prompts" / "system.md").write_text("SYSTEM", encoding="utf-8")
+    (base / "prompts" / "identity.md").write_text("IDENTITY-GUIDANCE", encoding="utf-8")
+    if files is not None:
+        listed = files if isinstance(files, str) else "\n".join(f"    - {f}" for f in files)
+        (base / "agent.yaml").write_text(f"kind: Prompt\nname: X\nx-ci:\n  instructions_files:\n{listed}\n",
+                                         encoding="utf-8")
+    return base
+
+
+def test_compose_instructions_follows_agent_yaml_instruction_files(tmp_path):
+    base = _harness_with_identity(tmp_path / "base", ["prompts/system.md", "prompts/identity.md",
+                                                      "skills/order-support/SKILL.md"])
+    d = materialize_harness("SKILL A", "MEM", tmp_path / "root", base)
+    text = compose_instructions(d)
+    assert text.startswith("SYSTEM")
+    order = [text.index(m) for m in ("SYSTEM", "IDENTITY-GUIDANCE", "## Skill: order-support\n\nSKILL A",
+                                     "## Memory\n\nMEM")]
+    assert order == sorted(order)
+    # a system_prompt override replaces system.md but keeps the extra file
+    over = compose_instructions(d, "OVERRIDE")
+    assert over.startswith("OVERRIDE") and "SYSTEM" not in over and "IDENTITY-GUIDANCE" in over
+
+
+def test_compose_instructions_appends_skill_when_unlisted_and_skips_missing(tmp_path):
+    base = _harness_with_identity(tmp_path / "base", ["prompts/identity.md", "prompts/missing.md"])
+    d = materialize_harness("SKILL B", "", tmp_path / "root", base)
+    text = compose_instructions(d)
+    assert text.startswith("SYSTEM") and text.index("IDENTITY-GUIDANCE") < text.index("SKILL B")
+    assert "## Memory" not in text
+
+
+@pytest.mark.parametrize("files", [None, "    {bad", "    7"])
+def test_compose_instructions_falls_back_without_usable_agent_yaml(tmp_path, files):
+    base = _harness_with_identity(tmp_path / "base", None)
+    if files is not None:
+        (base / "agent.yaml").write_text(f"x-ci:\n  instructions_files:\n{files}\n", encoding="utf-8")
+    d = materialize_harness("SKILL C", "", tmp_path / "root", base)
+    text = compose_instructions(d)
+    assert text.startswith("SYSTEM") and "SKILL C" in text and "IDENTITY-GUIDANCE" not in text
+
+
+def test_compose_instructions_rejects_escaping_instruction_file(tmp_path):
+    base = _harness_with_identity(tmp_path / "base", ["../outside.md"])
+    d = materialize_harness("SKILL D", "", tmp_path / "root", base)
+    with pytest.raises(ValueError, match="escapes"):
+        compose_instructions(d)
+
+
+def test_instruction_files_match_repo_agent_yaml():
+    from ci_lab.sleep.target import SKILL_REL, SYSTEM_REL, instruction_files
+
+    harness = Path(__file__).resolve().parents[3] / "src" / "order_support" / "harness"
+    files = instruction_files(harness)
+    assert files[0] == SYSTEM_REL and SKILL_REL in files
+    assert all((harness / f).is_file() for f in files)
+
 def test_maf_run_target_injects_skill_and_records_real_tool_calls(tmp_path):
     clients: list[FakeChatClient] = []
 

@@ -85,6 +85,9 @@ jobs:
           # land in the bundle as experiments/sleep/lessons/<night>.json proposals (draft PR only);
           # they are never adopted or enforced automatically (design §13.3, B8).
           SLEEP_LESSONS: ${{ vars.SLEEP_LESSONS }}
+          # Order-support agent OTel opt-in (auto|1|true|on) for the ASSERT evaluate subprocess, which
+          # runs order_support.agent on the materialized harness. Unset/empty -> off (default).
+          CI_TELEMETRY: ${{ vars.CI_TELEMETRY }}
         run: uv run ci-lab sleep run --profile copilot --out out/sleep-bundle --run-dir "$CI_RUN_DIR" --max-minutes 60
       - name: Redact night spans (replay with `ci-lab telemetry import`)
         if: ${{ !cancelled() }}

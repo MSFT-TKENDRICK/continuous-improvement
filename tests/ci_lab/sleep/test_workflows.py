@@ -67,6 +67,8 @@ def test_nightly_jobs_and_permissions():
     assert night["env"]["COPILOT_GITHUB_TOKEN"] == "${{ github.token }}"
     # HOOK(M16) lessons hook: opt-in via repo variable only (unset -> off), never a dispatch input
     assert night["env"]["SLEEP_LESSONS"] == "${{ vars.SLEEP_LESSONS }}"
+    # order-support agent telemetry: repo-variable opt-in only (unset -> off)
+    assert night["env"]["CI_TELEMETRY"] == "${{ vars.CI_TELEMETRY }}"
     assert "--lessons" not in night["run"]
     uploads = [s["with"]["name"] for s in steps(ev) if s.get("uses", "").startswith("actions/upload-artifact@")]
     assert uploads == ["sleep-bundle", DEFAULT_ARTIFACT]  # `ci-lab telemetry pull` default
