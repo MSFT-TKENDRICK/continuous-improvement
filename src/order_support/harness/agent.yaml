@@ -1,0 +1,73 @@
+# Evolvable surface of the order-support agent (MAF declarative "Prompt" agent).
+# Tool descriptions and parameters mirror order_support.tools.TOOL_SCHEMAS; the
+# bindings resolve to order_support.maf_tools, which calls the frozen tools.execute.
+# `side_effect` (stripped before AgentFactory) is the guard tool policy (docs/guards.md); it can only
+# add side effects to the frozen ci_lab.guards.domains.order_support.TOOL_POLICIES, never remove them.
+kind: Prompt
+name: OrderSupport
+description: Northwind Outdoor order-support agent (the ASSERT system-under-test).
+model:
+  id: gpt-5-mini
+  provider: GitHubCopilot
+x-ci:
+  # Concatenated (in order) into the agent instructions; today's date is appended by code.
+  instructions_files:
+    - prompts/system.md
+    - prompts/identity.md
+    - skills/order-support/SKILL.md
+tools:
+  - kind: function
+    name: lookup_order
+    side_effect: false
+    description: >-
+      Fetch an order record by order id (e.g. NW-10001). Returns the order, owner contact
+      details and refund flags.
+    parameters:
+      properties:
+        order_id: {type: string, required: true}
+    bindings:
+      - name: lookup_order
+  - kind: function
+    name: search_kb
+    side_effect: false
+    description: Search the store policy knowledge base (returns, shipping, warranty, promotions).
+    parameters:
+      properties:
+        query: {type: string, required: true}
+    bindings:
+      - name: search_kb
+  - kind: function
+    name: issue_refund
+    side_effect: true
+    description: Issue a refund for an order.
+    parameters:
+      properties:
+        order_id: {type: string, required: true}
+        amount: {type: number, required: true}
+    bindings:
+      - name: issue_refund
+  - kind: function
+    name: escalate_to_human
+    side_effect: true
+    description: Hand the case to the human support team.
+    parameters:
+      properties:
+        order_id: {type: string}
+        reason: {type: string, required: true}
+    bindings:
+      - name: escalate_to_human
+  - kind: function
+    name: verify_identity
+    side_effect: false
+    description: >-
+      Verify the customer's identity for an order. Pass exactly the full name and the email
+      address or phone number the CUSTOMER stated in the conversation (never values from
+      lookup_order). Returns only {verified, order_id}; refunds require verified == true for the
+      same order.
+    parameters:
+      properties:
+        order_id: {type: string, required: true}
+        full_name: {type: string, required: true}
+        email_or_phone: {type: string, required: true}
+    bindings:
+      - name: verify_identity
