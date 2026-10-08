@@ -68,9 +68,10 @@ MAF's own `gen_ai.*` telemetry is suppressed during `chat()`, because ASSERT wou
   * `oes.experiment_id` and `oes.variant`, taken from `CI_EXPERIMENT_ID`, `CI_VARIANT`, `CI_TRIAL` and `CI_SPLIT`;
   * `agl.rollout_id`, which is `contracts.RolloutKey(...).rollout_id`.
 * Launchers use `assert_wrapper.launch(...)`, or `command()` together with `wrapper_env()` (which is `obs.child_env()` plus those variables).
-* Marked hook points:
-  * `HOOK(M12)`: `telemetry.setup()`;
-  * `HOOK(M11)`: `ci_lab.judge.provider.register()`.
+* Wired hook points:
+  * `HOOK(M11)`: `install()` and `cli.cmd_run` (right after `_load_dotenv()`) call `assert_wrapper.register_judge()`, which wraps `ci_lab.judge.provider.register()`. It is idempotent and makes no network calls.
+  * `HOOK(M12)`: `assert_wrapper.setup_telemetry()` calls `ci_lab.telemetry.setup("order-support", aspire=...)`. It runs only when `CI_TELEMETRY` is `auto`/`1`/`true` (Aspire if a dashboard is running, otherwise JSONL under `$CI_RUN_DIR/telemetry/`) or `on`. It is off by default, runs once, and only warns on failure.
+  * `HOOK(M3)`: guards, sessions, `verify_identity`, `side_effect` flags and paired decision sinks. See `docs/guards.md`, "Installation in order-support". `_with_case_span` also binds the ASSERT case id, so guard decisions are attributed to the case.
 
 ## Known differences from the LiteLLM loop
 

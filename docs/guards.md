@@ -133,7 +133,38 @@ python -m ci_lab.rules.cli rules check src/order_support/harness/guards/order_su
 - Checkpoint resume works through `AgentSession.to_dict/from_dict` (the state mirror). Without a
   session, every `agent.run` is a fresh conversation, so cross-turn verification is lost.
 
-## HOOK(M3) integration (owner: M3, `dev/ordersupport`; M15 does not edit these files)
+## Installation in order-support (HOOK(M3), wired)
+
+The order-support agent wires these hooks in `src/order_support/guarding.py`, which is called from
+`agent._run_turn`:
+
+- **Install once.** Guards are installed once per process with `install_guards(bundle=load_order_support_bundle(...), tool_policies=agent.tool_policies())`.
+  - The cache key is the guards dir plus `CI_GUARDS`, `CI_GUARD_DECISIONS` and `CI_RUN_DIR`.
+  - The bundle comes from `<harness>/guards` when that directory holds `*.yaml`. Otherwise it comes from the packaged seeds, because a `None` bundle fails closed.
+  - The middleware order is `[_TurnGuard, OpenInferenceChatMiddleware, *guards]`.
+- **Default is shadow.** With `CI_GUARDS` unset, the seed rules are shadow, so they record decisions but never block.
+- **One session per conversation.** Each conversation gets one `AgentSession(session_id="os-<uuid>")`.
+  - The key is the bound ASSERT case plus the first user message. A first turn always starts a new session.
+  - Earlier turns are fed by a non-storing `TranscriptProvider`, so the model input is byte-identical to the old text-seeded history, while guard state (`identity_verified`, prior lookups) carries across turns.
+  - Sessions are in-process only. Persisting `session.to_dict()` across processes is not wired.
+- **`verify_identity`.** The frozen `verify_identity` is bound through `tools.TOOLS`, so it gets a TOOL span. It is declared in `harness/agent.yaml`, and `harness/prompts/identity.md` tells the model to call it with the values the customer stated.
+- **`side_effect` flags.**
+  - `agent.yaml` marks `side_effect: true` on `issue_refund` and `escalate_to_human`.
+  - `agent.tool_policies()` ORs these flags with `TOOL_POLICIES`, so a spec can only add side effects.
+  - The key is stripped before the spec reaches MAF's `AgentFactory`.
+- **Decision sinks.**
+  - When `$CI_GUARD_DECISIONS` is set, every decision, `{"kind":"call",...}` record and `{"kind":"opportunity","n":1,"on":"tool_call"|"response",...}` record goes to `<root>/<case_id>/<trial>.jsonl`.
+  - Each line is tagged with `case_id`/`trial`, which is the layout `ci_lab.lessons_arm.paired.read_run` reads. Case ids are sanitized to `[A-Za-z0-9._-]` in the path only.
+  - The case comes from `CI_CASE_ID`/`CI_TRIAL`. If those are unset, it comes from the ASSERT case bound by `assert_wrapper`. Lines with no known case go to `_unattributed.jsonl`.
+  - Without the variable, `$CI_RUN_DIR/guards/decisions.jsonl` gets the decisions only. With neither set, nothing is written.
+- **Seeds.** The chat `seed` option is `ORDER_AGENT_SEED`, or a hash of `CI_CASE_ID|CI_TRIAL`. It never depends on `CI_VARIANT`/`CI_GUARDS`, so the guard-off and guard-on arms see the same randomness.
+
+Known limits:
+- Two concurrent repeats of the same case with the same first message, inside one ASSERT case run, share a session key.
+- `runtime.decisions` and the per-conversation runtime state live for the whole process.
+- The Copilot provider ignores `seed`.
+
+The original hook notes are kept below for reference.
 
 ```text
 # HOOK(M3) src/order_support/agent.py::_run_turn
