@@ -179,6 +179,13 @@ def load_reviewed_tasks(path: Path) -> list[TaskRecord]:
     return out
 
 
+def reviewed_ids(path: Path) -> list[str]:
+    """Sorted ids of the reviewed tasks in ``path`` ([] if absent): the usage watermark."""
+    if not Path(path).exists():
+        return []
+    return sorted(t.id for t in load_reviewed_tasks(Path(path)))
+
+
 def _dataset_split(row: Mapping[str, Any]) -> str | None:
     for key in ("dataset_split", "eval_split", "domain_split"):
         if row.get(key) is not None:

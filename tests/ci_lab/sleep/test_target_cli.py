@@ -117,7 +117,7 @@ def test_cli_fake_run_and_dry_run(sleep_repo, tmp_path, monkeypatch, capsys, h):
     manifest = json.loads((out / "manifest.json").read_text(encoding="utf-8"))
     assert manifest["base_sha"] == h.git(sleep_repo, "rev-parse", "HEAD")
     assert cli.main(["sleep", "dry-run", "--repo", str(sleep_repo)]) == 0
-    assert json.loads(capsys.readouterr().out)["n_tasks"] == 6
+    assert json.loads(capsys.readouterr().out)["order-support"]["n_tasks"] == 6
 
 
 def test_cli_dry_run_rejects_heldout_export(sleep_repo, tmp_path):

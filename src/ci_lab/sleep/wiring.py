@@ -20,6 +20,7 @@ from ci_lab.contracts import PROVIDER_MAPPING, EvalResult, Profile, Transcript, 
 from ci_lab.sleep.fakes import FakeOracle, FakeReflector, cases_from_tasks, fake_run_target, make_fake_assert_eval
 from ci_lab.sleep.harvest import load_reviewed_tasks, read_jsonl_rows
 from ci_lab.sleep.night import SleepConfig, SleepDeps
+from ci_lab.sleep.registry import ORDER_SUPPORT, SkillTarget
 from ci_lab.sleep.target import make_maf_run_target, materialize_harness
 
 HARNESS_REL = Path("src") / "order_support" / "harness"
@@ -115,14 +116,20 @@ def find_oracle() -> Any:
 
 # ------------------------------------------------------------------ ASSERT domain
 
-def make_assert_eval(cfg: SleepConfig, *, k: int = 1) -> Callable[[str, str, str], EvalResult]:
+def make_assert_eval(cfg: SleepConfig, target: SkillTarget = ORDER_SUPPORT, *,
+                     k: int = 1) -> Callable[[str, str, str], EvalResult]:
     factory = _probe([("ci_lab.domain", "get_domain"), ("ci_lab.domain", "order_support_domain"),
                       ("ci_lab.domain.order_support", "OrderSupportDomain")])
     if factory is None:
         raise WiringError("ASSERT domain (ci_lab.domain) not available: the nightly gate cannot run")
-    domain = factory("order_support") if getattr(factory, "__name__", "") == "get_domain" else factory()
+    if getattr(factory, "__name__", "") == "get_domain":
+        domain = factory(target.eval_suite)
+    elif target.eval_suite == "order_support":
+        domain = factory()
+    else:
+        raise WiringError(f"no ASSERT domain for eval suite {target.eval_suite!r}")
     assert cfg.work_dir is not None
-    root = Path(cfg.work_dir) / "assert-harness"
+    root = Path(cfg.work_dir) / "assert-harness" / target.name
 
     def assert_eval(skill: str, memory: str, variant: str) -> EvalResult:
         harness = materialize_harness(skill, memory, root, cfg.repo_root / HARNESS_REL)
@@ -152,10 +159,39 @@ def latest_delta_from(repo: Path) -> Callable[[], float | None]:
 
 # ------------------------------------------------------------------ deps
 
-def fake_deps(cfg: SleepConfig) -> SleepDeps:
-    tasks = load_reviewed_tasks(cfg.tasks_file) if cfg.tasks_file and Path(cfg.tasks_file).exists() else []
+def _fake_target_deps(cfg: SleepConfig, target: SkillTarget) -> SleepDeps:
+    path = cfg.tasks_path(target)
+    tasks = load_reviewed_tasks(path) if path.exists() else []
     return SleepDeps(run_target=fake_run_target, oracle=FakeOracle(), reflector=FakeReflector(),
                      assert_eval=make_fake_assert_eval(cases_from_tasks(tasks)), latest_delta=lambda: 0.05)
+
+
+def fake_deps(cfg: SleepConfig) -> SleepDeps:
+    assert cfg.targets
+    deps = _fake_target_deps(cfg, cfg.targets[0])
+    if len(cfg.targets) > 1:
+        deps.per_target = lambda t: _fake_target_deps(cfg, t)
+    return deps
+
+
+# Production MAF harness (ci_lab.sleep.target) only knows the order-support agent.
+SUPPORTED_OWNERS = {ORDER_SUPPORT.owner_agent: ORDER_SUPPORT.skill_path}
+
+
+def _real_target_deps(profile: Profile, cfg: SleepConfig, target: SkillTarget) -> SleepDeps:
+    if SUPPORTED_OWNERS.get(target.owner_agent) != target.skill_path:
+        raise WiringError(f"skill target {target.name!r}: no run_target harness for owner agent "
+                          f"{target.owner_agent!r} with skill {target.skill_path!r}")
+    assert cfg.work_dir is not None
+    return SleepDeps(
+        run_target=make_maf_run_target(client_factory(profile, "target"),
+                                       harness_root=Path(cfg.work_dir) / "target-harness" / target.name,
+                                       base_harness=cfg.repo_root / HARNESS_REL),
+        oracle=find_oracle(),
+        reflector=_reflector(profile),
+        assert_eval=make_assert_eval(cfg, target),
+        latest_delta=latest_delta_from(cfg.repo_root),
+    )
 
 
 def build_deps(profile: Profile, cfg: SleepConfig, agl_exports: Iterable[Path] = ()) -> SleepDeps:
@@ -163,18 +199,14 @@ def build_deps(profile: Profile, cfg: SleepConfig, agl_exports: Iterable[Path] =
     if profile is Profile.FAKE:
         deps = fake_deps(cfg)
     else:
-        assert cfg.work_dir is not None
-        envelope = _probe([("ci_lab.oes", "build_sleep_envelope"), ("ci_lab.oes.builders", "build_sleep_envelope")])
-        deps = SleepDeps(
-            run_target=make_maf_run_target(client_factory(profile, "target"),
-                                           harness_root=Path(cfg.work_dir) / "target-harness",
-                                           base_harness=cfg.repo_root / HARNESS_REL),
-            oracle=find_oracle(),
-            reflector=_reflector(profile),
-            assert_eval=make_assert_eval(cfg),
-            build_envelope=envelope,
-            latest_delta=latest_delta_from(cfg.repo_root),
-        )
+        assert cfg.targets
+        # fail fast for every target before the night starts
+        per = {t.name: _real_target_deps(profile, cfg, t) for t in cfg.targets}
+        deps = per[cfg.targets[0].name]
+        deps.build_envelope = _probe([("ci_lab.oes", "build_sleep_envelope"),
+                                      ("ci_lab.oes.builders", "build_sleep_envelope")])
+        if len(per) > 1:
+            deps.per_target = lambda t: per[t.name]
     if paths:
         deps.agl_records = lambda: read_jsonl_rows(paths)
     return deps

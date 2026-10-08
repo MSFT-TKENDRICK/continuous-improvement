@@ -17,6 +17,7 @@ from typing import Any
 BUNDLE_FORMAT = "ci_lab.sleep.bundle.v1"
 BUNDLE_FILES = ("candidate.patch", "experiment.json", "results.json")
 MANIFEST = "manifest.json"
+BUNDLE_KINDS = ("sleep", "usage")  # usage = pending-review task proposals only (C22)
 ALLOWED_PREFIXES = ("src/order_support/harness/skills/", "experiments/sleep/")
 
 
@@ -70,7 +71,9 @@ def _dump(obj: Any) -> bytes:
 
 def write_bundle(out_dir: Path, *, patch: str, experiment: Mapping[str, Any], results: Mapping[str, Any],
                  base_sha: str, night_id: str, date: str, accepted: bool, ledger_update: bool,
-                 status: str) -> dict[str, Any]:
+                 status: str, kind: str = "sleep") -> dict[str, Any]:
+    if kind not in BUNDLE_KINDS:
+        raise ValueError(f"unknown bundle kind {kind!r}")
     out_dir.mkdir(parents=True, exist_ok=True)
     for stale in (*BUNDLE_FILES, MANIFEST):
         (out_dir / stale).unlink(missing_ok=True)
@@ -80,7 +83,7 @@ def write_bundle(out_dir: Path, *, patch: str, experiment: Mapping[str, Any], re
     for name, data in blobs.items():
         (out_dir / name).write_bytes(data)
         files[name] = {"sha256": sha256_bytes(data), "bytes": len(data)}
-    manifest = {"format": BUNDLE_FORMAT, "base_sha": base_sha, "night_id": night_id, "date": date,
+    manifest = {"format": BUNDLE_FORMAT, "kind": kind, "base_sha": base_sha, "night_id": night_id, "date": date,
                 "status": status, "accepted": bool(accepted), "ledger_update": bool(ledger_update),
                 "allowed_prefixes": list(ALLOWED_PREFIXES), "files": files}
     (out_dir / MANIFEST).write_bytes(_dump(manifest))

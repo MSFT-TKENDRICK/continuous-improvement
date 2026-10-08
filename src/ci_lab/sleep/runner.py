@@ -24,6 +24,8 @@ from typing import Any
 
 import yaml
 
+from ci_lab import obs
+
 Tool = Callable[..., Any]
 RunWorkflow = Callable[[Path, Mapping[str, Tool], Path], Mapping[str, Any]]
 
@@ -135,9 +137,10 @@ def maf_runner(yaml_path: Path, tools: Mapping[str, Tool], ckpt_dir: Path) -> di
         def _run() -> None:
             asyncio.run(workflow.run("sleep"))
 
-        # run the event loop in its own thread so callers may already be inside a loop
+        # run the event loop in its own thread so callers may already be inside a loop;
+        # wrap_ctx keeps MAF's own spans inside the night trace
         with ThreadPoolExecutor(max_workers=1, thread_name_prefix="sleep-wf") as loop_pool:
-            loop_pool.submit(_run).result()
+            loop_pool.submit(obs.wrap_ctx(_run)).result()
     missing = [a["id"] for a in actions if a["id"] not in results]
     if missing:
         raise WorkflowError(f"workflow did not run steps: {missing}")

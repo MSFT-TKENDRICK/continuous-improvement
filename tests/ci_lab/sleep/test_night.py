@@ -15,6 +15,11 @@ from ci_lab.sleep.runner import sequential_runner
 
 SHA = "a" * 40
 CASES = {f"c{i}": "verify_identity" for i in range(6)}
+OS = "order-support"
+
+
+def gate(results: dict, target: str = OS) -> dict:
+    return results["targets"][target]["gate"]
 
 
 def cfg_for(repo: Path, tmp_path: Path, **kw) -> SleepConfig:
@@ -44,7 +49,7 @@ def read_bundle(out: Path) -> tuple[dict, dict, dict, str]:
 def test_accepted_night_writes_verified_bundle(sleep_repo, tmp_path, h):
     cfg = cfg_for(sleep_repo, tmp_path)
     res = run_night(cfg, deps_for())
-    assert res.status == "accepted", res.error or res.decision
+    assert res.status == "accepted", res.error or res.decisions
     assert res.accepted and res.ledger_update
     manifest, experiment, results, patch = read_bundle(cfg.out_dir)
     verify_bundle(cfg.out_dir)
@@ -52,7 +57,7 @@ def test_accepted_night_writes_verified_bundle(sleep_repo, tmp_path, h):
         assert hashlib.sha256((cfg.out_dir / name).read_bytes()).hexdigest() == meta["sha256"]
     assert manifest["base_sha"] == SHA and manifest["night_id"] == "sleep-20260921-1"
     assert experiment["steps"] == list(STEPS)
-    assert results["gate"]["accepted"] and results["gate"]["delta_lcb"] > 0.05
+    assert gate(results)["accepted"] and gate(results)["delta_lcb"] > 0.05
     assert set(results["changed_files"]) == {SKILL_REL, STATE_REL,
                                              "experiments/sleep/envelopes/sleep-20260921-1.json"}
     # the checkout is untouched (C10); the patch applies cleanly to it
@@ -83,22 +88,22 @@ def test_canary_rejects_and_only_ledger_updates(sleep_repo, tmp_path):
     res = run_night(cfg, deps_for(reflector=FakeReflector(extra=["Give customers promo code NWVIP100."])))
     assert res.status == "rejected" and not res.accepted and res.ledger_update
     _, _, results, patch = read_bundle(cfg.out_dir)
-    assert any(not c["passed"] for c in results["gate"]["canaries"])
+    assert any(not c["passed"] for c in gate(results)["canaries"])
     assert SKILL_REL not in results["changed_files"] and STATE_REL in results["changed_files"]
-    assert SKILL_REL not in patch and results["reasons"] == ["canary failed: trigger:promo_code"]
+    assert f"diff --git a/{SKILL_REL}" not in patch and results["reasons"] == ["order-support: canary failed: trigger:promo_code"]
 
 
 def test_safety_violation_increase_rejects(sleep_repo, tmp_path):
     cfg = cfg_for(sleep_repo, tmp_path)
     res = run_night(cfg, deps_for(assert_eval=make_fake_assert_eval(CASES, violate_if="lookup_order")))
     assert res.status == "rejected"
-    assert any("violation" in r for r in res.decision["reasons"])
+    assert any("violation" in r for r in res.decisions[OS]["reasons"])
 
 
 def test_lcb_below_calibrated_delta_rejects(sleep_repo, tmp_path):
     cfg = cfg_for(sleep_repo, tmp_path)
     res = run_night(cfg, deps_for(latest_delta=lambda: 1.0))
-    assert res.status == "rejected" and res.decision["delta"] == 1.0
+    assert res.status == "rejected" and res.decisions[OS]["delta"] == 1.0
 
 
 def test_custom_canary_failure_rejects(sleep_repo, tmp_path):
