@@ -1,0 +1,236 @@
+# Scheduled RRSI campaign rounds as OES experiments (design §5, §11). Four jobs, mirroring
+# sleep-nightly's privilege split:
+#   opt_in  - no permissions: no-op with a notice unless repo variable CI_HARNESS_ENABLED is 'true'
+#   gate    - read-only: is a campaign configured (repo var CAMPAIGN_ID or dispatch input)?
+#   round   - read-only + copilot-requests: run N rounds with `--defer-publish`; arm commits travel
+#             as a git bundle and the campaign ledger as an artifact. No write token is present
+#             while the model runs.
+#   publish - write, environment-gated, no model, no uv/third-party code: scripts/campaign_publish.py
+#             (stdlib only) validates the requests, arm diffs (harness surface only) and ledger
+#             artifact, restores the trusted stack from exp-ledger/<cid>, then replays the deferred
+#             requests (arm branches, archive tags, DRAFT stacked PRs). The ledger is committed to
+#             `exp-ledger/<cid>` with a DRAFT PR. Nothing merges itself.
+# The ledger branch is the campaign's memory between runs: each round job overlays
+# experiments/campaigns/<cid> from origin/exp-ledger/<cid> onto the checked-out commit.
+name: campaign-scheduled
+
+on:
+  schedule:
+    - cron: '41 9 * * 1'
+  workflow_dispatch:
+    inputs:
+      cid:
+        description: 'campaign id (default is the repo variable CAMPAIGN_ID)'
+        required: false
+      rounds:
+        description: rounds to run this time
+        required: false
+        default: '1'
+
+concurrency:
+  group: campaign-scheduled
+  cancel-in-progress: false
+
+permissions: {}
+
+jobs:
+  # Opt-in (docs/template.md): the template and every repository created from it run nothing
+  # (scheduled or dispatched) until the repository variable CI_HARNESS_ENABLED is 'true'.
+  opt_in:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    permissions: {}
+    outputs:
+      enabled: ${{ steps.opt_in.outputs.enabled }}
+    steps:
+      - id: opt_in
+        env:
+          CI_HARNESS_ENABLED: ${{ vars.CI_HARNESS_ENABLED }}
+        run: |
+          if [ "$CI_HARNESS_ENABLED" = "true" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice title=CI harness not enabled::$GITHUB_WORKFLOW did nothing. Set the repository variable CI_HARNESS_ENABLED=true to opt in (docs/template.md)."
+          fi
+
+  gate:
+    needs: opt_in
+    if: needs.opt_in.outputs.enabled == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: {}
+    outputs:
+      cid: ${{ steps.gate.outputs.cid }}
+      rounds: ${{ steps.gate.outputs.rounds }}
+    steps:
+      - id: gate
+        env:
+          CID: ${{ inputs.cid || vars.CAMPAIGN_ID }}
+          ROUNDS: ${{ inputs.rounds || vars.CAMPAIGN_ROUNDS || '1' }}
+        run: |
+          if [ -z "$CID" ]; then echo "no campaign configured (set repo variable CAMPAIGN_ID)"; exit 0; fi
+          if ! [[ "$CID" =~ ^[a-z0-9][a-z0-9-]{2,40}$ ]]; then echo "bad campaign id: $CID" >&2; exit 1; fi
+          if ! [[ "$ROUNDS" =~ ^[1-9]$ ]]; then echo "rounds must be 1-9: $ROUNDS" >&2; exit 1; fi
+          echo "cid=$CID" >> "$GITHUB_OUTPUT"
+          echo "rounds=$ROUNDS" >> "$GITHUB_OUTPUT"
+
+  round:
+    needs: gate
+    if: needs.gate.outputs.cid != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    permissions:
+      contents: read
+      copilot-requests: write
+    outputs:
+      deferred: ${{ steps.pack.outputs.deferred }}
+    env:
+      CID: ${{ needs.gate.outputs.cid }}
+      ROUNDS: ${{ needs.gate.outputs.rounds }}
+      REPO: ${{ github.repository }}
+      OUT: ${{ github.workspace }}/out/campaign
+    steps:
+      - name: Run dir
+        run: echo "CI_RUN_DIR=$RUNNER_TEMP/campaign-run" >> "$GITHUB_ENV"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+      # uv.lock is intentionally not committed (it is generated against an internal package proxy);
+      # every pinned dependency also resolves from public PyPI, so `uv sync` works on hosted runners.
+      - run: uv sync
+      - name: Restore campaign ledger from exp-ledger/<cid>
+        run: |
+          git config user.name "ci-lab campaign"
+          git config user.email "ci-lab-campaign@users.noreply.github.com"
+          if git rev-parse -q --verify "refs/remotes/origin/exp-ledger/$CID" > /dev/null; then
+            git checkout "origin/exp-ledger/$CID" -- "experiments/campaigns/$CID" || true
+            git reset -q
+          fi
+      - name: Start agl-server (loopback, random key)
+        run: |
+          key="$(openssl rand -hex 24)"
+          echo "::add-mask::$key"
+          echo "CI_LAB_AGL_KEY=$key" >> "$GITHUB_ENV"
+          echo "CI_LAB_AGL_URL=http://127.0.0.1:4747" >> "$GITHUB_ENV"
+          mkdir -p "$CI_RUN_DIR"
+          CI_LAB_AGL_KEY="$key" nohup uv run python -m agentlightning.server host=127.0.0.1 port=4747 \
+            'key=${oc.env:CI_LAB_AGL_KEY}' hydra.run.dir=. hydra.output_subdir=null \
+            hydra/job_logging=disabled hydra/hydra_logging=disabled > "$CI_RUN_DIR/agl-server.log" 2>&1 &
+          for _ in $(seq 1 60); do
+            curl -fsS http://127.0.0.1:4747/healthz > /dev/null && exit 0
+            sleep 1
+          done
+          echo "agl-server did not become healthy" >&2
+          exit 1
+      - name: Run campaign rounds (publishing deferred)
+        env:
+          COPILOT_GITHUB_TOKEN: ${{ github.token }}
+          CI_TELEMETRY: ${{ vars.CI_TELEMETRY }}
+        run: |
+          mkdir -p "$OUT"
+          common=(--profile copilot --repo "$REPO" --run-dir "$CI_RUN_DIR")
+          uv run ci-lab campaign status "$CID" "${common[@]}" > /dev/null 2>&1 \
+            || uv run ci-lab campaign new "$CID" "${common[@]}"
+          uv run ci-lab campaign calibrate "$CID" "${common[@]}"
+          # `--rounds` is absolute (1..N) and recorded rounds are skipped, so run ROUNDS more.
+          done_rounds="$(uv run ci-lab campaign status "$CID" "${common[@]}" | jq '.rounds | length')"
+          target=$((done_rounds + ROUNDS))
+          # Fail closed if a previous publish stopped half-way: its refs exist but the ledger
+          # branch (advanced only on full success) does not record the round. Re-run that publish job.
+          for r in $(seq $((done_rounds + 1)) "$target"); do
+            eid="$(printf '%s-r%02d' "$CID" "$r")"
+            if [ -n "$(git for-each-ref "refs/remotes/origin/exp/$eid/" "refs/tags/exp-archive/$eid/")" ]; then
+              echo "refs for $eid exist but the ledger does not record it: re-run the failed publish job" >&2
+              exit 1
+            fi
+          done
+          uv run ci-lab campaign run "$CID" "${common[@]}" --rounds "$target" \
+            --defer-publish "$OUT/deferred.jsonl" | tee "$OUT/run.json"
+      - id: pack
+        name: Pack ledger and arm commits
+        if: ${{ !cancelled() }}
+        run: |
+          mkdir -p "$OUT"
+          if [ -d "experiments/campaigns/$CID" ]; then cp -r "experiments/campaigns/$CID" "$OUT/ledger"; fi
+          # Arm branches are exp/<eid>/<arm>; heads named in the deferred requests are pinned under
+          # ci-heads/ in case a branch was cleaned up. Only commits not on the remote are bundled.
+          if [ -s "$OUT/deferred.jsonl" ]; then
+            for sha in $(jq -r '.heads[]' "$OUT/deferred.jsonl" | sort -u); do
+              git update-ref "refs/heads/ci-heads/$sha" "$sha"
+            done
+          fi
+          git bundle create "$OUT/arms.bundle" --branches='exp/*' --branches='ci-heads/*' --not --remotes \
+            2>/dev/null || echo "no new arm commits"
+          if [ -s "$OUT/deferred.jsonl" ]; then echo "deferred=true" >> "$GITHUB_OUTPUT"; fi
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: ${{ !cancelled() }}
+        with:
+          name: campaign-round
+          path: out/campaign/
+          if-no-files-found: ignore
+          retention-days: 14
+
+  publish:
+    needs: [gate, round]
+    if: needs.round.outputs.deferred == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: campaign-publish
+    permissions:
+      contents: write
+      pull-requests: write
+    env:
+      CID: ${{ needs.gate.outputs.cid }}
+      REPO: ${{ github.repository }}
+    steps:
+      - name: Artifact dir
+        run: echo "ART=$RUNNER_TEMP/campaign-round" >> "$GITHUB_ENV"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: campaign-round
+          path: ${{ runner.temp }}/campaign-round
+      # The working tree stays at github.sha: the publish script imports ci_lab code from it.
+      - name: Import arm commits
+        run: |
+          if [ -s "$ART/arms.bundle" ]; then
+            git bundle verify "$ART/arms.bundle"
+            git fetch "$ART/arms.bundle" 'refs/heads/exp/*:refs/heads/exp/*' \
+              'refs/heads/ci-heads/*:refs/ci-heads/*'
+          fi
+      - name: Validate and publish deferred rounds (stdlib only, DRAFT stacked PRs, never merges)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 -I -B scripts/campaign_publish.py --cid "$CID" --repo "$REPO" \
+            --requests "$ART/deferred.jsonl" --ledger "$ART/ledger"
+      - name: Push ledger to exp-ledger/<cid> and open DRAFT ledger PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          branch="exp-ledger/$CID"
+          base="$(git rev-parse -q --verify "refs/remotes/origin/$branch" || git rev-parse HEAD)"
+          export GIT_INDEX_FILE="$RUNNER_TEMP/ledger.index"
+          git read-tree "$base"
+          git add -A "experiments/campaigns/$CID"
+          tree="$(git write-tree)"
+          unset GIT_INDEX_FILE
+          if [ "$tree" != "$(git rev-parse "$base^{tree}")" ]; then
+            commit="$(git -c user.name="ci-lab campaign" -c user.email="ci-lab-campaign@users.noreply.github.com" \
+              commit-tree "$tree" -p "$base" -m "Campaign $CID ledger (run $RUN_ID)")"
+            gh auth setup-git
+            git push origin "$commit:refs/heads/$branch"
+          fi
+          open="$(gh pr list --repo "$REPO" --head "$branch" --state open --json number --jq length)"
+          if [ "$open" = "0" ]; then
+            gh pr create --repo "$REPO" --draft --base main --head "$branch" \
+              --title "Campaign $CID ledger" \
+              --body "OES envelopes, history and stack for campaign \`$CID\` (updated by campaign-scheduled)."
+          fi
