@@ -1,0 +1,47 @@
+# ACS policy for the order-support agent (docs/governance.md). Loaded by
+# ci_lab.governance.policies.load_policy("order_support"); adapters in ci_lab.governance.adapters.
+agent_control_specification_version: 0.4.0-alpha.1
+metadata:
+  name: order_support
+  owner: ci_lab.governance
+policies:
+  tools:
+    type: custom
+    adapter: ci.order_support.tools
+    # refund_limit defaults to order_support.data.REFUND_LIMIT
+  input_screen:
+    type: custom
+    adapter: ci.screen_input
+  redact:
+    type: custom
+    adapter: ci.redact_output
+    pii: true
+annotators:
+  injection: {type: classifier, classifier: injection_markers}
+tools:
+  lookup_order: {type: read, security_labels: [customer_data]}
+  search_kb: {type: read}
+  verify_identity: {type: read, security_labels: [customer_data]}
+  issue_refund: {type: irreversible, security_labels: [payment]}
+  escalate_to_human: {type: reversible}
+intervention_points:
+  input:
+    policy_target: $snap.input.text
+    annotations:
+      injection: {from: $target}
+    policy: {id: input_screen}
+  pre_tool_call:
+    policy_target: $snap.call.arguments
+    tool_name_from: $snap.call.name
+    policy: {id: tools}
+  output:
+    policy_target: $snap.output.text
+    policy: {id: redact}
+approval:
+  default_resolver: file_queue
+  timeout_seconds: 5
+  on_timeout: deny
+  fatigue_threshold: 20
+  fatigue_window_seconds: 3600
+  resolvers:
+    file_queue: {type: file, root: artifacts/governance/approvals}

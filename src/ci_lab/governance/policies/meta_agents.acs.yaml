@@ -1,0 +1,51 @@
+# ACS policy for every other MAF agent (meta-agents, chat, sleep, lessons arm). Loaded by
+# ci_lab.governance.policies.load_policy("meta_agents"). protected_globs must equal
+# ci_lab.tools.paths.PROTECTED_WRITE_GLOBS (asserted by tests).
+agent_control_specification_version: 0.4.0-alpha.1
+metadata:
+  name: meta_agents
+  owner: ci_lab.governance
+policies:
+  tools:
+    type: custom
+    adapter: ci.meta.tools
+    write_tools: [write_file, edit_file, delete_file]
+    path_args: [path]
+    protected_globs:
+      - src/ci_lab/governance/**
+      - src/ci_lab/rules/**
+      - src/ci_lab/guards/**
+      - .github/workflows/**
+      - evals/**
+      - "**/sealed/**"
+      - "**/.lkg/**"
+      - "**/lessons/**"
+  models:
+    type: custom
+    adapter: ci.model_allowlist
+    # mirrors ci_lab/meta/specs/manifest.yaml allowed_models; CI_ALLOWED_MODELS extends it
+    allowed_models: [claude-sonnet-5, claude-sonnet-5.5, claude-opus-5, gpt-5.5]
+  output:
+    type: custom
+    adapter: ci.redact_output
+    pii: false
+annotators:
+  rubric_leak: {type: classifier, classifier: rubric_leak}
+intervention_points:
+  pre_model_call:
+    policy_target: $snap.model
+    policy: {id: models}
+  pre_tool_call:
+    policy_target: $snap.call.arguments
+    policy: {id: tools}
+  output:
+    policy_target: $snap.output.text
+    annotations:
+      rubric_leak: {from: $target}
+    policy: {id: output}
+approval:
+  default_resolver: file_queue
+  timeout_seconds: 5
+  on_timeout: deny
+  resolvers:
+    file_queue: {type: file, root: artifacts/governance/approvals}
