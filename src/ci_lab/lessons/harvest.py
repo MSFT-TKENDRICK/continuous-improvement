@@ -378,3 +378,308 @@ def _is_tool(s: _Span) -> bool:
     return s.kind == "TOOL" or s.attrs.get("gen_ai.operation.name") == "execute_tool"
 
 
+def group_spans(records: Iterable[Mapping[str, Any]]) -> list[tuple[_Span | None, list[_Span]]]:
+    """(case span or None, spans under it) — ungrouped spans fall back to one group per trace."""
+    spans = sorted((s for r in records if (s := _span(r))), key=lambda s: (s.start, s.span_id))
+    by_id = {s.span_id: s for s in spans}
+    groups: dict[str, list[_Span]] = {}
+    cases: dict[str, _Span | None] = {}
+    for s in spans:
+        cur, seen, case = s, set(), None
+        while cur is not None and cur.span_id not in seen:
+            seen.add(cur.span_id)
+            if _is_case(cur):
+                case = cur
+                break
+            cur = by_id.get(cur.parent_id)
+        key = f"case:{case.span_id}" if case else f"trace:{s.trace_id}"
+        cases.setdefault(key, case)
+        if s is not case:
+            groups.setdefault(key, []).append(s)
+    return [(cases[k], groups.get(k, [])) for k in sorted(cases, key=lambda k: (cases[k].start if cases[k] else 0, k))]
+
+
+def transcript_from_span_group(spans: Sequence[_Span], case_id: str) -> dict[str, Any]:
+    """``contracts.Transcript``-shaped dict (same conventions as order_support.oracle)."""
+    agent_ids = {s.span_id for s in spans if s.kind == "AGENT"}
+    roots = [s for s in spans if s.kind == "AGENT" and s.parent_id not in agent_ids]
+    messages: list[dict[str, Any]] = []
+    for r in roots:
+        if (u := r.attrs.get("input.value")) is not None:
+            messages.append({"role": "user", "content": str(u)})
+        if (a := r.attrs.get("output.value")) is not None:
+            messages.append({"role": "assistant", "content": str(a)})
+    calls = []
+    for s in spans:
+        if not _is_tool(s):
+            continue
+        a = s.attrs
+        args = _loads(a.get("input.value", a.get("gen_ai.tool.call.arguments")))
+        earlier = [i for i, r in enumerate(roots) if r.start <= s.start]
+        calls.append({"call_id": s.span_id,
+                      "name": str(a.get("tool.name") or a.get("gen_ai.tool.name") or s.name.removeprefix("tool.")
+                                  .removeprefix("execute_tool ")),
+                      "arguments": args if isinstance(args, Mapping) else {},
+                      "result": _loads(a.get("output.value", a.get("gen_ai.tool.call.result"))),
+                      "turn": earlier[-1] if earlier else 0})
+    return {"case_id": case_id, "messages": messages, "tool_calls": calls}
+
+
+def _transcript_obj(t: Mapping[str, Any]) -> Any:
+    from ci_lab.contracts import ToolCallRecord, Transcript
+
+    return Transcript(case_id=t["case_id"], messages=t["messages"],
+                      tool_calls=[ToolCallRecord(**c) for c in t["tool_calls"]])
+
+
+def _list_attr(v: Any) -> list[str]:
+    if isinstance(v, str):
+        return [x for x in re.split(r"[,\s]+", v) if x]
+    return [str(x) for x in v] if isinstance(v, (list, tuple)) else []
+
+
+def harvest_spans(path: Path, opts: HarvestOptions | None = None, stats: HarvestStats | None = None, *,
+                  source: str = "spans") -> list[Trajectory]:
+    """Span JSONL (file or dir) → one trajectory per ``ci.case`` span (or per trace)."""
+    opts, stats = opts or HarvestOptions(), stats if stats is not None else HarvestStats()
+    records = [r for p in _files(path) for r in read_jsonl(p)]
+    out = []
+    for case, spans in group_spans(records):
+        attrs = case.attrs if case else {}
+        trace_id = case.trace_id if case else (spans[0].trace_id if spans else "")
+        case_id = str(attrs.get("ci.case_id") or trace_id or "case")
+
+        def build(case: _Span | None = case, spans: list[_Span] = spans, attrs: Mapping[str, Any] = attrs,
+                  case_id: str = case_id, trace_id: str = trace_id) -> Trajectory:
+            t = transcript_from_span_group(spans, case_id)
+            rules = _list_attr(attrs.get("ci.oracle_rules") or attrs.get("ci.violations") or ())
+            if opts.oracle is not None:
+                rules += [str(_get(v, "rule_id", "")) for v in opts.oracle.check(_transcript_obj(t))]
+            suite = str(attrs.get("ci.suite") or "")
+            label = opts.labels.get(case_id) or opts.labels.get(trace_id) or attrs.get("ci.human_label")
+            start = case.start if case else (spans[0].start if spans else 0)
+            return make_trajectory(
+                source=source, split=attrs.get("ci.split"), default_split=opts.default_split, case_id=case_id,
+                steps=steps_from_transcript(t["messages"], t["tool_calls"]), family=attrs.get("ci.family"),
+                slice=opts.slice or attrs.get("ci.slice") or time_slice(start) or suite, suite=suite,
+                pin=opts.pin or attrs.get("ci.pin"), trial=attrs.get("ci.trial", 0),
+                passed=_passed(attrs.get("ci.passed"), attrs.get("ci.score"), clean_rule_ids(rules)),
+                oracle_rules=rules, rubric_fails=_list_attr(attrs.get("ci.rubric_fails") or ()),
+                human_label=label, labels=(str(attrs.get("ci.category") or ""),), extra_id=trace_id)
+        if t := _attempt(stats, case_id, build):
+            out.append(t)
+    return out
+
+
+# ---------------------------------------------------------------- AGL journal
+
+def _agl_messages(events: Sequence[Mapping[str, Any]]) -> list[Any] | None:
+    reqs = [e for e in events if e.get("event_type") == "model_request"]
+    if not reqs:
+        return None
+    data = reqs[-1].get("data") or {}
+    req = data.get("request")
+    msgs = req.get("messages") if isinstance(req, Mapping) else req if isinstance(req, list) else data.get("messages")
+    msgs = list(_loads(msgs) or []) if isinstance(_loads(msgs), list) else []
+    resp = data.get("response")
+    if isinstance(resp, Mapping):
+        choices = resp.get("choices")
+        if isinstance(choices, list) and choices and isinstance(choices[0], Mapping):
+            msgs.append({"role": "assistant", **dict(choices[0].get("message") or {})})
+        elif "content" in resp or "tool_calls" in resp:
+            msgs.append({"role": "assistant", **dict(resp)})
+    elif isinstance(resp, str):
+        msgs.append({"role": "assistant", "content": resp})
+    return msgs
+
+
+def harvest_agl(path: Path, opts: HarvestOptions | None = None, stats: HarvestStats | None = None, *,
+                source: str = "agl") -> list[Trajectory]:
+    """``FileRolloutJournal`` dir (``<rollout_id>.jsonl``) → one trajectory per rollout (latest attempt)."""
+    opts, stats = opts or HarvestOptions(), stats if stats is not None else HarvestStats()
+    out = []
+    for f in _files(path):
+        start: dict[str, Any] = {}
+        events: list[dict[str, Any]] = []
+        seen_ids: set[str] = set()
+        finish = None
+        rollout_id = f.stem
+        for rec in read_jsonl(f):
+            rollout_id = str(rec.get("rollout_id") or rollout_id)
+            kind = rec.get("kind")
+            if kind == "start" and not start:
+                start = rec
+            elif kind == "event" and str(rec.get("event_id")) not in seen_ids:
+                seen_ids.add(str(rec.get("event_id")))
+                events.append(rec)
+            elif kind == "finish" and finish is None:
+                finish = rec.get("status")
+        if not start:
+            continue
+
+        def build(start: dict[str, Any] = start, events: list[dict[str, Any]] = events, finish: Any = finish,
+                  rollout_id: str = rollout_id) -> Trajectory:
+            inp = start.get("input") if isinstance(start.get("input"), Mapping) else {}
+            key = start.get("key") if isinstance(start.get("key"), Mapping) else {}
+            case_id = str(inp.get("case_id") or key.get("case_id") or rollout_id)
+            msgs = _agl_messages(events)
+            if msgs is not None:
+                steps = steps_from_chat(msgs)
+            else:
+                b = StepBuilder()
+                if inp.get("messages") or inp.get("prompt") or inp.get("query"):
+                    b.user()
+                for e in events:
+                    d = e.get("data") or {}
+                    if "tool" in str(e.get("event_type")) and d.get("name"):
+                        b.call(str(d["name"]), d.get("arguments") or d.get("args"), d.get("call_id"))
+                        b.result(d.get("call_id") or b.steps[-1].call_id, d.get("result"), str(d["name"]),
+                                 d.get("status"))
+                steps = tuple(b.steps)
+            rules: list[str] = []
+            rubric: list[str] = []
+            suite = str(inp.get("suite") or "")
+            category = str(inp.get("category") or "")
+            score = passed = err = None
+            for e in events:
+                d = e.get("data") or {}
+                et = e.get("event_type")
+                if et in ("ci.score", "reward"):
+                    rules += _list_attr(d.get("rule_ids") or ())
+                    rules += [str(v.get("rule_id")) for v in d.get("violations") or () if isinstance(v, Mapping)]
+                    rubric += _list_attr(d.get("rubric_fails") or ())
+                    suite = str(d.get("suite") or suite)
+                    category = str(d.get("category") or category)
+                    if isinstance(d.get("value"), (int, float)):
+                        score = d["value"]
+                    if isinstance(d.get("passed"), bool):
+                        passed = d["passed"]
+                elif et == "ci.error":
+                    err = d.get("type")
+            if finish == "failed" and err is None:
+                err = "rollout_failed"
+            return make_trajectory(
+                source=source, split=inp.get("split") or inp.get("dataset_split"),
+                default_split=opts.default_split, case_id=case_id, steps=steps, family=inp.get("family"),
+                slice=opts.slice or inp.get("slice") or time_slice(start.get("ts")) or suite, suite=suite,
+                pin=opts.pin or inp.get("pin"), trial=key.get("trial", 0), passed=_passed(passed, score,
+                                                                                         clean_rule_ids(rules)),
+                oracle_rules=rules, rubric_fails=rubric, error_class=err,
+                human_label=opts.labels.get(case_id) or opts.labels.get(rollout_id) or inp.get("human_label"),
+                labels=(category,), extra_id=rollout_id)
+        if t := _attempt(stats, rollout_id, build):
+            out.append(t)
+    return out
+
+
+# ---------------------------------------------------------------- calibrate (human labels)
+
+_PASS_TOOL_USE = {"appropriate", "unnecessary"}
+
+
+def calibrate_rubric_fails(labels: Mapping[str, Any]) -> list[str]:
+    fails = []
+    if labels.get("grounded") is False:
+        fails.append("rubric.grounded")
+    if labels.get("pii_leak") is True:
+        fails.append("rubric.pii_leak")
+    if labels.get("obeyed_injection") is True:
+        fails.append("rubric.obeyed_injection")
+    tu = labels.get("tool_use")
+    if isinstance(tu, str) and tu not in _PASS_TOOL_USE and tu != "ambiguous":
+        fails.append("rubric.tool_use")
+    res = labels.get("resolution")
+    if isinstance(res, int) and not isinstance(res, bool) and res < 2:
+        fails.append("rubric.resolution")
+    return fails
+
+
+def harvest_calibrate(path: Path, opts: HarvestOptions | None = None,
+                      stats: HarvestStats | None = None) -> list[Trajectory]:
+    """Human-labelled dataset YAML (``cases[].observable`` + ``labels``) → trusted trajectories."""
+    import yaml
+
+    opts, stats = opts or HarvestOptions(), stats if stats is not None else HarvestStats()
+    raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    out = []
+    for case in raw.get("cases") or ():
+        def build(case: Mapping[str, Any] = case) -> Trajectory:
+            obs = case.get("observable") or {}
+            conv = list(obs.get("conversation") or ())
+            calls = list(obs.get("tool_calls") or ())
+            b = StepBuilder()
+
+            def emit_calls(after: int | None) -> None:
+                for i, c in enumerate(calls):
+                    if c.get("after_message", len(conv) - 1) == after:
+                        cid = f"c{i}"
+                        b.call(str(c.get("name")), c.get("arguments") or {}, cid)
+                        b.result(cid, c.get("result"), str(c.get("name")))
+
+            for n, m in enumerate(conv):
+                if str(m.get("role")) == "user":
+                    b.user()
+                else:
+                    b.response(m.get("content"))
+                emit_calls(n)
+            if not conv:
+                emit_calls(-1)
+            b.response(obs.get("final_response"))
+            labels = case.get("labels") or {}
+            hp = labels.get("human_pass")
+            label = "good" if hp is True else "bad" if hp is False else None
+            tags = [str(t) for t in case.get("tags") or ()]
+            return make_trajectory(
+                source="calibrate", split=case.get("split") or raw.get("split"), default_split=opts.default_split,
+                case_id=str(case.get("id")), steps=tuple(b.steps), family=case.get("family"),
+                slice=opts.slice or case.get("slice") or "calibrate", pin=opts.pin or raw.get("pin"),
+                passed=hp if isinstance(hp, bool) else None, rubric_fails=calibrate_rubric_fails(labels),
+                human_label=label, labels=(*tags, "injection" if labels.get("obeyed_injection") else ""))
+        if t := _attempt(stats, str(case.get("id")), build):
+            out.append(t)
+    return out
+
+
+# ---------------------------------------------------------------- usage (untrusted)
+
+def _sniff(path: Path) -> str:
+    for p in _files(path):
+        for rec in read_jsonl(p):
+            if "schemaVersion" in rec or "spanId" in rec or "span_id" in rec:
+                return "spans"
+            if rec.get("kind") in ("start", "event", "finish"):
+                return "agl"
+    return "spans"
+
+
+def load_labels(path: Path | None) -> dict[str, str]:
+    """Human labels for usage traces: JSONL ``{id, label: good|bad}``."""
+    if path is None:
+        return {}
+    return {str(r["id"]): str(r["label"]) for r in read_jsonl(path)
+            if r.get("id") and r.get("label") in ("good", "bad")}
+
+
+def harvest_usage(path: Path, opts: HarvestOptions | None = None,
+                  stats: HarvestStats | None = None) -> list[Trajectory]:
+    """Usage traces (spans or AGL journals). Always reduced to typed features (B3); trusted only
+    when a human label exists. Traces from injection suites/rules are flagged and kept out of mining."""
+    fmt = _sniff(path)
+    fn = harvest_spans if fmt == "spans" else harvest_agl
+    return fn(path, opts, stats, source="usage")
+
+
+def harvest(source: str, path: Path, opts: HarvestOptions | None = None,
+            stats: HarvestStats | None = None) -> list[Trajectory]:
+    if source not in SOURCES:
+        raise ValueError(f"unknown source {source!r}; expected one of {SOURCES}")
+    fn = {"assert": harvest_assert, "spans": harvest_spans, "agl": harvest_agl, "usage": harvest_usage,
+          "calibrate": harvest_calibrate}[source]
+    return fn(path, opts, stats)
+
+
+__all__ = [
+    "INJECTION_SUITES", "SOURCES", "HarvestOptions", "HarvestStats", "family_of", "from_transcript", "harvest",
+    "harvest_agl", "harvest_assert", "harvest_calibrate", "harvest_spans", "harvest_usage", "load_labels",
+    "make_trajectory", "steps_from_chat", "steps_from_transcript", "time_slice",
+]
