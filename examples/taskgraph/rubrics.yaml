@@ -10,21 +10,21 @@ rubrics:
     criteria:
       - {id: b-head, description: Starts with a Brief heading, measure: deterministic, threshold: 1.0, required: true,
          check: {kind: regex, pattern: "^# Brief$", independent: true}}
-      - {id: b-orders, description: Names two order ids, measure: deterministic, threshold: 1.0, weight: 2.0,
-         check: {kind: regex, pattern: "ORD-\\d+\\D+ORD-\\d+"}}
+      - {id: b-components, description: Names prompt and loop, measure: deterministic, threshold: 1.0, weight: 2.0,
+         check: {kind: regex, pattern: "prompt\\D+loop"}}
       - {id: b-s1, description: Scope is stated plainly, measure: s1, threshold: 0.5,
-         check: {question: "Does the brief state which orders are in scope?", type: noul, options: []}}
-  - id: facts-rubric
+         check: {question: "Does the brief state which harness components are in scope?", type: noul, options: []}}
+  - id: inventory-rubric
     version: 1
-    deliverable: facts
+    deliverable: inventory
     pass_score: 0.7
     canary: 2b3c4d5e6f7a8b9c
     criteria:
-      - {id: f-schema, description: Order list object, measure: deterministic, threshold: 1.0, required: true,
-         weight: 3.0, check: {kind: json_schema, schema: {type: object, required: [orders],
-         properties: {orders: {type: array, minItems: 2, items: {type: string, pattern: "^ORD-"}}}}}}
-      - {id: f-s1, description: Lists only scoped orders, measure: s1, threshold: 0.5,
-         check: {question: "Are all listed orders among those named in the brief?", type: noul, options: []}}
+      - {id: i-schema, description: Component list object, measure: deterministic, threshold: 1.0, required: true,
+         weight: 3.0, check: {kind: json_schema, schema: {type: object, required: [components],
+         properties: {components: {type: array, minItems: 2, items: {type: string, enum: [prompt, loop]}}}}}}
+      - {id: i-s1, description: Lists only scoped components, measure: s1, threshold: 0.5,
+         check: {question: "Are all listed components named in the brief?", type: noul, options: []}}
   - id: risks-rubric
     version: 1
     deliverable: risks
@@ -34,9 +34,9 @@ rubrics:
       - {id: r-head, description: Starts with a Risks heading, measure: deterministic, threshold: 1.0, required: true,
          check: {kind: regex, pattern: "^# Risks$"}}
       - {id: r-items, description: Has a bullet per risk, measure: deterministic, threshold: 1.0, weight: 2.0,
-         check: {kind: regex, pattern: "^- ORD-\\d+ "}}
+         check: {kind: regex, pattern: "^- loop: "}}
       - {id: r-s1, description: Each risk is concrete, measure: s1, threshold: 0.5,
-         check: {question: "Does every bullet name a specific order and a specific risk?", type: noul, options: []}}
+         check: {question: "Does every bullet name a specific harness component and a specific risk?", type: noul, options: []}}
   - id: summary-rubric
     version: 1
     deliverable: summary
@@ -45,7 +45,7 @@ rubrics:
     criteria:
       - {id: s-head, description: Starts with a Summary heading, measure: deterministic, threshold: 1.0,
          required: true, check: {kind: regex, pattern: "^# Summary$"}}
-      - {id: s-both, description: Mentions facts and risks, measure: deterministic, threshold: 1.0, weight: 2.0,
-         check: {kind: regex, pattern: "(?s)2 orders.*1 risk"}}
+      - {id: s-both, description: Mentions inventory and risks, measure: deterministic, threshold: 1.0, weight: 2.0,
+         check: {kind: regex, pattern: "(?s)2 components.*1 risk"}}
       - {id: s-s1, description: Consistent with inputs, measure: s1, threshold: 0.5,
-         check: {question: "Do the counts in the summary match the facts and risks inputs?", type: noul, options: []}}
+         check: {question: "Do the counts in the summary match the component inventory and risk inputs?", type: noul, options: []}}
