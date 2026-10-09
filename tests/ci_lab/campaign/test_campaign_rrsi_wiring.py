@@ -395,7 +395,7 @@ def test_campaign_round_through_rrsi_adapters_writes_valid_envelopes(tmp_path: P
     camp = Campaign.new(CID, "fake", {"arms": 2, "aa_repeats": 5, "max_rounds": 4,
                                       "rrsi_profile": "local",
                                       "strategies": list(STRATEGIES),
-                                      "rrsi": {"n_bootstrap": 500}},
+                                      "rrsi": {"n_bootstrap": 500, "w_c": 0.0, "w_n": 0.0}},
                         deps=deps, run_root=tmp_path / "runs")
     assert asyncio.run(camp.calibrate()) == pytest.approx(0.25)
     out = asyncio.run(camp.run(rounds=2))
