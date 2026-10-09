@@ -21,7 +21,14 @@ from ci_lab.sleep.traces import (
     pending_tasks,
     redact_spans_jsonl,
 )
-from ci_lab.sleep.usage import harvest_usage, open_pending_pr, pending_rel, read_pending, usage_gate, write_usage_bundle
+from ci_lab.sleep.usage import (
+    harvest_usage,
+    open_pending_pr,
+    pending_rel,
+    read_pending,
+    usage_gate,
+    write_usage_bundle,
+)
 
 IDS = ["Alex Rivera", "alex.rivera@example.com", "+1-206-555-0141", "418 Alder St, Seattle, WA 98104"]
 PENDING = "experiments/sleep/tasks.pending.jsonl"
@@ -244,10 +251,10 @@ def _outputs(path: Path) -> dict[str, str]:
 def test_cli_usage_gate_writes_github_output(sleep_repo, tmp_path, monkeypatch, capsys):
     out = tmp_path / "gh_out"
     monkeypatch.setenv("GITHUB_OUTPUT", str(out))
-    monkeypatch.setenv("SLEEP_USAGE_THRESHOLD", "7")
+    monkeypatch.setenv("SLEEP_USAGE_THRESHOLD", "13")
     monkeypatch.delenv("SLEEP_FORCE", raising=False)
     assert cli.main(["sleep", "usage-gate", "--repo", str(sleep_repo)]) == 0
-    assert _outputs(out) == {"run": "false", "new_reviewed": "6"}
+    assert _outputs(out) == {"run": "false", "new_reviewed": "12"}
     out.unlink()
     monkeypatch.setenv("SLEEP_FORCE", "true")
     assert cli.main(["sleep", "usage-gate", "--repo", str(sleep_repo)]) == 0

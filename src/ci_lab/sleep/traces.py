@@ -309,8 +309,9 @@ class Redactor:
 # ------------------------------------------------------------------ prompt-injection filter
 
 _INJECTION_RES = [re.compile(p, re.IGNORECASE) for p in (
-    r"\b(ignore|disregard|forget|override)\b.{0,40}\b(previous|prior|above|earlier|all|your|system)\b.{0,20}"
-    r"\b(instructions?|rules?|polic(y|ies)|prompts?)\b",
+    (r"\b(ignore|disregard|forget|override)\b.{0,40}"
+     r"\b(previous|prior|above|earlier|all|your|system)\b.{0,20}"
+     r"\b(instructions?|rules?|polic(y|ies)|prompts?)\b"),
     r"\byou are now\b", r"\bnew (system )?instructions?\b", r"\bsystem prompt\b",
     r"<\|?(im_start|im_end|system)\|?>", r"\[(system|assistant)\]", r"^\s*(system|assistant)\s*:",
     r"\b(do not|don't) (tell|inform|mention)\b.{0,30}\b(user|customer)\b",
@@ -350,9 +351,10 @@ class UsageHarvest:
     stats: dict[str, int]
 
 
-def pending_tasks(sources: Iterable[TraceSource], *, project: str = "order-support",
+def pending_tasks(sources: Iterable[TraceSource], *, project: str = "harness-editing",
                   aliases: Iterable[str] = (), redactor: Redactor | None = None,
-                  since: float | None = None, max_tasks: int = 50) -> UsageHarvest:
+                  since: float | None = None, max_tasks: int = 50,
+                  accept_unlabeled: bool = True) -> UsageHarvest:
     """Redact -> filter -> cluster usage traces into ``reviewed: false`` task proposals."""
     red = redactor or Redactor()
     names = {project, *aliases}
@@ -368,7 +370,7 @@ def pending_tasks(sources: Iterable[TraceSource], *, project: str = "order-suppo
             if tr.split and tr.split not in ("evolve", "usage"):
                 stats["split_dropped"] += 1  # never turn heldout/ood/aa cases into tasks (C15)
                 continue
-            if tr.target and tr.target not in names:
+            if (tr.target and tr.target not in names) or (not tr.target and not accept_unlabeled):
                 stats["other_target"] += 1
                 continue
             if injection_reason(tr):
@@ -407,7 +409,9 @@ def pending_tasks(sources: Iterable[TraceSource], *, project: str = "order-suppo
 
 def _sensitive_attr(key: str) -> bool:
     try:
-        from ci_lab.telemetry.jsonl import is_sensitive_attr  # type: ignore[import-not-found]
+        from ci_lab.telemetry.jsonl import (
+            is_sensitive_attr,  # type: ignore[import-not-found]
+        )
     except Exception:  # noqa: BLE001 - telemetry (M12) is optional here
         return key.startswith("gen_ai.") and (key.endswith((".messages", ".content", ".arguments", ".result"))
                                               or key.startswith(("gen_ai.prompt", "gen_ai.completion"))

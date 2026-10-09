@@ -13,7 +13,7 @@ from ci_lab.sleep.bundle import FileChange, make_patch, write_bundle
 
 ROOT = Path(__file__).resolve().parents[3]
 SCRIPT = ROOT / "scripts" / "sleep_publish.py"
-SKILL = "src/order_support/harness/skills/order-support/SKILL.md"
+SKILL = "harness/skills/harness-editing/SKILL.md"
 STATE = "experiments/sleep/state.json"
 PENDING = "experiments/sleep/tasks.pending.jsonl"
 
@@ -66,8 +66,8 @@ def bundle(tmp_path: Path, *, patch: str, base_sha: str, kind: str = "sleep", ac
     status = status or ("accepted" if accepted else ("pending_review" if kind == "usage" else "rejected"))
     night_id = f"{kind}-{date}-1"
     write_bundle(out, patch=patch, experiment={"night_id": night_id},
-                 results=results or {"status": status, "reasons": ["order-support: @everyone <b>|x|</b>"],
-                                     "targets": {"order-support": {"status": status, "gate": {
+                 results=results or {"status": status, "reasons": ["harness-editing: @everyone <b>|x|</b>"],
+                                     "targets": {"harness-editing": {"status": status, "gate": {
                                          "delta_lcb": 0.12, "delta": 0.05, "critical_incumbent": 0,
                                          "critical_candidate": 0}}}},
                  base_sha=base_sha, night_id=night_id, date=date, accepted=accepted,
@@ -111,7 +111,7 @@ def test_publishes_accepted_candidate_as_draft_pr(sleep_repo, tmp_path, h, monke
     assert "--draft" in create and create[create.index("--base") + 1] == "main"
     assert "@\u200beveryone" in run.body and "<b>" not in run.body and "sleep-20260921-1" in run.body
     assert not any("merge" in a for c in run.calls for a in c)
-    assert [c for c in run.calls if "push" in c][0][-1] == "HEAD:refs/heads/exp/sleep-20260921-3/cand"
+    assert next(c for c in run.calls if "push" in c)[-1] == "HEAD:refs/heads/exp/sleep-20260921-3/cand"
 
 
 def test_lessons_proposal_file_is_published_with_note(sleep_repo, tmp_path, h, monkeypatch):
@@ -182,8 +182,9 @@ RAW = "diff --git a/{p} b/{p}\n--- a/{p}\n+++ b/{p}\n@@ -1 +1 @@\n-a\n+b\n"
     ("diff --git a/experiments/sleep/x.json b/experiments/sleep/x.json\nrename from a\nrename to b\n", "forbidden"),
     ("diff --git a/experiments/sleep/x.json b/experiments/sleep/x.json\ndeleted file mode 100644\n", "forbidden"),
     ("diff --git a/experiments/sleep/x.json b/experiments/sleep/x.json\nnew file mode 120000\n", "unexpected"),
-    ("diff --git a/experiments/sleep/x.json b/experiments/sleep/x.json\n--- a/experiments/sleep/x.json\n"
-     "+++ b/.github/x\n@@ -1 +1 @@\n-a\n+b\n", "headers"),
+    (("diff --git a/experiments/sleep/x.json b/experiments/sleep/x.json\n"
+      "--- a/experiments/sleep/x.json\n"
+      "+++ b/.github/x\n@@ -1 +1 @@\n-a\n+b\n"), "headers"),
     (RAW.format(p="experiments/sleep/x.json") + "Binary files differ\n", "unexpected line"),
 ])
 def test_rejects_malicious_patches(sleep_repo, tmp_path, h, monkeypatch, capsys, patch, needle):

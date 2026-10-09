@@ -100,9 +100,10 @@ def harvest_usage(repo: Path, targets: Sequence[SkillTarget], sources: Sequence[
     """Build new pending rows per target, skipping ids already pending or reviewed."""
     red = redactor or Redactor()
     res = UsageResult(date=date)
-    for target in targets:
+    for index, target in enumerate(targets):
         harvested = pending_tasks(sources, project=target.name, aliases=(target.owner_agent,),
-                                  redactor=red, since=since, max_tasks=max_new)
+                                  redactor=red, since=since, max_tasks=max_new,
+                                  accept_unlabeled=index == 0)
         pend_path = repo / pending_rel(target)
         old_text = pend_path.read_text(encoding="utf-8") if pend_path.exists() else None
         existing = read_pending(pend_path)
@@ -160,8 +161,8 @@ def open_pending_pr(repo: Path, res: UsageResult, *, run: Run = _default_run, ba
             paths.append(t.path)
     run([*git, "add", "--", *paths])
     run([*git, "-c", f"user.name={BOT[0]}", "-c", f"user.email={BOT[1]}", "commit", "--no-verify", "-m",
-         f"Propose {res.n_new} usage-derived pending sleep task(s) for {res.date}\n\n"
-         f"Usage-Date: {res.date}\nReviewed: false\n"])
+         (f"Propose {res.n_new} usage-derived pending sleep task(s) for {res.date}\n\n"
+          f"Usage-Date: {res.date}\nReviewed: false\n")])
     if not push:
         return {"opened": False, "branch": branch, "reason": "push disabled"}
     run(["gh", "auth", "setup-git"], cwd=str(repo))
