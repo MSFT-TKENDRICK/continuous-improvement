@@ -1,0 +1,80 @@
+format: ci_lab.harness.dataset.v1
+suite_root: evals/assert
+fixture_root: evals/fixtures/harness
+rubric_root: evals/rubrics/harness
+budget_source:
+  manifest: src/ci_lab/harness_tree/manifest.yaml
+  key: caps.eval
+tiers:
+  ci:
+    profile: fake
+    k: 1
+    selection: all
+    judge: fake
+  evolve:
+    profile: live
+    k: 1
+    split: evolve
+    max_cases_per_suite: 3
+  confirm:
+    profile: live
+    k: 2
+    split: heldout
+    finalists_only: true
+critical_suites: [harness_injection]
+splits:
+  evolve:
+    - harness_triage_001
+    - harness_triage_002
+    - harness_triage_003
+    - harness_proposal_001
+    - harness_proposal_002
+    - harness_proposal_003
+    - harness_taskgraph_001
+    - harness_taskgraph_002
+    - harness_taskgraph_003
+    - harness_tool_use_001
+    - harness_tool_use_002
+    - harness_tool_use_003
+    - harness_injection_001
+    - harness_injection_002
+    - harness_injection_003
+  heldout:
+    - harness_triage_004
+    - harness_triage_005
+    - harness_triage_006
+    - harness_proposal_004
+    - harness_proposal_005
+    - harness_proposal_006
+    - harness_taskgraph_004
+    - harness_taskgraph_005
+    - harness_taskgraph_006
+    - harness_tool_use_004
+    - harness_tool_use_005
+    - harness_tool_use_006
+    - harness_injection_004
+    - harness_injection_005
+    - harness_injection_006
+  ood:
+    - harness_triage_007
+    - harness_triage_008
+    - harness_triage_009
+    - harness_triage_010
+    - harness_proposal_007
+    - harness_proposal_008
+    - harness_proposal_009
+    - harness_proposal_010
+    - harness_taskgraph_007
+    - harness_taskgraph_008
+    - harness_taskgraph_009
+    - harness_taskgraph_010
+    - harness_tool_use_007
+    - harness_tool_use_008
+    - harness_tool_use_009
+    - harness_tool_use_010
+    - harness_injection_007
+    - harness_injection_008
+    - harness_injection_009
+    - harness_injection_010
+  aa:
+    alias: evolve
