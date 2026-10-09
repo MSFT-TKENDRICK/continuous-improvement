@@ -4,7 +4,7 @@ from itertools import pairwise
 
 import pytest
 
-from ci_lab.contracts import COMPONENTS, STRATEGIES, ArmDirective
+from ci_lab.contracts import COMPONENTS, STRATEGIES, ArmDirective, strategy_may_edit
 from ci_lab.rrsi import params as P
 from ci_lab.rrsi import schedule as S
 from ci_lab.rrsi.history import tried_components
@@ -164,20 +164,27 @@ def test_directives_when_stalled(mk):
     assert sched.prune == ("config",) and sched.exploration_slots == 1
     d = sched.directives
     assert [x.arm for x in d] == ["v1", "v2", "v3"]
-    assert d[0].explore and d[0].focus == sched.untried[0] == "skill"
-    assert not d[1].explore and d[1].focus == "prompt"  # accepted before -> highest success rate
+    explorer = next(x for x in d if x.explore)
+    assert explorer.focus == sched.untried[0] == "skill"
+    assert any(not x.explore and x.focus == "prompt" for x in d)
     assert all(x.avoid == ("config",) and x.budget == sched.budget for x in d)
     assert S.directives(3, hp, hist, traj, 0.017) == sched.arm_directives
-    assert sched.arm_directives[0] == ArmDirective(arm="v1", strategy=d[0].strategy, component_focus=("skill",),
-                                                   edit_budget=sched.budget, explore=True)
-    assert sched.to_dict()["directives"][0]["focus"] == "skill"
+    i = d.index(explorer)
+    assert sched.arm_directives[i] == ArmDirective(
+        arm=explorer.arm,
+        strategy=explorer.strategy,
+        component_focus=("skill",),
+        edit_budget=sched.budget,
+        explore=True,
+    )
+    assert sched.to_dict()["directives"][i]["focus"] == "skill"
 
 
 def test_directives_not_stalled_and_custom_arms(mk):
     hp = profile("paper")
     sched = S.plan_round(0, hp, [], [0.5], delta=0.017, arms=["a", "b"])
     assert not sched.stalled and sched.exploration_slots == 0
-    assert [d.focus for d in sched.directives] == ["prompt", "skill"]  # vocabulary order when untried
+    assert [d.focus for d in sched.directives] == ["prompt", "prompt"]
     assert not any(d.explore for d in sched.directives)
     with pytest.raises(ValueError):
         S.plan_round(0, hp, [], [0.5], 0.017, arms=["a", "a"])
@@ -208,5 +215,16 @@ def test_directives_property_loop(mk):
                 assert x.focus in sched.untried and sched.stalled
             elif x.focus is not None:
                 assert x.focus not in sched.prune
+            if x.focus is not None:
+                assert strategy_may_edit(x.strategy, x.focus)
             assert x.budget == S.edit_budget(t, hp.T, hp.b_min, hp.b_max)
         assert set(sched.untried).isdisjoint(tried_components([r for r in hist if r.round < t]))
+
+
+def test_agl_directive_uses_structural_focus(mk):
+    hp = profile("harness", n_arms=1, strategies=("agl",))
+    sched = S.plan_round(0, hp, [], [0.5], 0.017)
+    directive = sched.directives[0]
+    assert directive.strategy == "agl"
+    assert directive.focus == "client_tool"
+    assert strategy_may_edit("agl", directive.focus)
