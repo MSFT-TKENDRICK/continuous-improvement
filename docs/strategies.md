@@ -24,7 +24,7 @@ only the keyword arguments its constructor accepts.
   evaluation with `strategies.base.edit_scope_violations(strategy, files, guards_dir)` over both
   the declared edit files and the arm's `base..HEAD` diff, where `guards_dir` is
   `ci_lab.domain.layout.guards_rel(domain)` (`<harness root>/guards`, e.g.
-  `src/order_support/harness/guards`). `guard` may not write outside that directory, and it
+  `harness/guards`). `guard` may not write outside that directory, and it
   may not write `BUNDLE.lock`.
 
 Importing the package does not import dspy, gepa or skillopt_sleep (C26).

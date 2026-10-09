@@ -30,7 +30,7 @@ Every new rule starts in `mode: shadow`. Rule text comes only from the trusted M
 1. It reads `<run_dir>/lessons/candidates.jsonl` (searching up to 3 parent levels) and `ctx.failures`.
 2. It skips clusters that are untrusted and unlabeled. It also skips clusters already touched by another arm, using registry conflicts plus `lesson_claims/` (N4).
 3. It synthesizes at most `edit_budget` rules, trying templates first and the agent second.
-4. It writes **only** `<harness root>/guards/<lesson_id>.yaml`: the directory the domain's agent loads (`src/order_support/harness/guards` in a repo-root campaign slot; `harness/guards` when no domain is given; see `ci_lab.domain.layout.guards_rel`). A resolved-path check and a post-commit diff check both enforce this; `BUNDLE.lock` and extractor files are never touched.
+4. It writes **only** `<harness root>/guards/<lesson_id>.yaml`: the directory the domain's agent loads (the guard-owned repo-root guard directory; see `ci_lab.domain.layout.guards_rel`). A resolved-path check and a post-commit diff check both enforce this; `BUNDLE.lock` and extractor files are never touched.
 5. It loads the full bundle (with the domain's frozen extractors, `Domain.guard_extractors`) through `ci_lab.rules`.
 6. It runs the M16 replay filter (`ci_lab.lessons.replay.validate_ok`).
 7. It makes one commit per Edit, with the trailer, and returns `Edit(component="guard", …)`.
@@ -77,7 +77,7 @@ The lesson stays in the registry.
 - Done (21b) `# HOOK(M8b)`: `ARM_YAMLS["guard"]` is `ci_lab/lessons_arm/workflows/arm_guard.yaml`, and the `guard_paired_eval` step is bound to `ci_lab.lessons_arm.paired.guard_paired_eval_step`. The step is idempotent through `run_dir/guard_eval.json` and skips when `eval.json` is skipped.
 - Done (21b) `# HOOK(M4)`: the `com.microsoft.ci.guard` ext schema is `schemas/oes/ext-com.microsoft.ci.guard.schema.json`. When `holdout_look_required(split)` is true, the campaign appends one look per round to the C15 holdout ledger through `ledger.looks.record_look`. The payload carries `holdout.{datasetHash, plannedLooks, looksUsed}`.
 - Done (24) `# HOOK(M1)`: `agent.default_builder()` drops `x-ci`, validates the spec with `ci_lab.maf.specs.parse_agent_spec` under the meta manifest's `allowed_models`, and builds with `ci_lab.maf.loader.build_agent_from_spec`. A disallowed spec raises `SynthesizerError`, with no fallback. `local_builder` is used only when `ci_lab.maf` cannot be imported. The synthesizer spec defaults to `claude-sonnet-5`; `CI_META_MODEL` (and `CI_ALLOWED_MODELS`) select its model the same way as for the meta agents, before validation and hashing ([models.md](models.md)).
-- Done (21a/21b) `# HOOK(M3)`: `order_support.guarding` writes each case's guard sink to `$CI_GUARD_DECISIONS/<case_id>/<trial>.jsonl`, tags each line with `case_id`/`trial`, and emits call and opportunity records. The seed comes from `CI_CASE_ID|CI_TRIAL`, so it does not depend on `variant`. `Domain.evaluate` sets these per case.
+- Harness evaluation tags guard decisions with case and trial identifiers through the shared telemetry context.
 - `# HOOK(M15)`: `CI_GUARDS` is read only in `ci_lab.guards.install.resolve_mode`. Under `off`, attempts are still recorded, with `mode="off"`.
 - `# HOOK(M16)`: the replay filter (`lessons.replay.validate_ok`), `candidates.jsonl`, and `Registry` / `conflicts`.
 - `# HOOK(M14)`: `default_templates()` must contain `precondition.prior_call`, `precondition.state_flag`, `arg.constraint`, `amount.not_exceed_prior` and `response.redact_pattern` (see `templates.catalog_gaps`).
@@ -88,5 +88,5 @@ The lesson stays in the registry.
 ## Contract change requests
 
 - Done (integration v2.4.1): `contracts.COMPONENTS` has a dedicated `"guard"` entry, so guard edits get their own credit assignment. Text strategies use `contracts.TEXT_COMPONENTS`, which excludes it.
-- Done (integration v2.4.1): `GuardDecision` has `case_id`/`trial` and `mode="off"`, which off-mode attempts now record. Opportunity records are wired in the order-support layer.
+- Done (integration v2.4.1): `GuardDecision` has `case_id`/`trial` and `mode="off"`, which off-mode attempts now record. Opportunity records are consumed through the shared guard decision format.
 - State-flag lessons depend on domain extractors, because the arm may not write extractor files.

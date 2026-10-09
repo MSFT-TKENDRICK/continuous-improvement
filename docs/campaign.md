@@ -29,12 +29,12 @@ The `fake` profile is fully offline: stub domain, fake slots and FakeChatClient 
 
 The `copilot` and `offline` profiles are wired by `ci_lab.campaign.wiring.wired_deps`:
 
-- **Domain:** `OrderSupportDomain(repo_root=REPO_ROOT, work_dir=<run-dir>/domain, journal=campaign_journal(<run-dir>))`. Its cases are the frozen ASSERT test sets (`evals/assert/<suite>/test_set.jsonl`, else `artifacts/results/<suite>/test_set.jsonl`); each case's category is its generated `dimensions.behavior`, which keeps the evolve, held-out and OOD splits non-empty. `splits()` raises if no test set is found. Per case/trial runs get `CI_CASE_ID`/`CI_TRIAL`, and `CI_TELEMETRY`, `CI_RUN_DIR` and `CI_GUARD_DECISIONS` are passed through.
+- **Domain:** `HarnessDomain` loads only the frozen `harness_*` cases named by `evals/datasets/harness.yaml`. It validates candidate trees, runs each case in an isolated writable copy with a scrubbed environment, records served models, and returns quality plus resource measurements.
 - **Agent Lightning rollouts:** every scored case/trial (arms, incumbent, A/A and held-out evals) is an AGL rollout (`start` → `ci.score` event → `finish`) in a `FileRolloutJournal` under `<run-dir>/agl`. When `CI_LAB_AGL_URL` is set (bearer key `CI_LAB_AGL_KEY`), the journal is a `MirroringJournal` that best-effort mirrors to `agl-server` (journal first; mirror failures never stall the campaign). For `offline`, `CI_LAB_AGL_URL` must be loopback.
 - **RRSI / OES (M7, M4):** `ci_lab.campaign.rrsi_wiring` (see [Selection, calibration and envelopes](#selection-calibration-and-envelopes-m7-m4)).
 - **Git (M6):** `GitOps` keeps one `gitops.slots.SlotPool` per campaign under `$CI_WT_ROOT/<cid>`. `provision_slot` checks out `exp/<eid>/<arm>` from the incumbent. `resolve_incumbent` returns `(commit, harness tree)`, where the tree is the `tree_hash` of the harness root (the common prefix of `domain.surface_globs`). Slot leases are not released within a process.
 - **Agents (M8a):** `MetaAgents` runs `meta.run.run_proposer`/`run_analyst`/`run_critic` with MAF specs validated against the manifest `allowed_models`. Proposer runs write under `<arm>/meta/`, because `submit_proposal` would otherwise overwrite the arm's `proposal.json`. A repair re-runs the proposer with the failing critique's reasons as feedback. The default meta model is `claude-sonnet-5`; `CI_META_MODEL` selects another allowlisted one (see [models.md](models.md)).
-- **Model preflight (copilot only):** `CampaignDeps.preflight` (`ci_lab.campaign.preflight.make_preflight`) checks every model the campaign will use (meta agents, synthesizer, optimizer LM, order agent, ASSERT tester) before `calibrate`, `run` or `confirm` spends budget. A missing model exits with code 2 and names the override to set ([models.md](models.md)).
+- **Model preflight (copilot only):** `CampaignDeps.preflight` (`ci_lab.campaign.preflight.make_preflight`) checks every model the campaign will use (meta agents, synthesizer, optimizer LM, harness target, and System-1 judge) before `calibrate`, `run` or `confirm` spends budget. A missing model exits with code 2 and names the override to set ([models.md](models.md)).
 - **Strategies (M10):** `strategy_kwargs = {domain, client_factory}`.
 - **Ledger and publishing:** `FileLedger` at `--ledger-dir` (default `<repo>/experiments`); `FileOutbox` at `<run-dir>/outbox.jsonl`; `GitHubPublisher` with journal `<run-dir>/publish-calls.jsonl`.
 - **Chat clients:** `providers.factory.make_chat_client(profile, ...)`. The `copilot` profile uses the Copilot SDK client.
@@ -192,7 +192,7 @@ Rounds run weekly (cron `41 9 * * 1`) or on dispatch. The model and the write to
 - At most 20 requests, and every eid is `<cid>-r…`.
 - The winner is `None` or one of the heads.
 - Heads are full SHAs of commits that arrived in the bundle.
-- Each head has exactly one merge base with `origin/main`, no merge commits after it, and at most 200 commits. Every one of those commits (not only the net diff) touches only `src/order_support/harness/`, so the pushed history carries no transient edits elsewhere.
+- Each head has exactly one merge base with `origin/main`, no merge commits after it, and at most 200 commits. Every one of those commits (not only the net diff) touches only the allowlisted repo-root harness component prefixes, so the pushed history carries no transient edits elsewhere.
 - Title and body pass the publisher's text validation.
 - The ledger artifact contains only regular files with safe names, within count and size caps, and its `campaign.json` names this campaign.
 
