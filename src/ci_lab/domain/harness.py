@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import math
 import os
 import shutil
 import subprocess
@@ -22,10 +23,21 @@ from typing import Any
 
 import yaml
 
-from ci_lab.contracts import EvalResult, EvaluatorPin, FailureRecord, TaskScore, Violation
-from ci_lab.harness_tree import FROZEN_MANIFEST, HarnessTree, HarnessTreeError, tree_digest
-from ci_lab.metrics import surface_metrics
+from ci_lab.contracts import (
+    EvalResult,
+    EvaluatorPin,
+    FailureRecord,
+    TaskScore,
+    Violation,
+)
+from ci_lab.harness_tree import (
+    FROZEN_MANIFEST,
+    HarnessTree,
+    HarnessTreeError,
+    tree_digest,
+)
 from ci_lab.mcp.codemode import ProcessTree
+from ci_lab.metrics import surface_metrics
 
 __all__ = [
     "DATASET_PATH",
@@ -53,7 +65,7 @@ EXCERPT_CHARS = 400
 _ENV_ALLOW = (
     "PATH", "SYSTEMROOT", "TEMP", "TMP", "PYTHONPATH",
     "CI_COPILOT_SERVE_URL", "CI_COPILOT_SERVE_KEY", S1_URL_ENV,
-    PROFILE_ENV, TARGET_MODEL_ENV, JUDGE_MODEL_ENV, "CI_META_MODEL",
+    PROFILE_ENV, TARGET_MODEL_ENV, JUDGE_MODEL_ENV,
 )
 
 
@@ -141,17 +153,17 @@ ProcessRunner = Callable[[Sequence[str], Path, Mapping[str, str], float], tuple[
 def _run_process(command: Sequence[str], cwd: Path, env: Mapping[str, str],
                  timeout_s: float) -> tuple[int, bytes, bytes, bool]:
     flags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
-    proc = subprocess.Popen(list(command), cwd=cwd, env=dict(env), stdout=subprocess.PIPE,
-                            stderr=subprocess.PIPE, creationflags=flags,
+    proc = subprocess.Popen(list(command), cwd=cwd, env=dict(env), stdout=subprocess.DEVNULL,
+                            stderr=subprocess.DEVNULL, creationflags=flags,
                             start_new_session=sys.platform != "win32")
     tree = ProcessTree(proc)
     try:
-        stdout, stderr = proc.communicate(timeout=timeout_s)
-        return int(proc.returncode or 0), stdout, stderr, False
+        proc.communicate(timeout=timeout_s)
+        return int(proc.returncode or 0), b"", b"", False
     except subprocess.TimeoutExpired:
         tree.kill()
-        stdout, stderr = proc.communicate()
-        return int(proc.returncode or 1), stdout, stderr, True
+        proc.communicate()
+        return int(proc.returncode or 1), b"", b"", True
     finally:
         tree.close()
 
@@ -178,6 +190,7 @@ class HarnessDomain:
         judge_model: str | None = None,
         python: str = sys.executable,
         process_runner: ProcessRunner | None = None,
+        split_map: Mapping[str, Sequence[str]] | None = None,
     ) -> None:
         self.repo_root = Path(repo_root).resolve()
         self.dataset_path = Path(dataset_path or self.repo_root / "evals/datasets/harness.yaml")
@@ -193,6 +206,8 @@ class HarnessDomain:
             "s1/scripted/default" if self.profile == "fake" else "")
         self.python = python
         self.process_runner = process_runner or _run_process
+        self._split_map = ({str(k): tuple(v) for k, v in split_map.items()}
+                           if split_map is not None else None)
         self._details: dict[tuple[str, str, str, int], dict[str, Any]] = {}
 
     def cases(self) -> list[HarnessCase]:
@@ -207,6 +222,8 @@ class HarnessDomain:
             raise KeyError(case_id) from exc
 
     def splits(self) -> Mapping[str, Sequence[str]]:
+        if self._split_map is not None:
+            return self._split_map
         out: dict[str, Sequence[str]] = {}
         for name, value in self._dataset["splits"].items():
             if isinstance(value, Mapping) and "alias" in value:
@@ -279,12 +296,14 @@ class HarnessDomain:
         results = await asyncio.gather(*(one(case_id, trial) for case_id, trial in jobs))
         if tree_digest(source) != before:
             raise HarnessTreeError("source candidate changed during evaluation")
+        surface = surface_metrics(source, HarnessTree(source).component_globs())
+        surface["tree_valid"] = 1.0
         return EvalResult(
             harness_tree=before,
             split=split,  # type: ignore[arg-type]
             pin=self.pin(judge for _, judge in results if judge),
             scores=[score for score, _ in results],
-            surface=surface_metrics(source, HarnessTree(source).component_globs()),
+            surface=surface,
         )
 
     async def _run_one(self, case: HarnessCase, trial: int, source: Path, harness_hash: str,
@@ -294,10 +313,7 @@ class HarnessDomain:
 
     def _run_one_sync(self, case: HarnessCase, trial: int, source: Path, harness_hash: str,
                       split: str, experiment_id: str, variant: str) -> tuple[TaskScore, str | None]:
-        base = str(self.work_dir) if self.work_dir is not None else None
-        if self.work_dir is not None:
-            self.work_dir.mkdir(parents=True, exist_ok=True)
-        with tempfile.TemporaryDirectory(prefix=f"ci-harness-{case.case_id}-{trial}-", dir=base,
+        with tempfile.TemporaryDirectory(prefix=f"ci-harness-{case.case_id}-{trial}-",
                                          ignore_cleanup_errors=True) as tmp:
             root = Path(tmp)
             candidate = root / "candidate"
@@ -326,7 +342,32 @@ class HarnessDomain:
         served_model = str(doc.get("served_model") or "") or None
         score_value = doc.get("score")
         score = float(score_value) if isinstance(score_value, int | float) and not isinstance(score_value, bool) else None
-        if served_model and served_model != self.target_model:
+        if score is not None and (not math.isfinite(score) or not 0.0 <= score <= 1.0):
+            score = None
+            violations = (*violations, Violation("eval.invalid_result", "major", "score must be in [0, 1]"))
+        required_metrics = ("wall_ms", "llm_calls", "tool_calls", "tokens_in", "tokens_out", "tokens",
+                            "output_chars", "output_lines")
+        if score is not None and any(name not in metrics for name in required_metrics):
+            missing = ", ".join(name for name in required_metrics if name not in metrics)
+            score = None
+            violations = (*violations, Violation("eval.invalid_result", "major",
+                                                  f"missing evaluator metrics: {missing}"))
+        caps = HarnessTree(source).manifest["caps"]["eval"]
+        exceeded = (
+            ("max_llm_calls", float(metrics.get("llm_calls") or 0)),
+            ("max_tool_calls", float(metrics.get("tool_calls") or 0)),
+            ("max_tokens", float(metrics.get("tokens") or
+                                 (float(metrics.get("tokens_in") or 0) + float(metrics.get("tokens_out") or 0)))),
+            ("timeout_s", float(metrics.get("wall_ms") or 0) / 1000.0),
+        )
+        for name, value in exceeded:
+            if value > float(caps[name]):
+                score = 0.0
+                if not any(v.rule_id == "budget.exceeded" and name in v.detail for v in violations):
+                    violations = (*violations, Violation("budget.exceeded", "major",
+                                                          f"{name}: {value:g} > {caps[name]:g}"))
+        if served_model and served_model != self.target_model and not any(
+                violation.rule_id == "model.mismatch" for violation in violations):
             score = None
             violations = (*violations, Violation("model.mismatch", "major",
                                                   f"served {served_model!r}, pinned {self.target_model!r}"))
@@ -347,6 +388,9 @@ class HarnessDomain:
             "TEMP": str(tmp), "TMP": str(tmp), PROFILE_ENV: self.profile,
             TARGET_MODEL_ENV: self.target_model, JUDGE_MODEL_ENV: self.judge_model,
         })
+        current_pythonpath = env.get("PYTHONPATH", "")
+        source = str(self.repo_root / "src")
+        env["PYTHONPATH"] = source + (os.pathsep + current_pythonpath if current_pythonpath else "")
         return env
 
     def _copy_case(self, row: Mapping[str, Any], root: Path) -> dict[str, Any]:

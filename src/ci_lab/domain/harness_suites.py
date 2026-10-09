@@ -15,7 +15,6 @@ from typing import Any
 import yaml
 from agent_framework import FunctionTool, Message
 
-from ci_lab.harness_tree import HarnessTree
 from ci_lab.mcp.client import ToolInfo
 from ci_lab.mcp.codemode import CodeMode
 from ci_lab.mcp.registry import CodeModeConfig, load_exposure, load_registry
@@ -72,12 +71,44 @@ async def _consume(
 ) -> tuple[str, str, list[dict[str, Any]]]:
     """Consume a frozen fake script, or run the pinned live client with candidate instructions."""
     spec = load_spec(spec_name, harness_dir=harness_dir)
-    if profile == "fake":
-        client: Any = FakeChatClient(_script(row), model=target_model)
-    else:
-        client = make_chat_client(profile=profile, model=target_model, purpose="target")
     seed = row.get("seed") or {}
-    prompt = f"{spec.instructions}\n\n# Case\n{seed.get('title', '')}\n{seed.get('description', '')}"
+    case_prompt = f"# Case\n{seed.get('title', '')}\n{seed.get('description', '')}"
+    if profile != "fake":
+        from agent_framework import create_harness_agent
+
+        from ci_lab.metrics.maf import metering_middleware
+
+        client = make_chat_client(profile=profile, model=target_model, purpose="target")
+        calls: list[dict[str, Any]] = []
+
+        def bind(name: str, fn: Callable[..., Any] | None) -> Callable[..., Any]:
+            async def invoke(**kwargs: Any) -> Any:
+                calls.append({"name": name, "arguments": dict(kwargs)})
+                if fn is None:
+                    return f"ERROR: {name} is unavailable for this case"
+                value = fn(**kwargs)
+                return await value if inspect.isawaitable(value) else value
+            return invoke
+
+        names = tuple(dict.fromkeys((*spec.tools, *(tools or {}))))
+        bound = {name: bind(name, (tools or {}).get(name)) for name in names}
+        agent = create_harness_agent(
+            client,
+            name=spec.name,
+            description=spec.description,
+            agent_instructions=spec.instructions,
+            tools=_function_tools(bound),
+            middleware=metering_middleware(meter),
+            loop_max_iterations=spec.max_turns or 8,
+            skills_paths=[str(path) for path in spec.skills_paths] or None,
+        )
+        response = await agent.run(case_prompt)
+        served = (getattr(client, "last_served_model", None)
+                  or getattr(response, "model", None) or target_model)
+        return str(getattr(response, "text", "") or ""), str(served), calls
+
+    client: Any = FakeChatClient(_script(row), model=target_model)
+    prompt = f"{spec.instructions}\n\n{case_prompt}"
     calls: list[dict[str, Any]] = []
     text = ""
     advertised = _function_tools(tools or {})
@@ -129,7 +160,8 @@ def _diff_lines(before: Mapping[str, str], after: Mapping[str, str]) -> int:
     count = 0
     for name in sorted(set(before) | set(after)):
         diff = difflib.unified_diff(before.get(name, "").splitlines(), after.get(name, "").splitlines())
-        count += sum(1 for line in diff if line.startswith(("+", "-")) and not line.startswith(("+++", "---")))
+        changed = [line for line in diff if line.startswith(("+", "-")) and not line.startswith(("+++", "---"))]
+        count += max(sum(line.startswith("+") for line in changed), sum(line.startswith("-") for line in changed))
     return count
 
 
@@ -275,8 +307,21 @@ class FixtureHub:
         self.responses, self.mode, self.meter = responses, mode, meter
         self.exposure = type("_Exposure", (), {"code_mode": CodeModeConfig(2.0, 4000, ())})()
         names = ("list_components", "read_component", "component_metrics", "trace_summary", "eval_summary")
-        self._tools = [ToolInfo("harness", name, name, {"type": "object", "properties": {}}, mode)
-                       for name in names]
+        args = {
+            "read_component": ("path",),
+            "trace_summary": ("run_dir",),
+            "eval_summary": ("path",),
+        }
+        self._tools = [
+            ToolInfo(
+                "harness", name, name,
+                {"type": "object",
+                 "properties": {arg: {"type": "string"} for arg in args.get(name, ())},
+                 "required": list(args.get(name, ()))},
+                mode,
+            )
+            for name in names
+        ]
         self.rpc_tools: list[str] = []
 
     def tools(self, server: str | None = None, mode: str | None = None) -> list[ToolInfo]:
@@ -304,7 +349,13 @@ async def run_tool_use(row: Mapping[str, Any], harness_dir: Path, profile: str,
 
         registry = load_registry()
         exposure = load_exposure(harness_dir / "mcp" / "exposure.yaml", registry)
-        hub = McpHub(registry, exposure, roots={"harness_root": harness_dir})
+        allowed = set(row.get("expected", {}).get("rpc_tools") or
+                      (row.get("mcp") or {}).get("available_tools") or ())
+
+        def govern(_server: str, tool: str, _args: dict[str, Any]) -> str | None:
+            return None if tool in allowed else "tool is outside the frozen case exposure"
+
+        hub = McpHub(registry, exposure, roots={"harness_root": harness_dir}, before_call=govern)
         await hub.__aenter__()
         close = hub.__aexit__
     try:
