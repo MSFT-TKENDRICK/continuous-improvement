@@ -3,7 +3,7 @@ schema_version: 1
 rules:
   - id: b2.guards-rules-closed-view
     kind: banned_import
-    modules: [order_support.oracle, assert_ai, ci_lab.judge, datasets]
+    modules: [ci_lab.domain.harness_scoring, assert_ai, ci_lab.judge, datasets]
     include: ["src/ci_lab/guards/**/*.py", "src/ci_lab/rules/**/*.py"]
     message: Guard/rule engine imports evaluator, oracle or dataset code (guards must only see the closed GuardView).
     fix: Use only ci_lab.rulespec types (GuardView/TrajectoryStep); measurement stays in ASSERT + the frozen oracle.
