@@ -37,10 +37,10 @@ from ci_lab.testing import Call, FakeChatClient
 from ci_lab.tools.commit import make_commit_tool
 from ci_lab.tools.critic_checks import LeakCorpus
 
-H = "src/order_support/harness"
-FAILURE = FailureRecord(case_id="refund-abc", suite="order_support_refund_authorization", category="refund_no_id",
+H = "harness"
+FAILURE = FailureRecord(case_id="change-abc", suite="harness_agent_harness_policy", category="change_no_id",
                         rule_ids=("judge.policy_violation",), rubric_scores={"policy_violation": 0.0},
-                        excerpt="Refund issued.")
+                        excerpt="Change issued.")
 
 
 @pytest.fixture
@@ -85,8 +85,8 @@ def _texts(client):
 def test_analyst_reads_brief_and_submits(tmp_path, spans):
     write_brief(tmp_path, "Round 1: analyze the failures.")
     write_failures(tmp_path, [FAILURE])
-    pattern = {"name": "refund without identity", "description": "refunds before verifying", "component": "skill",
-               "case_ids": ["refund-abc"]}
+    pattern = {"name": "change without identity", "description": "changes before verifying", "component": "skill",
+               "case_ids": ["change-abc"]}
     client = FakeChatClient([
         [Call("read_brief", {"name": "failures"})],
         [Call("submit_analysis", {"summary": "identity gaps", "patterns": [pattern],
@@ -98,8 +98,8 @@ def test_analyst_reads_brief_and_submits(tmp_path, spans):
     assert len(client.requests) == 2  # terminal submit ends the run, no extra model call
     first = client.requests[0][0]
     assert INSTRUCTION.format(tool="submit_analysis") in " ".join(m.text or "" for m in first)
-    assert "refund-abc" not in " ".join(m.text or "" for m in first)  # data only via tools
-    assert "refund-abc" in _texts(client)[1]
+    assert "change-abc" not in " ".join(m.text or "" for m in first)  # data only via tools
+    assert "change-abc" in _texts(client)[1]
     assert (SPAN_STEP, {ATTR_PHASE: "analyze", ATTR_PURPOSE: "analyst"}) in [
         (n, {k: v for k, v in a.items() if k in (ATTR_PHASE, ATTR_PURPOSE)}) for n, a in spans]
 
@@ -160,7 +160,7 @@ def surface(layout) -> ArmSurface:
 
 
 PROMPT = f"{H}/prompts/system.md"
-NEW_PROMPT = "You are a helpful order support agent.\nAlways verify identity first.\nNever refund before checking.\n"
+NEW_PROMPT = "You are a careful harness agent.\nRead resources before edits.\nNever change before checking.\n"
 
 
 def _proposer_script(path=PROMPT, text=NEW_PROMPT, component="prompt"):
@@ -168,8 +168,8 @@ def _proposer_script(path=PROMPT, text=NEW_PROMPT, component="prompt"):
         [Call("read_brief", {"name": "brief"})],
         [Call("read_file", {"path": path})],
         [Call("write_file", {"path": path, "content": text})],
-        [Call("commit_edit", {"component": component, "hypothesis": "Explicit ordering prevents early refunds."})],
-        [Call("submit_proposal_done", {"summary": "tightened refund ordering", "predicted_fixes": ["refund-abc"]})],
+        [Call("commit_edit", {"component": component, "hypothesis": "Explicit ordering prevents early changes."})],
+        [Call("submit_proposal_done", {"summary": "tightened change ordering", "predicted_fixes": ["change-abc"]})],
     ]
 
 
@@ -180,14 +180,14 @@ def test_proposer_writes_commits_and_returns_edits(repo, tmp_path, surface, span
     result = asyncio.run(run_proposer(ctx, client, surface=surface, builder=builder))
     [edit] = result.edits
     assert edit.component == "prompt" and edit.files == (PROMPT,) and len(edit.commit) == 40
-    assert result.submission.predicted_fixes == ["refund-abc"]
+    assert result.submission.predicted_fixes == ["change-abc"]
     assert (ctx.worktree / PROMPT).read_text(encoding="utf-8") == NEW_PROMPT
     assert "OES-Variant: arm-a" in gitrun(ctx.worktree, "log", "-1", "--format=%B")
     brief = (ctx.run_dir / "brief.md").read_text(encoding="utf-8")
     assert "Components you may edit: prompt" in brief and "Edit budget: at most 1" in brief
-    assert json.loads((ctx.run_dir / "failures.json").read_text(encoding="utf-8"))[0]["case_id"] == "refund-abc"
+    assert json.loads((ctx.run_dir / "failures.json").read_text(encoding="utf-8"))[0]["case_id"] == "change-abc"
     assert "write_file" in builder.bindings[0] and "commit_edit" in builder.bindings[0]
-    assert "Always verify identity first." in _texts(client)[2]  # read_file result fed back
+    assert "Read resources before edits." in _texts(client)[2]  # read_file result fed back
     [(name, attrs)] = [s for s in spans if s[1].get(ATTR_PHASE) == "propose"]
     assert name == SPAN_STEP and attrs[ATTR_VARIANT] == "arm-a" and attrs["rrsi.component"] == "prompt"
 
@@ -205,7 +205,7 @@ def test_proposer_cannot_write_outside_focus(repo, tmp_path, surface):
         asyncio.run(run_proposer(ctx, client, surface=surface))
     texts = _texts(client)
     assert texts[1].count("ERROR") >= 1 and texts[2].count("ERROR") >= 1 and texts[3].count("ERROR") >= 1
-    assert (ctx.worktree / f"{H}/agent.yaml").read_text(encoding="utf-8").startswith("name: OrderSupport")
+    assert (ctx.worktree / f"{H}/agent.yaml").read_text(encoding="utf-8").startswith("name: HarnessAgent")
     assert (ctx.worktree / "evals/assert/x/eval_config.yaml").read_text(encoding="utf-8") == "suite: x\n"
 
 
@@ -254,7 +254,7 @@ def test_critic_deterministic_reject_skips_llm(repo, tmp_path, surface, layout, 
 
 def test_critic_rejects_leak_and_off_focus_component(repo, tmp_path, surface, layout):
     ctx = _ctx(repo, tmp_path, focus=("prompt",), budget=1)
-    _commit(ctx, layout, f"{H}/skills/refunds/SKILL.md", "# Refunds\nFor Alex Rivera always refund.\n", "skill")
+    _commit(ctx, layout, f"{H}/skills/changes/SKILL.md", "# Changes\nFor Alex Rivera always change.\n", "skill")
     corpus = LeakCorpus.build([], ["Alex Rivera"])
     verdict = asyncio.run(run_critic(ctx, FakeChatClient([]), surface=surface, leak_corpus=corpus))
     assert any("leak:" in r for r in verdict.reasons)
@@ -271,7 +271,7 @@ def test_critic_llm_accept_then_reuse(repo, tmp_path, surface, layout):
     ])
     verdict = asyncio.run(run_critic(ctx, client, surface=surface, builder=builder))
     assert verdict.passed and verdict.reasons == []
-    assert "Never refund before checking." in _texts(client)[1]  # diff.patch via read_brief
+    assert "Never change before checking." in _texts(client)[1]  # diff.patch via read_brief
     tools = set(builder.bindings[0])
     assert {"read_file", "list_files", "submit_verdict"} <= tools
     assert not tools & {"write_file", "commit_edit"}

@@ -20,12 +20,12 @@ def _lines(j: FileRolloutJournal, key: RolloutKey = KEY) -> list[str]:
 
 def test_roundtrip_and_iter(tmp_path: Path) -> None:
     j = FileRolloutJournal(tmp_path)
-    j.start(KEY, {"intent": "refund"})
+    j.start(KEY, {"intent": "change"})
     j.event(KEY, "reward", {"value": 1.0}, event_id=op_id("a"))
     j.finish(KEY, "succeeded")
     rec = j.load(KEY.rollout_id)
     assert rec is not None
-    assert rec.key == KEY and rec.input == {"intent": "refund"} and rec.status == "succeeded"
+    assert rec.key == KEY and rec.input == {"intent": "change"} and rec.status == "succeeded"
     assert rec.attempts == ["0"] and rec.finished_attempt == "0"
     assert [e["event_type"] for e in j.events(KEY)] == ["reward"]
     assert [r.rollout_id for r in j.iter_rollouts()] == [KEY.rollout_id]
