@@ -66,6 +66,8 @@ def test_gepa_strategy_commits_edit_and_reports_cost(worktree, domain, tmp_path,
     assert e.commit == git(worktree, "rev-parse", "HEAD") != c.base_commit
     assert git(worktree, "show", "--name-only", "--format=", e.commit).splitlines() == [PROMPT]
     assert COMMIT_TRAILER in git(worktree, "log", "-1", "--format=%B")
+    assert git(worktree, "log", "-1", "--format=%(trailers:key=RRSI-Component,valueonly)") == "prompt"
+    assert git(worktree, "log", "-1", "--format=%(trailers:key=RRSI-Hypothesis,valueonly)")
     assert (worktree / PROMPT).read_text() == ALL_KW
     assert git(worktree, "status", "--porcelain") == ""
     assert set(domain.splits_called) == {"evolve"}
