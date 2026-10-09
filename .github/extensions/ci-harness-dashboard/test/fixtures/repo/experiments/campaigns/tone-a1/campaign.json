@@ -1,7 +1,7 @@
 {
   "campaignId": "tone-a1",
   "profile": "fake",
-  "domain": "order_support",
+  "domain": "harness",
   "base_commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
   "base_tree": "d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0",
   "hyper": {

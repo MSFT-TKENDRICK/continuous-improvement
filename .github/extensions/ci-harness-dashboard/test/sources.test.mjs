@@ -20,6 +20,7 @@ test("scan discovers ledger, run dirs, results and imports", async () => {
     assert.equal(scan.campaigns.length, 1);
     const c = scan.campaigns[0];
     assert.equal(c.campaignId, "tone-a1");
+    assert.equal(c.domain, "harness");
     assert.equal(c.frontier.score, 0.7);
     assert.equal(c.budget.tokens, 100000);
     assert.equal(c.history.length, 1, "corrupt history line skipped");

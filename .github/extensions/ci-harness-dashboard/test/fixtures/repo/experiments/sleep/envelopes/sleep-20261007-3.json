@@ -428,7 +428,7 @@
         ]
       },
       "nightIndex": 7,
-      "skillPath": "src/order_support/harness/skills/order-support/SKILL.md",
+      "skillPath": "harness/skills/harness-editing/SKILL.md",
       "incumbentDigest": "sha256:4444444444444444444444444444444444444444444444444444444444444444"
     }
   },
