@@ -1,5 +1,5 @@
 
-"""Domain registry.  L7 adds ``harness`` without changing the ``order_support`` default."""
+"""Domain registry with the self-hosted ``harness`` default and explicit legacy domains."""
 
 from __future__ import annotations
 

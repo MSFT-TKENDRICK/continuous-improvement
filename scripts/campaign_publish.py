@@ -54,7 +54,16 @@ from ci_lab.publish.github import (
     validate_text,
 )
 
-DEFAULT_ALLOW = ("src/order_support/harness/",)
+DEFAULT_ALLOW = (
+    "harness/agents/",
+    "harness/guards/",
+    "harness/loops/",
+    "harness/mcp/",
+    "harness/prompts/",
+    "harness/skills/",
+    "harness/tools/",
+    "harness/workflows/",
+)
 TRUSTED = ("stack.json", PUBLISHED)
 MAX_REQUESTS = 20
 MAX_ARM_COMMITS = 200
