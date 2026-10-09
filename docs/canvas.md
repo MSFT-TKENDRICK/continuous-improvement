@@ -3,8 +3,11 @@
 A GitHub Copilot app canvas (`ci-harness-dashboard`) that shows the self-improving harness live:
 campaigns and their frontier, RRSI rounds and arms, OES experiments and decisions, ASSERT evals,
 sleep nights, AGL rollouts, and OpenTelemetry traces from local JSONL files, imported CI runs and
-Aspire. It implements design §12 (`docs/design/self-improving-harness.md`) and security controls
-C29–C38.
+Aspire.
+
+**Aspire is not embedded.** The Aspire UI cannot be safely iframed and the extension does not proxy
+it. Native canvas views read local JSONL and OES/ledger data, and may also read Aspire API envelopes.
+An explicit user click opens Aspire as a top-level browser page.
 
 Code: `.github/extensions/ci-harness-dashboard/`. It is plain Node ESM with no npm dependencies
 (Node ≥ 20). Only `extension.mjs` imports `@github/copilot-sdk/extension`, which the host resolves.
