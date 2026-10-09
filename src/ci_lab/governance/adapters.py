@@ -15,7 +15,6 @@ from __future__ import annotations
 import ast
 import json
 from collections.abc import Callable, Iterable, Mapping
-from functools import lru_cache
 from typing import Any
 
 import re2
@@ -108,50 +107,6 @@ def _killed(snap: Mapping[str, Any]) -> dict[str, Any] | None:
         return {"decision": "deny", "reason": "kill_switch_engaged",
                 "message": "Kill switch engaged; all agent actions are halted."}
     return None
-
-
-@lru_cache(maxsize=1)
-def _extractors() -> tuple[Any, ...]:
-    from ci_lab.guards.domains.order_support import EXTRACTORS
-    from ci_lab.rules.loader import load_yaml
-    from ci_lab.rulespec import ExtractorFile
-
-    return tuple(ExtractorFile.model_validate(load_yaml(EXTRACTORS.read_text("utf-8"))).extractors)
-
-
-def _verified(history: list[Mapping[str, Any]], order_id: Any) -> bool:
-    """The frozen ``identity_verified`` flag for ``order_id`` (``ci_lab.rules`` extractors)."""
-    from ci_lab.rules.engine import TrajectoryIndex
-    from ci_lab.rulespec import TrajectoryStep, normalize_subject
-
-    steps = [TrajectoryStep(i=k, **{f: s[f] for f in ("kind", "tool", "call_id", "args", "result",
-                                                     "status") if s.get(f) is not None})
-             for k, s in enumerate(history)]
-    flags = TrajectoryIndex(steps, _extractors()).flags_at(len(steps))
-    return normalize_subject(order_id) in flags.get("identity_verified", set())
-
-
-def order_support_tools(inv: Mapping[str, Any]) -> dict[str, Any]:
-    policy, snap, args = _parts(inv)
-    if killed := _killed(snap):
-        return killed
-    call = snap.get("call") or {}
-    if call.get("name") != "issue_refund":
-        return {"decision": "allow"}
-    if not _verified(list(snap.get("history") or []), args.get("order_id")):
-        return {"decision": "deny", "reason": "identity_not_verified",
-                "message": "Verify the customer's identity for this order before refunding."}
-    from order_support.data import REFUND_LIMIT
-
-    limit = float(policy.get("refund_limit", REFUND_LIMIT))
-    amount = args.get("amount")
-    if not isinstance(amount, int | float) or isinstance(amount, bool) or amount < 0:
-        return {"decision": "deny", "reason": "refund_amount_invalid"}
-    if amount > limit:
-        return {"decision": "escalate", "reason": "refund_over_limit",
-                "message": f"Refunds above {limit:.2f} need human approval.",
-                "approval": {"kind": "refund_over_limit"}}
-    return {"decision": "allow"}
 
 
 def meta_tools(inv: Mapping[str, Any]) -> dict[str, Any]:
@@ -293,7 +248,6 @@ def harness_tools(inv: Mapping[str, Any]) -> dict[str, Any]:
 
 
 DISPATCHER: dict[str, Callable[[Mapping[str, Any]], dict[str, Any]]] = {
-    "ci.order_support.tools": order_support_tools,
     "ci.meta.tools": meta_tools,
     "ci.model_allowlist": model_allowlist,
     "ci.screen_input": screen_input,

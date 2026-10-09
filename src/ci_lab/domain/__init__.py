@@ -1,19 +1,15 @@
 
-"""Domain registry with the self-hosted ``harness`` default and explicit legacy domains."""
+"""Domain registry for the self-hosted harness."""
 
 from __future__ import annotations
 
 from typing import Any
 
-DOMAIN_CHOICES = ("order_support", "harness")
+DOMAIN_CHOICES = ("harness",)
 DEFAULT_DOMAIN = "harness"
 
 
 def get_domain(name: str = DEFAULT_DOMAIN, **kwargs: Any) -> Any:
-    if name == "order_support":
-        from ci_lab.domain.order_support import OrderSupportDomain
-
-        return OrderSupportDomain(**kwargs)
     if name == "harness":
         from ci_lab.domain.harness import HarnessDomain
 
@@ -21,12 +17,8 @@ def get_domain(name: str = DEFAULT_DOMAIN, **kwargs: Any) -> Any:
     raise ValueError(f"unknown domain {name!r}; choose one of {', '.join(DOMAIN_CHOICES)}")
 
 
-def order_support_domain(**kwargs: Any) -> Any:
-    return get_domain("order_support", **kwargs)
-
-
 def harness_domain(**kwargs: Any) -> Any:
     return get_domain("harness", **kwargs)
 
 
-__all__ = ["DEFAULT_DOMAIN", "DOMAIN_CHOICES", "get_domain", "harness_domain", "order_support_domain"]
+__all__ = ["DEFAULT_DOMAIN", "DOMAIN_CHOICES", "get_domain", "harness_domain"]

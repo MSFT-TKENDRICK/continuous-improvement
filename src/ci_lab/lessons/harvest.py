@@ -12,7 +12,7 @@ Sources and the formats they read (other modules are read by *format*, never imp
   AGENT/TOOL spans (``openinference.span.kind``, ``tool.name``, ``input.value``, ``output.value``)
   and MAF ``execute_tool`` spans (``gen_ai.tool.*``), grouped per ``ci.case`` span;
 * ``agl``: ``FileRolloutJournal`` per-rollout JSONL (``start``/``event``/``finish`` records);
-* ``calibrate``: the human-labelled dataset ``evals/datasets/order_support.yaml``;
+* ``calibrate``: a human-labelled calibration dataset;
 * ``usage``: spans or AGL journals of real traffic — always reduced (B3), ``trusted`` only with a
   human label.
 """
@@ -400,7 +400,7 @@ def group_spans(records: Iterable[Mapping[str, Any]]) -> list[tuple[_Span | None
 
 
 def transcript_from_span_group(spans: Sequence[_Span], case_id: str) -> dict[str, Any]:
-    """``contracts.Transcript``-shaped dict (same conventions as order_support.oracle)."""
+    """Build a ``contracts.Transcript``-shaped dictionary from a span group."""
     agent_ids = {s.span_id for s in spans if s.kind == "AGENT"}
     roots = [s for s in spans if s.kind == "AGENT" and s.parent_id not in agent_ids]
     messages: list[dict[str, Any]] = []
