@@ -383,7 +383,8 @@ def wired_deps(profile: Profile | str, *, run_root: Path, ledger_dir: Path | Non
                repo: str = "example/harness", dry_run_publish: bool = False, repo_root: Path | None = None,
                domain: Domain | None = None, client_factory: ClientFactory | None = None,
                wt_root: Path | None = None, incumbent_ref: str = "HEAD", leak_corpus: LeakCorpus | None = None,
-               meta_harness_dir: Path | None = None, **overrides: Any) -> CampaignDeps:
+               meta_harness_dir: Path | None = None, domain_name: str = "order_support",
+               **overrides: Any) -> CampaignDeps:
     """:class:`CampaignDeps` for ``copilot``/``offline`` (``fake`` lives in :mod:`.fakes`).
 
     The meta agents load their evolvable specs from ``meta_harness_dir`` (default: the
@@ -401,11 +402,16 @@ def wired_deps(profile: Profile | str, *, run_root: Path, ledger_dir: Path | Non
         check_offline_endpoints()
     run_root = Path(run_root)
     if domain is None:
-        from ci_lab.domain.order_support import REPO_ROOT, OrderSupportDomain
+        from ci_lab.domain import get_domain
+        from ci_lab.domain.order_support import REPO_ROOT
 
         repo_root = Path(repo_root) if repo_root is not None else REPO_ROOT
-        domain = OrderSupportDomain(repo_root=repo_root, work_dir=run_root / "domain",
-                                    journal=campaign_journal(run_root, offline=offline))
+        if domain_name == "harness":
+            domain = get_domain(domain_name, repo_root=repo_root, work_dir=run_root / "domain",
+                                profile=profile.value)
+        else:
+            domain = get_domain(domain_name, repo_root=repo_root, work_dir=run_root / "domain",
+                                journal=campaign_journal(run_root, offline=offline))
     repo_root = Path(repo_root) if repo_root is not None else Path.cwd()
     gitops = GitOps(repo_root, harness_root(domain), wt_root=wt_root, incumbent_ref=incumbent_ref)
     if not isinstance(domain, HarnessDomain):
