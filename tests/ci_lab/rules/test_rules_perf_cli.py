@@ -7,7 +7,7 @@ from ci_lab.rules import build_bundle, evaluate_trajectory
 from ci_lab.rules.cli import main
 from ci_lab.rulespec import ExtractorSpec, RuleSpec
 
-TOOLS = ["lookup_order", "search_kb", "issue_refund", "escalate_to_human", "verify_identity"]
+TOOLS = ["read_file", "search_kb", "write_file", "escalate_to_human", "verify_access"]
 
 
 def _rules(n=100):
@@ -16,16 +16,16 @@ def _rules(n=100):
         tool = TOOLS[k % len(TOOLS)]
         kind = k % 5
         if kind == 0:
-            req = {"kind": "prior", "tool": "lookup_order", "status": "ok",
-                   "same": [["current.args.order_id", "prior.args.order_id"]],
-                   "where": {"kind": "arg", "path": "prior.result.refund_eligible", "op": "eq", "value": True},
+            req = {"kind": "prior", "tool": "read_file", "status": "ok",
+                   "same": [["current.args.resource_id", "prior.args.resource_id"]],
+                   "where": {"kind": "arg", "path": "prior.result.edit_allowed", "op": "eq", "value": True},
                    "cmp": [{"current": "current.args.amount", "op": "le", "prior": "prior.result.total"}]}
         elif kind == 1:
-            req = {"kind": "state", "flag": "identity_verified", "subject": "current.args.order_id"}
+            req = {"kind": "state", "flag": "access_verified", "subject": "current.args.resource_id"}
         elif kind == 2:
             req = {"kind": "count", "tool": tool, "op": "le", "n": 1000 + k}
         elif kind == 3:
-            req = {"kind": "any", "of": [{"kind": "arg", "path": "current.args.order_id", "op": "matches",
+            req = {"kind": "any", "of": [{"kind": "arg", "path": "current.args.resource_id", "op": "matches",
                                           "value": rf"^A\d{{{1 + k % 4}}}"},
                                          {"kind": "not", "of": {"kind": "arg", "path": "current.args.amount",
                                                                 "op": "gt", "value": k}}]}
@@ -46,8 +46,8 @@ def _steps(n=200):
         tool = TOOLS[k % len(TOOLS)]
         oid = f"A{k % 13}"
         steps.append(TrajectoryStep(i=len(steps), kind="tool_call", tool=tool, call_id=f"c{k}",
-                                    args={"order_id": oid, "amount": k % 90}))
-        res = {"order_id": oid, "total": 50.0, "refund_eligible": k % 3 != 0, "refund_limit_exceeded": False,
+                                    args={"resource_id": oid, "amount": k % 90}))
+        res = {"resource_id": oid, "total": 50.0, "edit_allowed": k % 3 != 0, "edit_limit_exceeded": False,
                "verified": True}
         steps.append(TrajectoryStep(i=len(steps), kind="tool_result", tool=tool, call_id=f"c{k}", result=res,
                                     status="ok" if k % 11 else "error"))
@@ -56,8 +56,8 @@ def _steps(n=200):
 
 
 def test_100_rules_x_200_steps_is_fast():
-    ex = [ExtractorSpec(flag="identity_verified", tool="verify_identity", result_path="result.verified",
-                        subject="args.order_id", ttl_steps=20)]
+    ex = [ExtractorSpec(flag="access_verified", tool="verify_access", result_path="result.verified",
+                        subject="args.resource_id", ttl_steps=20)]
     b = build_bundle(_rules(), ex)
     steps = _steps()
     evaluate_trajectory(b, steps)  # warm caches
@@ -74,16 +74,16 @@ def test_cli_check_ok_and_errors(tmp_path, capsys, request):
     fx = request.path.parent / "fixtures"
     assert main(["rules", "check", str(fx / "seeds.yaml"), "--extractors", str(fx / "extractors.yaml")]) == 0
     assert "[RULES][OK] 7 rule(s)" in capsys.readouterr().out
-    assert main(["rules", "check", str(fx / "seeds.yaml")]) == 1  # no extractor for identity_verified
+    assert main(["rules", "check", str(fx / "seeds.yaml")]) == 1  # no extractor for access_verified
     out = capsys.readouterr().out
-    assert "[RULES][ERROR]" in out and "  Violation: state flag 'identity_verified' has no extractor" in out
+    assert "[RULES][ERROR]" in out and "  Violation: state flag 'access_verified' has no extractor" in out
     assert "  Fix: " in out
 
 
 def test_cli_eval_prints_matches(tmp_path, capsys, request, tb):
     fx = request.path.parent / "fixtures"
-    tb.lookup("A1")
-    tb.call("issue_refund", order_id="A1", amount=5)
+    tb.inspect("A1")
+    tb.call("write_file", resource_id="A1", amount=5)
     traj = tmp_path / "t.json"
     traj.write_text(json.dumps({"steps": [s.model_dump(mode="json") for s in tb.steps]}), encoding="utf-8")
     rc = main(["rules", "eval", "--rules", str(fx / "seeds.yaml"), "--extractors", str(fx / "extractors.yaml"),
@@ -91,7 +91,7 @@ def test_cli_eval_prints_matches(tmp_path, capsys, request, tb):
     out = capsys.readouterr().out
     assert rc == 0
     got = json.loads(out)
-    assert [m["rule"] for m in got] == ["refund.requires_verified_identity"]
+    assert [m["rule"] for m in got] == ["change.requires_access"]
     assert got[0]["step_index"] == 2 and got[0]["action"] == "block" and got[0]["mode"] == "shadow"
     bad = tmp_path / "bad.json"
     bad.write_text("{", encoding="utf-8")
