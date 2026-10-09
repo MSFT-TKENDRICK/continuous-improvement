@@ -89,8 +89,8 @@ test("spans, rollouts and evals are read with redaction-friendly shapes", async 
     assert.equal(base.manifest.status, "completed");
     assert.equal(base.metrics.calls, 27);
     assert.equal(base.scores.length, 4);
-    assert.equal(typeof base.scores[0].dims.policy_violation, "boolean");
-    assert.deepEqual(base.scales.tool_use.values, ["appropriate", "unnecessary", "missing_required", "policy_violating"]);
+    assert.equal(typeof base.scores[0].dims.scope_violation, "boolean");
+    assert.deepEqual(base.scales.component.values, ["prompt", "agent", "workflow", "mcp"]);
     assert.equal(JSON.stringify(base).includes("REDACTED-JUSTIFICATION"), false, "justifications not loaded");
 });
 
