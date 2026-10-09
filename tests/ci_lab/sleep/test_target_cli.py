@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 from pathlib import Path
 
 import pytest
@@ -9,115 +10,56 @@ from skillopt_sleep.types import TaskRecord
 from ci_lab.contracts import FailureRecord, Transcript
 from ci_lab.sleep.backend import ReflectRequest
 from ci_lab.sleep.reflector import make_maf_reflector, render_request
-from ci_lab.sleep.target import (
-    compose_instructions,
-    make_maf_run_target,
-    materialize_harness,
-)
-from ci_lab.sleep.wiring import PolicyOracle
+from ci_lab.sleep.registry import HARNESS_EDITING
+from ci_lab.sleep.target import make_harness_run_target, materialize_harness
 from ci_lab.testing import Call, FakeChatClient
 
+ROOT = Path(__file__).resolve().parents[3]
+SKILL_REL = Path("skills/harness-editing/SKILL.md")
 
-def test_materialize_harness_writes_skill_path(tmp_path):
+
+def test_materialize_harness_writes_requested_skill_path(tmp_path):
     base = tmp_path / "base"
     (base / "prompts").mkdir(parents=True)
     (base / "prompts" / "system.md").write_text("SYSTEM", encoding="utf-8")
-    d1 = materialize_harness("SKILL A", "", tmp_path / "root", base)
-    assert (d1 / "skills" / "order-support" / "SKILL.md").read_text(encoding="utf-8") == "SKILL A"
+    d1 = materialize_harness("SKILL A", "", tmp_path / "root", base, skill_rel=SKILL_REL)
+    assert (d1 / SKILL_REL).read_text(encoding="utf-8") == "SKILL A"
     assert (d1 / "prompts" / "system.md").exists()
-    assert materialize_harness("SKILL A", "", tmp_path / "root", base) == d1
-    assert materialize_harness("SKILL B", "", tmp_path / "root", base) != d1
-    text = compose_instructions(d1)
-    assert text.startswith("SYSTEM") and "SKILL A" in text
+    assert materialize_harness("SKILL A", "", tmp_path / "root", base, skill_rel=SKILL_REL) == d1
+    assert materialize_harness("SKILL B", "", tmp_path / "root", base, skill_rel=SKILL_REL) != d1
 
 
-
-def _harness_with_identity(base: Path, files: list[str] | str | None) -> Path:
-    (base / "prompts").mkdir(parents=True)
-    (base / "prompts" / "system.md").write_text("SYSTEM", encoding="utf-8")
-    (base / "prompts" / "identity.md").write_text("IDENTITY-GUIDANCE", encoding="utf-8")
-    if files is not None:
-        listed = files if isinstance(files, str) else "\n".join(f"    - {f}" for f in files)
-        (base / "agent.yaml").write_text(f"kind: Prompt\nname: X\nx-ci:\n  instructions_files:\n{listed}\n",
-                                         encoding="utf-8")
-    return base
-
-
-def test_compose_instructions_follows_agent_yaml_instruction_files(tmp_path):
-    base = _harness_with_identity(tmp_path / "base", ["prompts/system.md", "prompts/identity.md",
-                                                      "skills/order-support/SKILL.md"])
-    d = materialize_harness("SKILL A", "MEM", tmp_path / "root", base)
-    text = compose_instructions(d)
-    assert text.startswith("SYSTEM")
-    order = [text.index(m) for m in ("SYSTEM", "IDENTITY-GUIDANCE", "## Skill: order-support\n\nSKILL A",
-                                     "## Memory\n\nMEM")]
-    assert order == sorted(order)
-    # a system_prompt override replaces system.md but keeps the extra file
-    over = compose_instructions(d, "OVERRIDE")
-    assert over.startswith("OVERRIDE") and "SYSTEM" not in over and "IDENTITY-GUIDANCE" in over
-
-
-def test_compose_instructions_appends_skill_when_unlisted_and_skips_missing(tmp_path):
-    base = _harness_with_identity(tmp_path / "base", ["prompts/identity.md", "prompts/missing.md"])
-    d = materialize_harness("SKILL B", "", tmp_path / "root", base)
-    text = compose_instructions(d)
-    assert text.startswith("SYSTEM") and text.index("IDENTITY-GUIDANCE") < text.index("SKILL B")
-    assert "## Memory" not in text
-
-
-@pytest.mark.parametrize("files", [None, "    {bad", "    7"])
-def test_compose_instructions_falls_back_without_usable_agent_yaml(tmp_path, files):
-    base = _harness_with_identity(tmp_path / "base", None)
-    if files is not None:
-        (base / "agent.yaml").write_text(f"x-ci:\n  instructions_files:\n{files}\n", encoding="utf-8")
-    d = materialize_harness("SKILL C", "", tmp_path / "root", base)
-    text = compose_instructions(d)
-    assert text.startswith("SYSTEM") and "SKILL C" in text and "IDENTITY-GUIDANCE" not in text
-
-
-def test_compose_instructions_rejects_escaping_instruction_file(tmp_path):
-    base = _harness_with_identity(tmp_path / "base", ["../outside.md"])
-    d = materialize_harness("SKILL D", "", tmp_path / "root", base)
-    with pytest.raises(ValueError, match="escapes"):
-        compose_instructions(d)
-
-
-def test_instruction_files_match_repo_agent_yaml():
-    from ci_lab.sleep.target import SKILL_REL, SYSTEM_REL, instruction_files
-
-    harness = Path(__file__).resolve().parents[3] / "src" / "order_support" / "harness"
-    files = instruction_files(harness)
-    assert files[0] == SYSTEM_REL and SKILL_REL in files
-    assert all((harness / f).is_file() for f in files)
-
-def test_maf_run_target_injects_skill_and_records_real_tool_calls(tmp_path):
+def test_harness_run_target_injects_skill_and_records_tool_calls(tmp_path):
+    base = tmp_path / "base"
+    shutil.copytree(ROOT / "harness", base)
     clients: list[FakeChatClient] = []
 
     def factory():
-        c = FakeChatClient([[Call("lookup_order", {"order_id": "NW-10001"})], "Your order shipped."])
-        clients.append(c)
-        return c
+        client = FakeChatClient([[Call("list_files", {"glob": "**/*"})], "Inspected the harness."])
+        clients.append(client)
+        return client
 
-    executed = []
-
-    def execute(name, args):
-        executed.append((name, args))
-        return {"order_id": args.get("order_id"), "status": "shipped"}
-
-    run = make_maf_run_target(factory, harness_root=tmp_path / "h", system_prompt="SYS", execute=execute)
-    t = TaskRecord(id="t1", project="p", intent="Where is NW-10001?")
-    reply, tools, tr = run(t, "SKILL-MARKER-123", "")
-    assert reply == "Your order shipped." and tools == ["lookup_order"]
-    assert executed == [("lookup_order", {"order_id": "NW-10001"})]
-    assert isinstance(tr, Transcript) and tr.tool_calls[0].result["status"] == "shipped"
-    msgs, opts = clients[0].requests[0]
-    assert "SKILL-MARKER-123" in str(opts.get("instructions", "")) + " ".join(m.text or "" for m in msgs)
-    assert list((tmp_path / "h").glob("*/skills/order-support/SKILL.md"))
+    run = make_harness_run_target(
+        factory,
+        harness_root=tmp_path / "materialized",
+        base_harness=base,
+        owner_agent=HARNESS_EDITING.owner_agent,
+        skill_path=HARNESS_EDITING.skill_path,
+    )
+    task = TaskRecord(id="t1", project="harness-editing", intent="Inspect the harness files.")
+    skill = "---\nname: harness-editing\ndescription: SKILL-MARKER-123\n---\n\nInspect before editing.\n"
+    reply, tools, transcript = run(task, skill, "")
+    assert reply == "Inspected the harness." and tools == ["list_files"]
+    assert isinstance(transcript, Transcript) and transcript.tool_calls[0].name == "list_files"
+    assert list((tmp_path / "materialized").glob("*/skills/harness-editing/SKILL.md"))
+    messages, options = clients[0].requests[0]
+    rendered = str(options.get("instructions", "")) + " ".join(message.text or "" for message in messages)
+    assert "SKILL-MARKER-123" in rendered
 
 
 def _req() -> ReflectRequest:
-    f = FailureRecord(case_id="c1", suite="refunds", category="verify_identity",
-                      rule_ids=("check.tool_called:lookup_order",), rubric_scores={"rule_checks": 0.5},
+    f = FailureRecord(case_id="c1", suite="harness", category="inspect_before_edit",
+                      rule_ids=("check.tool_called:read_file",), rubric_scores={"rule_checks": 0.5},
                       excerpt="Sorry")
     return ReflectRequest(failures=(f,), n_successes=2, target="skill", edit_budget=2, learned=("old line",))
 
@@ -129,25 +71,12 @@ def test_render_request_contains_only_typed_fields():
 
 
 def test_maf_reflector_returns_typed_edits():
-    edits = [{"op": "add", "content": "Always call lookup_order first.", "rationale": "r"}]
+    edits = [{"op": "add", "content": "Always call read_file first.", "rationale": "r"}]
     client = FakeChatClient([[Call("submit_edits", {"edits": edits})], "done"])
     res = make_maf_reflector(lambda: client)(_req())
-    assert [(e.target, e.op, e.content) for e in res.edits] == [("skill", "add", "Always call lookup_order first.")]
+    assert [(e.target, e.op, e.content) for e in res.edits] == [("skill", "add", "Always call read_file first.")]
     msgs, _ = client.requests[0]
-    assert any("check.tool_called:lookup_order" in (m.text or "") for m in msgs)
-
-
-def test_policy_oracle_fallback():
-    from ci_lab.contracts import ToolCallRecord
-
-    msgs = [{"role": "user", "content": "refund NW-10001, I'm a@example.com"}, {"role": "assistant", "content": "ok"}]
-    lookup = ToolCallRecord("1", "lookup_order", {"order_id": "NW-10001"},
-                            {"order_id": "NW-10001", "email": "a@example.com", "refund_eligible": True,
-                             "total": 50}, 0)
-    refund = ToolCallRecord("2", "issue_refund", {"order_id": "NW-10001", "amount": 20}, {"ok": True}, 1)
-    assert PolicyOracle().check(Transcript(case_id="x", messages=msgs, tool_calls=(lookup, refund))) == []
-    v = PolicyOracle().check(Transcript(case_id="x", messages=msgs, tool_calls=(refund,)))
-    assert [x.rule_id for x in v] == ["refund.unverified_identity"]
+    assert any("check.tool_called:read_file" in (m.text or "") for m in msgs)
 
 
 @pytest.mark.parametrize("profile", ["copilot", "offline"])

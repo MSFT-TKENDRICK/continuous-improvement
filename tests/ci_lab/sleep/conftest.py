@@ -17,15 +17,15 @@ Keep harness changes bounded and validate the frozen manifest.
 """
 
 
-def task_row(i: int, rule: str = "verify_identity", **extra) -> dict:
+def task_row(i: int, rule: str = "inspect_before_edit", **extra) -> dict:
     row = {
         "id": f"t{i:02d}", "project": "harness-editing",
         "intent": f"Please propose a bounded harness improvement for failing case {i}.",
         "reference": "I inspected the harness and proposed a bounded edit.",
         "reference_kind": "rule",
-        "judge": {"kind": "rule", "checks": [{"op": "tool_called", "arg": "lookup_order"},
-                                             {"op": "contains", "arg": "verified"}]},
-        "tags": [rule, f"rule:{rule}", "suite:refunds"], "reviewed": True,
+        "judge": {"kind": "rule", "checks": [{"op": "tool_called", "arg": "read_file"},
+                                             {"op": "contains", "arg": "inspected"}]},
+        "tags": [rule, f"rule:{rule}", "suite:harness-proposal"], "reviewed": True,
     }
     row.update(extra)
     return row
@@ -66,9 +66,6 @@ def sleep_repo(tmp_path: Path) -> Path:
     triage = repo / "harness/skills/trace-triage/SKILL.md"
     triage.parent.mkdir(parents=True, exist_ok=True)
     triage.write_text(SKILL.replace("harness-editing", "trace-triage"), encoding="utf-8", newline="\n")
-    legacy = repo / "src/order_support/harness/skills/order-support/SKILL.md"
-    legacy.parent.mkdir(parents=True)
-    legacy.write_text(SKILL.replace("harness-editing", "order-support"), encoding="utf-8", newline="\n")
     state = repo / "experiments/sleep/state.json"
     state.parent.mkdir(parents=True)
     state.write_text(json.dumps({"format": "ci_lab.sleep.state.v1", "night": 0, "history": []}, indent=2) + "\n",
@@ -77,8 +74,5 @@ def sleep_repo(tmp_path: Path) -> Path:
     write_tasks(repo / "experiments/sleep/trace-triage.jsonl",
                 [task_row(i, id=f"r{i:02d}", project="trace-triage") for i in range(6)],
                 header={"format": "skillopt_sleep.tasks.v1", "project": "trace-triage", "reviewed": True})
-    write_tasks(repo / "experiments/sleep/tasks.jsonl",
-                [task_row(i, project="order-support") for i in range(6)],
-                header={"format": "skillopt_sleep.tasks.v1", "project": "order-support", "reviewed": True})
     init_repo(repo)
     return repo
