@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import shutil
 from pathlib import Path
 
 import pytest
@@ -21,15 +22,6 @@ from ci_lab.template.marker import (
 )
 
 REPO = Path(__file__).resolve().parents[3]
-SUITE = """\
-name: s
-pipeline:
-  test_set:
-    taxonomy_path: taxonomy.json
-  judge:
-    model:
-      name: s1/llamacpp/qwen
-"""
 GATED = """\
 on:
   schedule:
@@ -49,9 +41,6 @@ jobs:
           ROUNDS: ${{ vars.CAMPAIGN_ROUNDS }}
         run: echo "$ROUNDS"
 """
-DOC = "Settings: `CI_HARNESS_ENABLED`, `CAMPAIGN_ROUNDS`, `campaign-publish`.\n"
-
-
 def _template_state(root: Path) -> None:
     """Write CODEOWNERS + marker as they are in the template, whether this checkout is the template or a
     repository created from it (then its owners are mapped back to the template owner)."""
@@ -69,12 +58,18 @@ def _derived(root: Path, *, init: bool = True) -> Path:
     (root / ".github" / "workflows").mkdir(parents=True)
     _template_state(root)
     (root / ".github" / "workflows" / "nightly.yml").write_text(GATED, encoding="utf-8")
+    for name in ("campaign-scheduled.yml", "sleep-nightly.yml"):
+        shutil.copy2(REPO / ".github" / "workflows" / name, root / ".github" / "workflows" / name)
     (root / "docs").mkdir()
-    (root / "docs" / "template.md").write_text(DOC, encoding="utf-8")
-    suite = root / "evals" / "assert" / "s"
-    suite.mkdir(parents=True)
-    (suite / "eval_config.yaml").write_text(SUITE, encoding="utf-8")
-    (suite / "test_set.jsonl").write_text('{"id": 1}\n', encoding="utf-8")
+    shutil.copy2(REPO / "docs" / "template.md", root / "docs" / "template.md")
+    shutil.copytree(REPO / "harness", root / "harness")
+    for rel in (tdoc.FROZEN_MANIFEST_REL, tdoc.HARNESS_POLICY_REL, tdoc.HARNESS_DATASET_REL,
+                tdoc.SLEEP_TARGETS_REL):
+        dest = root / rel
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(REPO / rel, dest)
+    for suite in (REPO / "evals" / "assert").glob("harness_*"):
+        shutil.copytree(suite, root / "evals" / "assert" / suite.name)
     if init:
         opts = tinit.Options(repo="acme/agent", owners=("@acme/agent-owners",))
         tinit.apply_plan(root, tinit.build_plan(root, opts))
@@ -147,20 +142,28 @@ def test_ungated_schedule_fails(repo: Path) -> None:
 
 
 def test_missing_or_empty_test_set_fails(repo: Path) -> None:
-    ts = repo / "evals" / "assert" / "s" / "test_set.jsonl"
+    ts = repo / "evals" / "assert" / "harness_triage" / "test_set.jsonl"
     ts.write_text("\n", encoding="utf-8")
     assert _status(tdoc.check_test_sets(repo), "test-sets") == {"FAIL"}
     ts.unlink()
     checks = tdoc.check_test_sets(repo)
-    assert checks[0].status == "FAIL" and "order-support-evals run" in checks[0].fix
+    assert checks[0].status == "FAIL" and "ASSERT pipeline" in checks[0].fix
 
 
 def test_unknown_judge_backend_fails(repo: Path) -> None:
-    cfg = repo / "evals" / "assert" / "s" / "eval_config.yaml"
-    cfg.write_text(SUITE.replace("s1/llamacpp/qwen", "s1/nope/qwen"), encoding="utf-8")
-    assert _status(tdoc.check_judge(repo), "judge") == {"FAIL"}
-    cfg.write_text(SUITE.replace("s1/llamacpp/qwen", "gpt-x"), encoding="utf-8")
-    assert _status(tdoc.check_judge(repo), "judge") == {"WARN"}
+    cfg = repo / "evals" / "assert" / "harness_triage" / "eval_config.yaml"
+    text = cfg.read_text(encoding="utf-8")
+    cfg.write_text(text.replace("s1/llamacpp/qwen3.5-4b", "s1/nope/qwen"), encoding="utf-8")
+    assert "FAIL" in _status(tdoc.check_judge(repo), "judge")
+    cfg.write_text(text.replace("s1/llamacpp/qwen3.5-4b", "gpt-x"), encoding="utf-8")
+    assert "WARN" in _status(tdoc.check_judge(repo), "judge")
+
+
+def test_harness_defaults_are_required(repo: Path) -> None:
+    assert _status(tdoc.check_harness(repo), "harness") == {"PASS"}
+    (repo / tdoc.HARNESS_POLICY_REL).unlink()
+    checks = tdoc.check_harness(repo)
+    assert checks[0].status == "FAIL" and tdoc.HARNESS_POLICY_REL in checks[0].detail
 
 
 def test_template_repo_settings_judge_and_test_sets_pass() -> None:

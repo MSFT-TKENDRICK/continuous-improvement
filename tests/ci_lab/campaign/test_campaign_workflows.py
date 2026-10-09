@@ -79,6 +79,9 @@ def test_campaign_jobs_split_privileges():
     assert rnd["permissions"] == {"contents": "read", "copilot-requests": "write"}
     runs = "\n".join(s.get("run", "") for s in steps(rnd))
     assert "--defer-publish" in runs and "campaign publish" not in runs
+    assert "--domain harness" in runs and 'rrsi_profile="harness"' in runs
+    run_env = next(s["env"] for s in steps(rnd) if s.get("name") == "Run campaign rounds (publishing deferred)")
+    assert {"CI_LAB_TARGET_MODEL", "CI_LAB_JUDGE_MODEL", "CI_S1_LLAMA_URL"} <= set(run_env)
     assert "git push" not in runs and "gh pr" not in runs
     # absolute --rounds: ROUNDS more than the ledger records; fail closed on half-published rounds
     assert ".rounds | length" in runs and '--rounds "$target"' in runs

@@ -164,7 +164,7 @@ def _count_files(path: Path) -> int:
 
 
 def _tasks_header(existing: str) -> str:
-    project = "order-support"
+    project = "harness"
     first = next((ln for ln in existing.splitlines() if ln.strip() and not ln.lstrip().startswith("//")), "")
     try:
         head = json.loads(first)
