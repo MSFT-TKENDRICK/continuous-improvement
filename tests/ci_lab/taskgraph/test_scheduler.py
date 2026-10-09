@@ -35,21 +35,21 @@ from ci_lab.taskgraph.validate import validate_rubric
 from ci_lab.taskgraph.vault import RubricVault
 
 CANARY = "0123456789abcdef"
-QUESTION = "Does the report cite at least two distinct order identifiers taken from the log?"
-GOOD = "# Report\nOrders ORD-1 and ORD-2 were escalated.\n"
+QUESTION = "Does the report cite at least two distinct resource identifiers taken from the log?"
+GOOD = "# Report\nResources RES-1 and RES-2 were escalated.\n"
 
 
 def rubric(task: str, version: int = 1, extra: tuple[Criterion, ...] = ()) -> Rubric:
     return Rubric(f"{task}-rubric", version, task, (
         Criterion("c-format", "Report starts with a level one heading", "deterministic",
                   {"kind": "regex", "pattern": "^# Report", "independent": True}, 1.0, required=True),
-        Criterion("c-cites", "Report cites order identifiers", "s1",
+        Criterion("c-cites", "Report cites resource identifiers", "s1",
                   {"question": QUESTION, "type": "noul", "options": []}, 0.6), *extra), 0.7, CANARY)
 
 
 def soft(_p: Any, artifact: bytes, _r: Any, _s: Any) -> Ballot:
-    ok = artifact.count(b"ORD-") >= 2
-    return Ballot(ok, 1.0 if ok else 0.1, 1.0, () if ok else ("cite more orders",))
+    ok = artifact.count(b"RES-") >= 2
+    return Ballot(ok, 1.0 if ok else 0.1, 1.0, () if ok else ("cite more resources",))
 
 
 def voters(_d: Deliverable) -> list[Any]:
@@ -110,7 +110,7 @@ def test_commit_revise_reject_blocked_and_leak(tmp_path: Path) -> None:
     assert "attempt 1 of 2" in a1 and "## Correction" not in a1
     assert "attempt 2 of 2" in a2 and "## Correction" in a2
     b_msg = next(m for (t, _), m in msgs.items() if t == "b")
-    assert "ORD-1 and ORD-2" in b_msg and "### a" in b_msg
+    assert "RES-1 and RES-2" in b_msg and "### a" in b_msg
     assert {t for t, _, _ in student.calls} == {"a", "b", "c", "e"}
     for _, m, mw in student.calls:  # the student never sees rubric material, always behind the firewall
         assert CANARY not in m and QUESTION not in m and "^# Report" not in m and "c-format" not in m
@@ -176,16 +176,16 @@ def test_resume_after_crash_skips_committed_and_reuses_in_flight_attempt(tmp_pat
 
 def gullible(_p: Any, artifact: bytes, _r: Any, _s: Any) -> Ballot:
     text = artifact.decode().lower()
-    ok = artifact.count(b"ORD-") >= 2 or any(w in text for w in ("grader", "evaluator", "previous instructions",
+    ok = artifact.count(b"RES-") >= 2 or any(w in text for w in ("grader", "evaluator", "previous instructions",
                                                                   "reviewer"))
-    return Ballot(ok, 1.0 if ok else 0.1, 1.0, () if ok else ("cite more orders",))
+    return Ballot(ok, 1.0 if ok else 0.1, 1.0, () if ok else ("cite more resources",))
 
 
 def test_exploit_hardens_next_attempt_only(tmp_path: Path) -> None:
     vault = RubricVault(tmp_path / "vault")
     assert not validate_rubric(rubric("a"))
     graph = make_graph(vault, {"a": ()})
-    student = FakeStudent({"a": ["# Report\nOrder ORD-1.\n", GOOD]})
+    student = FakeStudent({"a": ["# Report\nResource RES-1.\n", GOOD]})
     hardener = Hardener(vault, tmp_path / "art", patcher=TemplatePatcher(random.Random(0)), seed=0)
     bus = AgentBus(tmp_path / "bus")
     res = asyncio.run(run_graph(
