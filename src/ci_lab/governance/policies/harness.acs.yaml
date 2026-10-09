@@ -1,0 +1,55 @@
+# Frozen ACS policy for self-hosted harness agents and MCP introspection.
+agent_control_specification_version: 0.4.0-alpha.1
+metadata:
+  name: harness
+  owner: ci_lab.governance
+policies:
+  tools:
+    type: custom
+    adapter: ci.harness.tools
+    max_argument_bytes: 32768
+    max_code_chars: 12000
+    timeout_s_max: 60
+    max_output_chars_max: 20000
+    allowed_imports: [json, math, re, statistics, collections, itertools, functools, textwrap, fnmatch, datetime]
+    path_args: [path, run_dir]
+    agent_tools:
+      CiAnalyst: [read_brief, list_documents, read_history, submit_analysis]
+      CiFailureAnalyst:
+        - read_brief
+        - list_documents
+        - read_history
+        - list_files
+        - read_file
+        - list_components
+        - read_component
+        - component_metrics
+        - trace_summary
+        - eval_summary
+        - run_code
+        - harness.list_components
+        - harness.read_component
+        - harness.component_metrics
+        - harness.trace_summary
+        - harness.eval_summary
+      CiProposer:
+        - read_brief
+        - list_documents
+        - read_history
+        - list_files
+        - read_file
+        - write_file
+        - commit_edit
+        - submit_proposal_done
+      CiReflector: [read_brief, list_documents, read_history, submit_reflection]
+      CiStudent: [list_files, read_file, write_file, submit_output]
+intervention_points:
+  pre_tool_call:
+    policy_target: $snap.call.arguments
+    policy: {id: tools}
+approval:
+  default_resolver: file_queue
+  timeout_seconds: 5
+  on_timeout: deny
+  resolvers:
+    file_queue: {type: file, root: artifacts/governance/approvals}

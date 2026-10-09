@@ -121,3 +121,18 @@ def test_escalation_round_trips_through_the_file_queue(tmp_path, audit):
     assert [(r["decision"], r["reason"]) for r in _records(audit)] == [
         ("deny", "refund_over_limit approval:suspend"), ("allow", "refund_over_limit approval:allow"),
         ("deny", "refund_over_limit")]
+
+
+def test_harness_mcp_hook_allows_introspection_and_fails_closed(monkeypatch):
+    hook = gmaf.harness_mcp_before_call(
+        agent_name="CiFailureAnalyst", allowed_tools={"list_components"})
+    assert asyncio.run(hook("harness", "list_components", {})) is None
+    assert "frozen case exposure" in asyncio.run(hook("harness", "read_component", {}))
+
+    async def broken(*_args, **_kwargs):
+        raise RuntimeError("adapter unavailable")
+
+    monkeypatch.setattr(gmaf.Governance, "check", broken)
+    hook = gmaf.harness_mcp_before_call(agent_name="CiFailureAnalyst")
+    assert asyncio.run(hook("harness", "list_components", {})) == (
+        "harness governance adapter failure")

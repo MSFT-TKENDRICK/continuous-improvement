@@ -15,7 +15,7 @@ from ci_lab.governance.adapters import DISPATCHER, Annotator
 __all__ = ["MODE_ENV", "POLICIES", "governance_mode", "load_policy", "manifest_text", "target_mode"]
 
 MODE_ENV = "CI_GOVERNANCE_MODE"
-POLICIES = ("order_support", "meta_agents", "campaign")
+POLICIES = ("order_support", "meta_agents", "campaign", "harness")
 
 
 def governance_mode(env: Mapping[str, str] | None = None) -> str:
