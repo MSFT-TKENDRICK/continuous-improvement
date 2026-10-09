@@ -9,32 +9,20 @@ experimental upstream (see **Provenance** below).
 ## Agent manifest and specs (`specs.py`)
 
 ```yaml
-# agents/manifest.yaml (paths are relative to this file and must stay under its directory)
-agents:
-  OrderSupport:
-    spec: order_support.yaml
-    runtime: prompt            # prompt | harness
-    purpose: target            # contracts.Purpose
-    bindings: [lookup_order]   # the only tool bindings this agent may use
-    skills_paths: [skills]
-```
-
-```yaml
-# agents/order_support.yaml: a MAF `kind: Prompt` agent plus our `x-ci` extension
+# harness/agents/analyst.yaml
 kind: Prompt
-name: OrderSupport
-description: Answers order questions.
-instructions: Optional inline preamble.
-model: {id: gpt-5-mini, provider: GitHubCopilot, options: {reasoningEffort: low}}
+name: CiAnalyst
+description: Groups typed harness failures into actionable patterns.
+model: {id: claude-sonnet-5, provider: GitHubCopilot}
 tools:
   - kind: function
-    name: lookup_order
-    description: Look up an order.          # descriptions may evolve
-    bindings: [{name: lookup_order}]
-    parameters: {properties: {order_id: {kind: string, required: true}}}
+    name: submit_analysis
+    description: Terminal tool for the typed analysis result.
+    bindings: [{name: submit_analysis}]
 x-ci:
-  instructions_files: [prompts/system.md, skills/refunds.md]
-  append_text: Sign off politely.
+  purpose: analyst
+  instructions_files: [../prompts/common.md, ../prompts/analyst.md]
+  terminal_tool: submit_analysis
 ```
 
 The loader removes `x-ci` and builds `instructions` from these parts, in order:
@@ -59,9 +47,9 @@ Get frozen schemas with `AgentSpec.tool_schemas()`. Referenced files must be rel
 ## Building agents (`loader.py`)
 
 ```python
-agent = build_agent("agents/order_support.yaml", client=client,
-                    bindings={"lookup_order": lookup_order}, runtime="prompt",
-                    allowed_models=["gpt-5-mini"], skills_paths=["skills"])
+agent = build_agent("harness/agents/analyst.yaml", client=client,
+                    bindings={"submit_analysis": submit_analysis}, runtime="prompt",
+                    allowed_models=["claude-sonnet-5"], skills_paths=["harness/skills"])
 agents = build_agents_from_manifest("agents/manifest.yaml", client_factory=factory,
                                     profile=profile, bindings=all_bindings,
                                     allowed_models=[...])
