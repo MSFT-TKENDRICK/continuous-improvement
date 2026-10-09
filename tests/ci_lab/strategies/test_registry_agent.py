@@ -8,6 +8,7 @@ from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanE
 from opentelemetry.trace import StatusCode
 
 from ci_lab import obs
+from ci_lab.agl.algorithm import LlmResourceAlgorithm
 from ci_lab.contracts import (
     ATTR_EXPERIMENT,
     ATTR_STRATEGY,
@@ -52,11 +53,13 @@ def test_registry_builds_each_strategy_from_shared_deps(domain):
     async def proposer(c):
         return []
 
-    deps = {"proposer": proposer, "domain": domain, "lm": object(), "committer": lambda *a: "x"}
-    built = {n: get_strategy(n, **deps) for n in ("agent", "gepa", "skillopt")}
+    deps = {"proposer": proposer, "domain": domain, "lm": object(), "client": object(),
+            "committer": lambda *a: "x"}
+    built = {n: get_strategy(n, **deps) for n in ("agent", "gepa", "skillopt", "agl")}
     assert isinstance(built["agent"], AgentStrategy) and built["agent"].proposer is proposer
     assert isinstance(built["gepa"], GepaStrategy) and built["gepa"].domain is domain
     assert isinstance(built["skillopt"], SkillOptStrategy) and built["skillopt"].lm is deps["lm"]
+    assert isinstance(built["agl"], LlmResourceAlgorithm) and built["agl"].client is deps["client"]
     assert {n: s.name for n, s in built.items()} == {n: n for n in built}
 
 
@@ -101,6 +104,8 @@ def test_registry_errors():
         get_strategy("agent")
     with pytest.raises(TypeError):
         get_strategy("gepa", lm=object())
+    with pytest.raises(TypeError):
+        get_strategy("agl")
 
 
 def test_agent_strategy_span_and_budget(tmp_path, spans):

@@ -86,6 +86,14 @@ def test_plan_optimizer_checks_copilot_and_the_serve_endpoint(tmp_path: Path) ->
     assert plan.served == [] and any(u.user.startswith("optimizer") for u in plan.copilot)
 
 
+def test_plan_agl_optimizer_uses_copilot_without_serve_endpoint(tmp_path: Path) -> None:
+    plan = campaign_model_plan({"strategies": ["agl"]}, env={"CI_LAB_OPTIMIZER_MODEL": "gpt-5.4-mini"},
+                               harness_dir=_harness(tmp_path))
+    [optimizer] = [u for u in plan.copilot if u.user.startswith("optimizer")]
+    assert (optimizer.model, optimizer.user) == ("gpt-5.4-mini", "optimizer LM (agl)")
+    assert plan.served == []
+
+
 def test_plan_unreadable_serve_key_is_a_preflight_error(tmp_path: Path) -> None:
     env = {"CI_COPILOT_SERVE_KEY_FILE": str(tmp_path / "missing.key")}
     with pytest.raises(ModelPreflightError, match="copilot-serve key"):
