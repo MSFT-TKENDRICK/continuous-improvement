@@ -298,7 +298,7 @@ def test_load_deps_copilot_uses_copilot_chat_clients(tmp_path: Path, monkeypatch
     monkeypatch.setattr(factory, "make_chat_client", lambda **kw: made.append(kw) or object())
     deps = load_deps(Profile.COPILOT, run_root=tmp_path, ledger_dir=tmp_path / "experiments",
                      repo="example/harness", dry_run_publish=False)
-    assert not deps.publisher.dry_run and deps.domain.name == "order_support"
+    assert not deps.publisher.dry_run and deps.domain.name == "harness"
     deps.make_agent.client(Profile.COPILOT, "critic")
     deps.strategy_kwargs["client_factory"](model="m", purpose="guard")
     assert [(m["profile"], m["purpose"]) for m in made] == [(Profile.COPILOT, "critic"), (Profile.COPILOT, "guard")]
@@ -308,18 +308,15 @@ def test_load_deps_wires_model_preflight_for_copilot_only(tmp_path: Path, monkey
                                                          no_offline_env: None) -> None:
     from ci_lab.campaign import preflight as preflight_mod
     from ci_lab.campaign.cli import load_deps
-    from ci_lab.domain.order_support import ASSERT_MODEL_ENV, HARNESS_ROOT
-
     made: list[dict[str, Any]] = []
     real = preflight_mod.make_preflight
     monkeypatch.setattr(preflight_mod, "make_preflight", lambda profile, **kw: made.append(kw) or real(profile, **kw))
-    monkeypatch.setenv(ASSERT_MODEL_ENV, "openai/gpt-5-mini")
     deps = load_deps(Profile.COPILOT, run_root=tmp_path, ledger_dir=tmp_path / "experiments",
                      repo="example/harness", dry_run_publish=True)
     assert callable(deps.preflight)
     [kw] = made
-    assert kw["harness_dir"].as_posix().endswith(HARNESS_ROOT) and (kw["harness_dir"] / "agent.yaml").is_file()
-    assert kw["evals_dir"].name == "assert" and kw["tester_model"] == "openai/gpt-5-mini"
+    assert kw["harness_dir"].name == "harness" and (kw["harness_dir"] / "harness.yaml").is_file()
+    assert kw["evals_dir"] is None and kw["tester_model"] is None and kw["domain_name"] == "harness"
     offline = load_deps(Profile.OFFLINE, run_root=tmp_path, ledger_dir=tmp_path / "experiments",
                         repo="example/harness", dry_run_publish=True)
     assert offline.preflight is None and len(made) == 1
@@ -335,7 +332,7 @@ def test_cli_offline_rejects_remote_endpoint(tmp_path: Path, capsys: pytest.Capt
 
 def test_cli_offline_new_is_network_free(tmp_path: Path, capsys: pytest.CaptureFixture[str],
                                          no_offline_env: None, no_remote_network: list[Any]) -> None:
-    from ci_lab.domain.order_support import HARNESS_ROOT, REPO_ROOT
+    from ci_lab.domain.order_support import REPO_ROOT
 
     code = main(["campaign", "new", CID, "--profile", "offline", "--run-dir", str(tmp_path / "runs"),
                  "--ledger-dir", str(tmp_path / "experiments")])
@@ -343,8 +340,8 @@ def test_cli_offline_new_is_network_free(tmp_path: Path, capsys: pytest.CaptureF
     assert code == 0 and out["profile"] == "offline"
     meta = json.loads((tmp_path / "experiments" / "campaigns" / CID / "campaign.json").read_text())
     head = git(REPO_ROOT, "rev-parse", "HEAD").strip()
-    assert meta["base_commit"] == head and meta["domain"] == "order_support"
-    assert meta["base_tree"] == git(REPO_ROOT, "rev-parse", f"HEAD:{HARNESS_ROOT}").strip()
+    assert meta["base_commit"] == head and meta["domain"] == "harness"
+    assert meta["base_tree"] == git(REPO_ROOT, "rev-parse", "HEAD:harness").strip()
     assert no_remote_network == []
 
 

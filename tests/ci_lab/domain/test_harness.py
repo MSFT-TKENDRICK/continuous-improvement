@@ -47,7 +47,7 @@ def _evaluate(domain: HarnessDomain, candidate: Path, k: int = 1):
 def test_manifest_surface_splits_and_registry_defaults() -> None:
     domain = HarnessDomain()
     assert domain.name == "harness"
-    assert DEFAULT_DOMAIN == "order_support"
+    assert DEFAULT_DOMAIN == "harness"
     assert DOMAIN_CHOICES == ("order_support", "harness")
     assert isinstance(get_domain("harness"), HarnessDomain)
     assert "harness/harness.yaml" not in SURFACE_GLOBS
@@ -262,4 +262,4 @@ def test_campaign_fake_domain_choice_is_registered(tmp_path: Path) -> None:
     default = load_deps(Profile.FAKE, run_root=tmp_path / "d", ledger_dir=None,
                         repo="example/harness", dry_run_publish=True)
     assert harness.domain.name == "harness"
-    assert default.domain.name == "order_support"
+    assert default.domain.name == "harness"

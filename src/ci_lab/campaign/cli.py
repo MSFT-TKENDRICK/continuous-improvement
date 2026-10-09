@@ -37,7 +37,7 @@ def _parse_hyper(items: list[str]) -> dict[str, Any]:
 
 
 def load_deps(profile: Profile, *, run_root: Path, ledger_dir: Path | None, repo: str,
-              dry_run_publish: bool, domain_name: str = "order_support") -> CampaignDeps:
+              dry_run_publish: bool, domain_name: str = "harness") -> CampaignDeps:
     """Build :class:`CampaignDeps` for a profile: ``fake`` from :mod:`.fakes`, ``copilot`` /
     ``offline`` from :mod:`.wiring` (offline is network-free and never publishes)."""
     if profile is Profile.FAKE:
@@ -80,7 +80,7 @@ def _dispatch(args: argparse.Namespace, profile: Profile, run_root: Path) -> int
     try:
         deps = load_deps(profile, run_root=run_root, ledger_dir=Path(args.ledger_dir) if args.ledger_dir else None,
                          repo=args.repo, dry_run_publish=args.dry_run_publish,
-                         domain_name=getattr(args, "domain", "order_support"))
+                         domain_name=getattr(args, "domain", "harness"))
     except IntegrationPending as exc:
         print(json.dumps({"error": str(exc)}))
         return 2
