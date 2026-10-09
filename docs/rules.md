@@ -133,8 +133,8 @@ The event's subject is `normalize_subject(<subject path>)`, which must be a stri
   an earlier verification.
 - **TTL**: the flag is valid while (`tool_call` steps before the pending step) − (`tool_call`
   steps before the setting call) `< ttl_steps`.
-- Identity verified for order A does **not** satisfy `subject: current.args.order_id` for
-  order B (B5).
+- A state flag verified for resource A does **not** satisfy
+  `subject: current.args.resource_id` for resource B.
 
 ## Redaction
 
