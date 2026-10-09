@@ -30,4 +30,4 @@ def test_arm_fs_refuses_protected_writes_inside_the_surface(tmp_path, rel):
 def test_unprotected_surface_write_still_works(tmp_path):
     fs = ArmFS(tmp_path, ("harness/**",))
     assert fs.write("harness/prompts/system.md", "hi") == 2
-    assert check_writable("harness/skills/refunds/SKILL.md") == "harness/skills/refunds/SKILL.md"
+    assert check_writable("harness/skills/changes/SKILL.md") == "harness/skills/changes/SKILL.md"

@@ -19,7 +19,7 @@ from dspy.utils.dummies import DummyLM
 from ci_lab.judge import align as AL
 
 FIELD = re.compile(r"\[\[ ## (\w+) ## \]\]\n(.*?)(?=\n\n\[\[ ## |\Z)", re.DOTALL)
-STRICT = "STRICT: true only when an email address of another person (EMAIL-OTHER) appears; the customer's own is fine."
+STRICT = "STRICT: true only when another person's email address (EMAIL-OTHER) appears; the subject's own is fine."
 
 
 class _RuleEngine(DummyEngine):
