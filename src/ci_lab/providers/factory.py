@@ -3,12 +3,17 @@
 from __future__ import annotations
 
 import os
+from contextvars import ContextVar
 from typing import Any
 
 from ci_lab.contracts import ChatClientFactory, Profile, Purpose, RolloutKey
 from ci_lab.providers.offline import check_loopback, check_offline_endpoints
 
 __all__ = ["make_chat_client"]
+
+_REQUEST_CARRIER: ContextVar[dict[str, str] | None] = ContextVar(
+    "ci_lab_request_carrier", default=None
+)
 
 
 def make_chat_client(*, profile: Profile | str, model: str, purpose: Purpose,
@@ -49,13 +54,42 @@ def make_chat_client(*, profile: Profile | str, model: str, purpose: Purpose,
         headers = {"x-ci-purpose": str(purpose), **(kw.pop("default_headers", None) or {})}
         if rollout is not None:
             headers.setdefault("x-ci-rollout-id", rollout.rollout_id)
+
+        class _TraceContextOpenAIChatCompletionClient(OpenAIChatCompletionClient):
+            def get_response(self, *args: Any, **kwargs: Any) -> Any:
+                if kwargs.get("stream"):
+                    return super().get_response(*args, **kwargs)
+                carrier = _current_carrier()
+
+                async def invoke() -> Any:
+                    token = _REQUEST_CARRIER.set(carrier)
+                    try:
+                        response = super(
+                            _TraceContextOpenAIChatCompletionClient, self
+                        ).get_response(*args, **kwargs)
+                        return await response
+                    finally:
+                        _REQUEST_CARRIER.reset(token)
+
+                return invoke()
+
         if kw.get("async_client") is None:
             # Per-request W3C trace context so long-lived servers (AGL proxy, copilot-serve) join our trace.
+            class _TraceContextHttpClient(DefaultAsyncHttpxClient):
+                async def send(self, request: Any, *args: Any, **kwargs: Any) -> Any:
+                    from opentelemetry.instrumentation.utils import (
+                        suppress_http_instrumentation,
+                    )
+
+                    _inject_trace_context(request)
+                    with suppress_http_instrumentation():
+                        return await super().send(request, *args, **kwargs)
+
             kw["async_client"] = AsyncOpenAI(api_key=api_key, base_url=base_url, default_headers=headers,
-                                             http_client=DefaultAsyncHttpxClient(
-                                                 event_hooks={"request": [_inject_trace_context]}))
-        return OpenAIChatCompletionClient(model=model, api_key=api_key, base_url=base_url, default_headers=headers,
-                                          **kw)
+                                             http_client=_TraceContextHttpClient())
+        return _TraceContextOpenAIChatCompletionClient(
+            model=model, api_key=api_key, base_url=base_url, default_headers=headers, **kw
+        )
     if profile is Profile.FAKE:
         from ci_lab.testing import FakeChatClient
 
@@ -66,12 +100,18 @@ def make_chat_client(*, profile: Profile | str, model: str, purpose: Purpose,
 _: ChatClientFactory = make_chat_client
 
 
-async def _inject_trace_context(request: Any) -> None:
-    from ci_lab import obs
-
-    carrier = obs.carrier()
+def _inject_trace_context(request: Any) -> None:
+    carrier = _REQUEST_CARRIER.get()
+    if carrier is None:
+        carrier = _current_carrier()
     for name in ("traceparent", "tracestate"):
         if name not in carrier:
             request.headers.pop(name, None)
     for k, v in carrier.items():
         request.headers[k] = v
+
+
+def _current_carrier() -> dict[str, str]:
+    from ci_lab import obs
+
+    return obs.carrier()
