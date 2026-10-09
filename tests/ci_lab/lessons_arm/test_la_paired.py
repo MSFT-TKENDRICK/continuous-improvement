@@ -22,10 +22,10 @@ from ci_lab.lessons_arm.paired import (
 from ci_lab.rulespec import GuardMetrics, bundle_digest
 
 WORKFLOW = Path(__file__).resolve().parents[3] / "src" / "ci_lab" / "lessons_arm" / "workflows" / "arm_guard.yaml"
-V = (Violation("refund.ineligible_order", "critical", "x"),)
+V = (Violation("harness.disallowed_write", "critical", "x"),)
 
 
-def dec(rule: str, action: str, enforced: bool, step: int, target: str = "issue_refund") -> dict:
+def dec(rule: str, action: str, enforced: bool, step: int, target: str = "write_file") -> dict:
     return {"rule_id": rule, "rule_version": 1, "mode": "enforce" if enforced else "shadow", "action": action,
             "enforced": enforced, "step_index": step, "target": target, "attempt_digest": "sha256:x"}
 
@@ -156,7 +156,9 @@ def test_arm_guard_workflow_is_expression_free_and_ordered():
         if ":" in body:
             assert not body.split(":", 1)[1].strip().strip("'\"").startswith("=")
     try:
-        from ci_lab.maf.workflows import assert_expression_free  # type: ignore[import-not-found]
+        from ci_lab.maf.workflows import (
+            assert_expression_free,  # type: ignore[import-not-found]
+        )
     except ImportError:
         return
     assert_expression_free(text)
