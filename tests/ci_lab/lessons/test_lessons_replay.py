@@ -40,18 +40,18 @@ def _cluster(trajs: list[Trajectory]) -> LessonCluster:
     return c
 
 
-def narrow_rule(rid: str = "refund.needs_status") -> RuleSpec:
-    return RuleSpec(id=rid, version=1, rung="R2", on="tool_call", target="issue_refund",
-                    require=PriorPred(kind="prior", tool="get_order_status",
-                                      same=[("current.args.order_id", "prior.args.order_id")]),
+def narrow_rule(rid: str = "change.needs_status") -> RuleSpec:
+    return RuleSpec(id=rid, version=1, rung="R2", on="tool_call", target="write_file",
+                    require=PriorPred(kind="prior", tool="read_file",
+                                      same=[("current.args.resource_id", "prior.args.resource_id")]),
                     action="block", template="precondition.prior_call",
-                    slots={"tool": "issue_refund", "prior_tool": "get_order_status", "subject": "order_id"})
+                    slots={"tool": "write_file", "prior_tool": "read_file", "subject": "resource_id"})
 
 
-def broad_rule() -> RuleSpec:  # "refunds over 10 are never allowed" — blocks almost every good refund
-    return RuleSpec(id="refund.tiny_only", version=1, rung="R1", on="tool_call", target="issue_refund",
+def broad_rule() -> RuleSpec:  # "changes over 10 are never allowed" — blocks almost every good change
+    return RuleSpec(id="change.tiny_only", version=1, rung="R1", on="tool_call", target="write_file",
                     require=ArgPred(kind="arg", path="current.args.amount", op="le", value=10),
-                    action="block", template="arg.out_of_range", slots={"tool": "issue_refund", "arg": "amount"})
+                    action="block", template="arg.out_of_range", slots={"tool": "write_file", "arg": "amount"})
 
 
 def text_rule(pattern: str, rid: str = "reply.no_promise") -> RuleSpec:
@@ -92,7 +92,7 @@ def test_rejects_without_holdout_or_enough_negatives(make: Make, engine: types.S
 def test_low_recall_rejected(make: Make, engine: types.SimpleNamespace) -> None:
     trajs = _corpus(make)
     # a rule that never fires on the cluster's held-out families
-    other = narrow_rule().model_copy(update={"target": "cancel_order"})
+    other = narrow_rule().model_copy(update={"target": "delete_file"})
     rep = validate(other, trajs, cluster=_cluster(trajs), engine=engine, config=ReplayConfig(min_negatives=0))
     assert not rep.ok and rep.recall == 0.0 and any("holdout recall" in r for r in rep.reasons)
 
@@ -127,23 +127,23 @@ def test_engine_unavailable_rejects(make: Make, monkeypatch: pytest.MonkeyPatch)
 
 
 def test_leak_screen() -> None:
-    texts = ["Customer: where is my parcel? It will arrive tomorrow for sure, right?",
-             "Please refund order NW-55555 because the item is broken",
-             "My Order Number Is Missing From The Portal Again"]
-    ngram = text_rule(r"arrive tomorrow for sure")
-    memo = RuleSpec(id="refund.memo_id", version=1, rung="R1", on="tool_call", target="issue_refund",
-                    require=ArgPred(kind="arg", path="current.args.order_id", op="nin", value=["NW-55555"]),
-                    action="block", template="arg.not_allowed", slots={"tool": "issue_refund", "arg": "order_id"})
-    fragile = text_rule(r"Order Number Is Missing", rid="reply.fragile")
-    robust = text_rule(r"(?i)refund", rid="reply.robust")
+    texts = ["User: will this configuration definitely work tomorrow?",
+             "Please change resource RES-55555 because the current value is invalid",
+             "My Resource Identifier Is Missing From The Portal Again"]
+    ngram = text_rule(r"configuration definitely work tomorrow")
+    memo = RuleSpec(id="change.memo_id", version=1, rung="R1", on="tool_call", target="write_file",
+                    require=ArgPred(kind="arg", path="current.args.resource_id", op="nin", value=["RES-55555"]),
+                    action="block", template="arg.not_allowed", slots={"tool": "write_file", "arg": "resource_id"})
+    fragile = text_rule(r"Resource Identifier Is Missing", rid="reply.fragile")
+    robust = text_rule(r"(?i)change", rid="reply.robust")
     found = {(f.rule_id, f.kind) for f in leak_screen([ngram, memo, fragile, robust], texts)}
     assert ("reply.no_promise", "ngram") in found
-    assert ("refund.memo_id", "id") in found
+    assert ("change.memo_id", "id") in found
     assert ("reply.fragile", "paraphrase_fragile") in found
     assert not any(r == "reply.robust" for r, _ in found)
     # findings carry digests only, never the literal
     for f in leak_screen([ngram, memo], texts):
-        assert "arrive" not in f.model_dump_json() and "NW-55555" not in f.model_dump_json()
+        assert "configuration" not in f.model_dump_json() and "RES-55555" not in f.model_dump_json()
     assert leak_screen([ngram], []) == []
 
 
@@ -156,10 +156,10 @@ def test_leak_rejects_in_validate(make: Make, engine: types.SimpleNamespace) -> 
 
 
 def test_paraphrases_deterministic() -> None:
-    p1 = paraphrases("Please refund my order.")
-    assert p1 == paraphrases("Please refund my order.") and len(p1) >= 4
-    assert "kindly reimbursement my purchase" in p1
-    assert regex_literals(r"(?i)\border\s+number\b|refund-\d+") == ["order", "number", "refund-"]
+    p1 = paraphrases("Please change my file.")
+    assert p1 == paraphrases("Please change my file.") and len(p1) >= 4
+    assert "kindly edit my document" in p1
+    assert regex_literals(r"(?i)\bfile\s+path\b|change-\d+") == ["file", "path", "change-"]
 
 
 def test_real_rules_engine(make: Make, tmp_path: Path) -> None:
@@ -185,17 +185,17 @@ def test_real_engine_state_flag_rules_need_extractors(make: Make, tmp_path: Path
 
     trajs = _corpus(make)
     c = _cluster(trajs)
-    rule = RuleSpec(id="refund.needs_verified", version=1, rung="R2", on="tool_call", target="issue_refund",
-                    require=StatePred(kind="state", flag="order_checked", subject="current.args.order_id"),
+    rule = RuleSpec(id="change.needs_verified", version=1, rung="R2", on="tool_call", target="write_file",
+                    require=StatePred(kind="state", flag="order_checked", subject="current.args.resource_id"),
                     action="block", template="precondition.state_flag",
-                    slots={"tool": "issue_refund", "flag": "order_checked", "subject": "order_id",
-                           "via_tool": "get_order_status"})
+                    slots={"tool": "write_file", "flag": "order_checked", "subject": "resource_id",
+                           "via_tool": "read_file"})
     rep = validate(rule, trajs, cluster=c)
     assert not rep.ok and any("rule load failed" in r for r in rep.reasons)
     ext = tmp_path / "extractors.yaml"
-    body = ExtractorFile(extractors=[ExtractorSpec(flag="order_checked", tool="get_order_status",
+    body = ExtractorFile(extractors=[ExtractorSpec(flag="order_checked", tool="read_file",
                                                    result_path="result.status", equals="delivered",
-                                                   subject="args.order_id")])
+                                                   subject="args.resource_id")])
     ext.write_text(yaml.safe_dump(body.model_dump(mode="json", exclude_none=True)), encoding="utf-8")
     rep = validate(rule, trajs, cluster=c, extractors=[ext])
     assert rep.ok, rep.reasons
