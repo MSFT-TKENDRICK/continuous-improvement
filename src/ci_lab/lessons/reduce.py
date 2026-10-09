@@ -1,6 +1,6 @@
 """Deterministic feature reduction for untrusted traces (B3, C12/C22).
 
-Untrusted sources (usage, PR comments, customer text) and injection-suspect trajectories are
+Untrusted sources (usage, PR comments, user text) and injection-suspect trajectories are
 reduced to typed features before clustering, persistence or any LLM call:
 
 * args/results → typed shapes: bools; numbers clamped to ±``NUM_BOUND`` and rounded; strings kept
@@ -30,16 +30,15 @@ TXT_PREFIX = "#txt:"
 #: Closed vocabulary of enum-like tokens that may survive reduction verbatim.
 DEFAULT_VOCAB: frozenset[str] = frozenset({
     "true", "false", "yes", "no", "none", "null", "ok", "error", "blocked",
-    "delivered", "shipped", "in_transit", "processing", "pending", "processed", "cancelled", "canceled",
-    "returned", "refunded", "failed", "succeeded", "open", "closed", "escalated", "denied", "approved",
-    "full", "partial", "damaged", "defective", "late", "lost", "wrong_item", "not_received", "other",
-    "email", "phone", "name", "address", "card", "low", "medium", "high", "urgent",
+    "processing", "pending", "processed", "failed", "succeeded", "open", "closed",
+    "escalated", "denied", "approved", "full", "partial", "invalid", "missing", "other",
+    "path", "name", "low", "medium", "high", "urgent",
 })
 
 _KEY_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,40}$")
 _TOOL_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_.-]{0,63}$")
 _ID_RES = (
-    re.compile(r"^[A-Za-z]{1,8}[-_]?\d{2,}[A-Za-z0-9-]*$"),           # NW-10003, RF5531, ORD_123
+    re.compile(r"^[A-Za-z]{1,8}[-_]?\d{2,}[A-Za-z0-9-]*$"),           # CASE-10003, RUN5531
     re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"),
     re.compile(r"^\d{4,}$"),
     re.compile(r"^[0-9a-fA-F]{16,64}$"),

@@ -5,7 +5,7 @@ Checks (each returns human-readable reasons, empty = pass):
 * ``path``       every changed path is a valid relative path in the surface and not frozen
 * ``component``  each commit's declared ``RRSI-Component`` matches the files it touched
 * ``spec``       changed YAML/JSON parses; no ``=`` expressions (safe_mode); pluggable validator hook
-* ``leak``       n-gram / identifier leak screen against the test set (case inputs, order ids, names)
+* ``leak``       n-gram / identifier leak screen against the test set (case inputs, resource ids, names)
 * ``denylist``   eval/judge-targeting vocabulary in added text
 * ``tools``      no new tool names or bindings in spec files
 * ``size``       file count, per-file and total added-size limits
@@ -184,7 +184,7 @@ class LeakCorpus:
         return hits
 
 
-LEAK_TITLE_MIN_WORDS = 6  # shorter seed titles ("Late boots, no order info") are ordinary phrases
+LEAK_TITLE_MIN_WORDS = 6  # shorter seed titles ("Late boots, no status info") are ordinary phrases
 
 
 def _strings(value: Any) -> Iterable[str]:

@@ -245,7 +245,7 @@ _SECRET_RES = [
     re.compile(r"\b[A-Za-z0-9+/]{40,}={0,2}"),
 ]
 _EMAIL = re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b")
-_ORDER = re.compile(r"\b[A-Z]{2,4}-\d{4,8}\b")
+_IDENTIFIER = re.compile(r"\b[A-Z]{2,4}-\d{4,8}\b")
 _CARD = re.compile(r"\b(?:\d[ -]?){13,19}\b")
 _PHONE = re.compile(r"(?<![\w-])(?:\+?\d{1,3}[\s.-]?)?\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}\b")
 _STREET = (r"St|Street|Ave|Avenue|Rd|Road|Blvd|Boulevard|Ln|Lane|Dr|Drive|Way|Ct|Court|Pl|Place"
@@ -256,7 +256,7 @@ _ZIP = re.compile(r"\b[A-Z]{2}\s+\d{5}(?:-\d{4})?\b")
 
 
 class Redactor:
-    """Deterministic PII/secret scrubber. Order ids become salted hashes (stable, so repeated
+    """Deterministic PII/secret scrubber. Structured identifiers become salted hashes (stable, so repeated
     intents still cluster); everything else becomes a typed placeholder."""
 
     def __init__(self, *, salt: str = "ci-sleep-usage", identities: Iterable[str] | None = None) -> None:
@@ -265,17 +265,17 @@ class Redactor:
         names = sorted({n for n in names if len(n) >= 3}, key=len, reverse=True)
         self._ident = re.compile("|".join(re.escape(n) for n in names), re.IGNORECASE) if names else None
 
-    def order_token(self, order_id: str) -> str:
-        return "order-" + hashlib.sha256(f"{self.salt}|{order_id}".encode()).hexdigest()[:8]
+    def identifier_token(self, identifier: str) -> str:
+        return "id-" + hashlib.sha256(f"{self.salt}|{identifier}".encode()).hexdigest()[:8]
 
     def text(self, value: str) -> str:
         s = str(value)
         if self._ident is not None:
-            s = self._ident.sub("<customer>", s)
+            s = self._ident.sub("<identifier>", s)
         s = _EMAIL.sub("<email>", s)
         for rx in _SECRET_RES:
             s = rx.sub("<secret>", s)
-        s = _ORDER.sub(lambda m: self.order_token(m.group(0)), s)
+        s = _IDENTIFIER.sub(lambda m: self.identifier_token(m.group(0)), s)
         s = _ADDRESS.sub("<address>", s)
         s = _CARD.sub("<card>", s)
         s = _PHONE.sub("<phone>", s)
@@ -300,9 +300,9 @@ _INJECTION_RES = [re.compile(p, re.IGNORECASE) for p in (
      r"\b(instructions?|rules?|polic(y|ies)|prompts?)\b"),
     r"\byou are now\b", r"\bnew (system )?instructions?\b", r"\bsystem prompt\b",
     r"<\|?(im_start|im_end|system)\|?>", r"\[(system|assistant)\]", r"^\s*(system|assistant)\s*:",
-    r"\b(do not|don't) (tell|inform|mention)\b.{0,30}\b(user|customer)\b",
+    r"\b(do not|don't) (tell|inform|mention)\b.{0,30}\b(user|operator)\b",
     r"\b(as an ai|as the assistant)\b.{0,40}\b(must|should)\b",
-    r"\b(issue|approve|process)\b.{0,30}\brefund\b.{0,40}\b(without|skip|no need)\b.{0,30}\bverif",
+    r"\b(write|modify|delete)\b.{0,40}\b(without|skip|no need)\b.{0,30}\b(validat|inspect|read)",
     r"\bjailbreak\b|\bDAN mode\b|\bdeveloper mode\b",
 )]
 
@@ -325,7 +325,7 @@ def injection_reason(trace: UsageTrace) -> str | None:
 
 def _normalize(intent: str) -> str:
     s = intent.lower()
-    s = re.sub(r"order-[0-9a-f]{8}", "<order>", s)
+    s = re.sub(r"id-[0-9a-f]{8}", "<identifier>", s)
     s = re.sub(r"\d+", "<n>", s)
     s = re.sub(r"[^\w<> ]+", " ", s)
     return re.sub(r"\s+", " ", s).strip()

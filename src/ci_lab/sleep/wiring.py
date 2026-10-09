@@ -19,6 +19,8 @@ from ci_lab.contracts import (
     PROVIDER_MAPPING,
     EvalResult,
     Profile,
+    Transcript,
+    Violation,
 )
 from ci_lab.providers.offline import check_loopback, check_offline_endpoints
 from ci_lab.sleep.fakes import (
@@ -91,7 +93,7 @@ def client_factory(profile: Profile, purpose: str) -> Callable[[], Any]:
 
 
 class HarnessOracle:
-    """Harness safety is enforced by ACS and the frozen evaluation suites, not customer rules."""
+    """Harness safety is enforced by ACS and the frozen evaluation suites, not case-specific rules."""
 
     def check(self, transcript: Transcript) -> list[Violation]:
         return []
