@@ -54,7 +54,7 @@ def test_check_copilot_models_without_requirements_does_not_list():
 def test_check_copilot_models_missing_names_users_override_and_available():
     uses = [ModelUse("claude-sonnet-4.5", "meta agent analyst", "CI_META_MODEL=<id>"),
             ModelUse("claude-sonnet-4.5", "meta agent critic", "CI_META_MODEL=<id>"),
-            ModelUse("gpt-5-mini", "order agent")]
+            ModelUse("gpt-5-mini", "harness agent")]
     with pytest.raises(ModelPreflightError) as ei:
         asyncio.run(check_copilot_models(uses, list_models=_lister()))
     msg = str(ei.value)

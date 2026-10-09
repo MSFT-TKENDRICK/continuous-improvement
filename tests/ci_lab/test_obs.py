@@ -60,7 +60,7 @@ def test_new_trace_starts_fresh_root(exporter):
 
 def test_exception_type_only(exporter):
     with pytest.raises(ValueError), obs.span("ci.step"):
-        raise ValueError("customer email a@b.com")
+        raise ValueError("user email a@b.com")
     (s,) = exporter.get_finished_spans()
     assert s.status.status_code == trace.StatusCode.ERROR
     dumped = json.dumps([dict(e.attributes) for e in s.events]) + str(s.status.description)
