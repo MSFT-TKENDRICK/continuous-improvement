@@ -1,14 +1,19 @@
 # SkillOpt-Sleep skill targets (design §6, §11.3). The nightly run iterates every enabled
 # target: harvest its reviewed tasks, consolidate its skill with SkillOpt-Sleep, and gate the
-# candidate on the target's ASSERT eval suite. Paths are repo-relative POSIX paths. Skill and
-# memory files must live under src/order_support/harness/skills/ and task files under
-# experiments/sleep/, because scripts/sleep_publish.py only applies patches there (C10).
+# candidate on the self-hosted harness suites. Paths are repo-relative POSIX paths. Skill files
+# must be the intended harness/skills artifacts and task files live under experiments/sleep/;
+# scripts/sleep_publish.py refuses source, governance, evaluation and manifest writes (C10).
 format: ci_lab.sleep.targets.v1
 targets:
-  - name: order-support
-    skill: src/order_support/harness/skills/order-support/SKILL.md
-    memory: src/order_support/harness/skills/order-support/memory.md
-    owner_agent: order-support        # agent whose harness loads the skill
-    eval_suite: order_support         # ASSERT domain used by the acceptance gate
-    tasks: experiments/sleep/tasks.jsonl
+  - name: harness-editing
+    skill: harness/skills/harness-editing/SKILL.md
+    owner_agent: proposer
+    eval_suite: harness
+    tasks: experiments/sleep/harness-editing.jsonl
+    enabled: true
+  - name: trace-triage
+    skill: harness/skills/trace-triage/SKILL.md
+    owner_agent: failure_analyst
+    eval_suite: harness
+    tasks: experiments/sleep/trace-triage.jsonl
     enabled: true
