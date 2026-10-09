@@ -21,10 +21,13 @@ class KeywordDomain:
     name = "fake"
     surface_globs = ("harness/**",)
     frozen_globs = ("harness/frozen/**",)
-    component_globs: ClassVar[dict[str, tuple[str, ...]]] = {"prompt": ("harness/prompts/**/*.md",)}
+    component_globs: ClassVar[dict[str, tuple[str, ...]]] = {
+        "prompt": ("harness/prompts/**/*.md",),
+        "skill": ("harness/skills/**/SKILL.md",),
+    }
 
     def __init__(self, keywords=None, heldout=("h1", "h2")):
-        self.keywords = keywords or {"c1": "refund", "c2": "tracking", "c3": "escalate", "c4": "polite"}
+        self.keywords = keywords or {"c1": "change", "c2": "tracking", "c3": "escalate", "c4": "polite"}
         self.heldout = tuple(heldout)
         self.splits_called: list[str] = []
         self.dirs: list[Path] = []

@@ -23,9 +23,9 @@ from ci_lab.optim.skillopt import SkillOptConfig
 from ci_lab.strategies import GepaStrategy, SkillOptStrategy
 from ci_lab.testing import LoopbackLLM
 
-PROMPT = "src/order_support/harness/prompts/system.md"
-SKILL = "src/order_support/harness/skills/order-support/SKILL.md"
-ALL_KW = "refund tracking escalate polite"
+PROMPT = "harness/prompts/system.md"
+SKILL = "harness/skills/harness-editing/SKILL.md"
+ALL_KW = "change tracking escalate polite"
 
 
 def git(cwd, *args):
@@ -72,7 +72,7 @@ def test_gepa_arm_runs_real_gepa_engine_over_http_reflection_lm(worktree, domain
 
     assert edit.files == (PROMPT,) and edit.commit == git(worktree, "rev-parse", "HEAD") != ctx.base_commit
     text = (worktree / PROMPT).read_text(encoding="utf-8")
-    assert text.startswith("You are an order support agent.") and ALL_KW in text
+    assert text.startswith("Improve this repository's self-hosted harness.") and ALL_KW in text
     (opt,) = s.last
     assert opt.seed_score == 0.0 and opt.best_score == 1.0 and opt.diagnostics["num_candidates"] >= 2
     cost = opt.cost
