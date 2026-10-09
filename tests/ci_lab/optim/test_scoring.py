@@ -18,7 +18,7 @@ from ci_lab.optim.scoring import (
     subsample,
 )
 
-PROMPT = "src/order_support/harness/prompts/system.md"
+PROMPT = "harness/prompts/system.md"
 
 
 def test_metric_budget_hard_cap_threadsafe():
@@ -126,4 +126,5 @@ def test_domain_scorer_evolve_only_and_cached(worktree, domain, tmp_path):
     assert s.evaluations == 1 and s.tokens_spent == 60
     assert candidate_hash(cand)[:8] in domain.dirs[0].name
     assert not domain.dirs[0].exists()  # scratch removed
-    assert (worktree / PROMPT).read_text() == "You are an order support agent.\n"  # worktree untouched
+    assert (worktree / PROMPT).read_text() == \
+        "Improve this repository's self-hosted harness.\n"  # worktree untouched

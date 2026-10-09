@@ -1,6 +1,6 @@
 """Text components an optimizer may rewrite (design §3, §11.2).
 
-A *target id* is a worktree-relative POSIX path (``prompts/system.md``) optionally
+A *target id* is a worktree-relative POSIX path (``harness/prompts/system.md``) optionally
 followed by ``#dotted.key`` addressing a string inside a YAML mapping
 (``agent.yaml#instructions``). ``resolve_targets`` maps ``ArmDirective.component_focus``
 entries — component names (``prompt``/``skill``/``memory``) or explicit target ids —
@@ -14,13 +14,13 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Any
 
-HARNESS_ROOT = "src/order_support/harness"
-# Text components only: client_tool/config/context_mgmt are structured and belong to
-# the agent strategy (allowlisted keys, critic-checked bindings).
+HARNESS_ROOT = "harness"
+# Text components only. Structural surfaces (MCP exposure/code mode, agents, loops,
+# target workflows, tools, config/context/memory when present) are owned by AGL and
+# are never offered to a text optimizer.
 DEFAULT_COMPONENT_GLOBS: Mapping[str, Sequence[str]] = {
-    "prompt": (f"{HARNESS_ROOT}/prompts/*.md",),
+    "prompt": (f"{HARNESS_ROOT}/prompts/**/*.md",),
     "skill": (f"{HARNESS_ROOT}/skills/**/SKILL.md",),
-    "memory": (f"{HARNESS_ROOT}/skills/**/memory.md",),
 }
 TEXT_COMPONENTS = frozenset(DEFAULT_COMPONENT_GLOBS)
 

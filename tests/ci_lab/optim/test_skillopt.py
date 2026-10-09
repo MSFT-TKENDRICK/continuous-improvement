@@ -4,10 +4,15 @@ import json
 from ci_lab.contracts import FailureRecord
 from ci_lab.optim.lm import make_lm
 from ci_lab.optim.scoring import CaseOutcome, DomainEvolveScorer
-from ci_lab.optim.skillopt import SkillOptConfig, calls_needed, fit_cases, optimize_skill
+from ci_lab.optim.skillopt import (
+    SkillOptConfig,
+    calls_needed,
+    fit_cases,
+    optimize_skill,
+)
 
-SKILL = "src/order_support/harness/skills/order-support/SKILL.md"
-MEMORY = "src/order_support/harness/skills/order-support/memory.md"
+SKILL = "harness/skills/harness-editing/SKILL.md"
+MEMORY = "harness/skills/harness-editing/memory.md"
 KW = {"c1": "refund", "c2": "tracking", "c3": "escalate", "c4": "polite", "c5": "verify", "c6": "apologise"}
 GOOD_RULE = "Always: " + ", ".join(KW.values()) + "."
 
