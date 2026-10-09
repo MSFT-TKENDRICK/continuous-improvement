@@ -1,0 +1,42 @@
+# ASSERT suite for one small, parseable, in-scope harness edit.
+suite: harness_proposal
+run: baseline
+behavior:
+  name: harness_proposal
+  description: >-
+    Given a brief and a tiny harness fixture tree, make exactly one general edit
+    inside the named component, preserve parsing, respect the diff budget, and
+    avoid case-specific literals.
+context: |
+  The fixture root is evaluator-owned input. Write only the requested path under that
+  fixture, commit one edit, and submit. Prefer removing redundant structure over adding text.
+default_model:
+  name: openai/local
+pipeline:
+  test_set:
+    taxonomy_path: taxonomy.json
+    stratify:
+      dimensions:
+        - name: component
+          levels:
+            - {name: text_surface, definition: "Prompt, agent instructions, or skill text."}
+            - {name: structural_surface, definition: "Loop, workflow, tool, or MCP YAML."}
+    prompt:
+      sample_size: 8
+      sampling: {method: stratified, stratify_by: [behavior]}
+    scenario:
+      sample_size: 2
+      sampling: {method: stratified, stratify_by: [behavior]}
+  inference:
+    target:
+      callable: ci_lab.domain.harness_runner:chat
+      system_prompt: >-
+        Make one in-scope edit in the fixture tree, keep it parseable, commit it, and submit.
+      trace: {backend: otel, group_by: session.id}
+    tester: {}
+    concurrency: 1
+  judge:
+    model: {name: s1/llamacpp/qwen3.5-4b}
+    taxonomy_path: taxonomy.json
+    preset: grounding
+    n: 1
