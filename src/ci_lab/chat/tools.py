@@ -26,6 +26,7 @@ from pydantic import Field
 
 from ci_lab.campaign.defaults import DEFAULT_HYPER
 from ci_lab.contracts import CAMPAIGN_RE, STRATEGIES, TEXT_COMPONENTS
+from ci_lab.domain import DEFAULT_DOMAIN
 
 __all__ = ["MAX_ARMS", "WORKFLOW_FILE", "ChatConfig", "ChatTools", "case_counts", "hyper_descriptions",
            "maf_tools"]
@@ -87,17 +88,19 @@ class ChatConfig:
 @functools.lru_cache(maxsize=4)
 def case_counts(repo_root: str) -> dict[str, dict[str, int]]:
     """``{suite: {"evolve": n, "heldout": n, "ood": n}}`` of the frozen ASSERT sets (same splits as campaigns)."""
-    from ci_lab.domain.order_support import OrderSupportDomain, load_cases
+    from ci_lab.domain.harness import HarnessDomain, load_cases
 
     root = Path(repo_root)
-    cases = load_cases(root / "evals" / "assert", root / "artifacts")
+    dataset = root / "evals" / "datasets" / "harness.yaml"
+    cases = load_cases(root, dataset)
     if not cases:
         return {}
-    domain = OrderSupportDomain(repo_root=root, cases=cases, runner=object(),  # type: ignore[arg-type]
-                                scope_factory=lambda key: contextlib.nullcontext(), use_default_oracle=False)
-    suite_of = {c.case_id: c.suite.removeprefix("order_support_") for c in cases}
+    domain = HarnessDomain(repo_root=root, dataset_path=dataset, cases=cases)
+    suite_of = {c.case_id: c.suite.removeprefix("harness_") for c in cases}
     out: dict[str, dict[str, int]] = {}
     for split, ids in domain.splits().items():
+        if split not in ("evolve", "heldout", "ood"):
+            continue
         for cid in ids:
             row = out.setdefault(suite_of[cid], {"evolve": 0, "heldout": 0, "ood": 0})
             row[split] = row.get(split, 0) + 1
@@ -267,6 +270,7 @@ class ChatTools:
         effective = dict(DEFAULT_HYPER) if workflow else normalized
         draft: dict[str, Any] = {
             "cid": cid, "target": target, "rounds": rounds, "rationale": rationale.strip(),
+            "domain": DEFAULT_DOMAIN,
             "hyper": effective, "overrides": {} if workflow else overrides,
             "ignored_overrides": overrides if workflow else {},
             "estimate": self.estimate(effective, rounds),
@@ -360,7 +364,8 @@ class ChatTools:
             if cfg.repo:
                 argv += ["--repo", cfg.repo]
             return [argv]
-        common = ["--profile", str(draft.get("profile") or cfg.campaign_profile), "--run-dir", str(cfg.run_root)]
+        common = ["--profile", str(draft.get("profile") or cfg.campaign_profile),
+                  "--domain", DEFAULT_DOMAIN, "--run-dir", str(cfg.run_root)]
         if cfg.ledger_dir is not None:
             common += ["--ledger-dir", str(cfg.ledger_dir)]
         if cfg.repo:
