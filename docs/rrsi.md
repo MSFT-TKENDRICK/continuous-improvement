@@ -115,7 +115,11 @@ The paper accepts an arm on the point estimate alone. The C16 gate only *narrows
 
 The strategy assignment is orthogonal to the component schedule: slot *i* receives both a component focus and a strategy.
 
-- **Strategy set.** `hp.strategies` defaults to `params.DEFAULT_STRATEGIES` (`agent`, `gepa`, `skillopt`). The contracts v2.4 `guard` strategy is accepted but opt-in: pass it in `hp.strategies` to allocate guard arms. Campaigns opt in: `campaign.defaults.DEFAULT_HYPER["strategies"]` lists all four (`contracts.STRATEGIES`), so campaign rounds rotate agent, gepa, skillopt and guard arms.
+- **Strategy set.** `hp.strategies` defaults to `params.DEFAULT_STRATEGIES`
+  (`agent`, `gepa`, `skillopt`). The `harness` profile and
+  `campaign.defaults.DEFAULT_HYPER["strategies"]` use `HARNESS_STRATEGIES`:
+  `agent`, `gepa`, `skillopt`, and `agl`. `guard` is accepted but remains opt-in; include it
+  explicitly when a campaign should evaluate a lessons/guard arm.
 
 - **Evidence.** Each strategy has its own statistics, kept separate from the per-component statistics.
   - The unit is the measured arm: one arm counts as one trial for its `HistoryRecord.strategy`, however many edits or components it carries.
