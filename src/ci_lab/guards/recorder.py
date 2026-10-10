@@ -150,7 +150,7 @@ class TrajectoryRecorder:
 
     def record_result(self, tool: str, call_id: str | None, raw: Any, *, error: bool = False) -> TrajectoryStep:
         """``status`` is "error" when the tool raised or returned a structured ``{"error": ...}``
-        (the order-support tool convention), so ``prior{status: ok}`` never matches failures."""
+        result, so ``prior{status: ok}`` never matches failures."""
         result = None if error else structured_result(raw)
         failed = error or (result is not None and "error" in result)
         return self._append(kind="tool_result", tool=tool, call_id=call_id, result=result,

@@ -23,7 +23,7 @@ def register(subparsers: Any) -> None:
     pr.add_argument("--labels", type=Path, default=None, help="adjudications JSONL {attempt_digest,label,intent?}")
     pr.add_argument("--repo", type=Path, default=Path("."), help="harness repo/worktree root")
     pr.add_argument("--guards-dir", type=Path, default=None,
-                    help=f"default <repo>/src/order_support/harness/guards if present, else <repo>/{GUARDS_DIR}")
+                    help=f"default <repo>/{GUARDS_DIR}")
     pr.add_argument("--epsilon", type=float, default=PROMOTE_FP_UCB)
     pr.add_argument("--out", type=Path, default=None, help="write the patch here")
     pr.add_argument("--branch", default=None, help="also create this local branch (git plumbing; no checkout)")

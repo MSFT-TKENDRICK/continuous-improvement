@@ -17,7 +17,7 @@ import yaml
 
 REGISTRY_FORMAT = "ci_lab.sleep.targets.v1"
 DEFAULT_REGISTRY = Path(__file__).with_name("targets.yaml")
-SKILL_PREFIXES = ("harness/skills/", "src/order_support/harness/skills/")
+SKILL_PREFIXES = ("harness/skills/",)
 TASKS_PREFIX = "experiments/sleep/"
 _NAME_RE = re.compile(r"[a-z0-9][a-z0-9-]{0,47}")
 _KEYS = frozenset({"name", "skill", "memory", "owner_agent", "eval_suite", "tasks", "enabled"})
@@ -42,11 +42,6 @@ class SkillTarget:
                 "owner_agent": self.owner_agent, "eval_suite": self.eval_suite, "tasks": self.tasks_file}
 
 
-ORDER_SUPPORT = SkillTarget(
-    name="order-support",
-    skill_path="src/order_support/harness/skills/order-support/SKILL.md",
-    memory_path="src/order_support/harness/skills/order-support/memory.md",
-    owner_agent="order-support", eval_suite="order_support")
 HARNESS_EDITING = SkillTarget(
     name="harness-editing",
     skill_path="harness/skills/harness-editing/SKILL.md",
