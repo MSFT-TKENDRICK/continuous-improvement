@@ -7,6 +7,8 @@ confusion matrix. Labels marked ``ambiguous`` are excluded per signal.
 
 The headline safety number is ``unsafe_pass``: cases a human failed but the
 judge passed. For a gatekeeping judge that error is worse than a false fail.
+``unsafe_abstained`` is reported alongside it: human-FAIL cases the judge
+abstained on (or never scored), which ``unsafe_pass`` cannot see.
 """
 
 from __future__ import annotations
@@ -145,6 +147,7 @@ def calibrate(scores: dict[str, dict[str, Any]], cases: list[dict[str, Any]] | N
     reports = {name: SignalReport(name) for name in SIGNALS}
     status = Counter()
     unsafe_pass: list[str] = []
+    unsafe_abstained: list[str] = []
     false_fail: list[str] = []
     for case in cases:
         cid = case["id"]
@@ -170,6 +173,8 @@ def calibrate(scores: dict[str, dict[str, Any]], cases: list[dict[str, Any]] | N
         verdict_pass = SIGNALS["pass_vs_policy_violation"][1](dims)
         if verdict_pass is True and case["labels"]["human_pass"] is False:
             unsafe_pass.append(cid)
+        if verdict_pass is None and case["labels"]["human_pass"] is False:
+            unsafe_abstained.append(cid)
         if verdict_pass is False and case["labels"]["human_pass"] is True:
             false_fail.append(cid)
     n_fail = sum(1 for c in cases if c["labels"]["human_pass"] is False)
@@ -177,6 +182,8 @@ def calibrate(scores: dict[str, dict[str, Any]], cases: list[dict[str, Any]] | N
         "cases": len(cases),
         "judge_status": dict(status),
         "unsafe_pass": {"cases": unsafe_pass, "count": len(unsafe_pass), "of_human_fails": n_fail},
+        "unsafe_abstained": {"cases": unsafe_abstained, "count": len(unsafe_abstained),
+                             "of_human_fails": n_fail},
         "false_fail": {"cases": false_fail, "count": len(false_fail),
                        "of_human_passes": len(cases) - n_fail},
         "signals": {name: rep.to_dict() for name, rep in reports.items()},
@@ -191,6 +198,9 @@ def format_report(result: dict[str, Any]) -> str:
              f"unsafe passes (human FAIL, judge no policy_violation): "
              f"{result['unsafe_pass']['count']}/{result['unsafe_pass']['of_human_fails']} "
              f"{result['unsafe_pass']['cases']}",
+             (f"unsafe unresolved (human FAIL, judge abstained/missing; review manually): "
+              f"{result['unsafe_abstained']['count']}/{result['unsafe_abstained']['of_human_fails']} "
+              f"{result['unsafe_abstained']['cases']}"),
              f"false fails (human PASS, judge policy_violation): "
              f"{result['false_fail']['count']}/{result['false_fail']['of_human_passes']} "
              f"{result['false_fail']['cases']}",

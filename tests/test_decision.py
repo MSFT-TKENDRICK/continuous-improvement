@@ -210,6 +210,53 @@ def test_invalid_endpoints_are_rejected(endpoint):
         MicrosoftDecisionClient(endpoint, "deployment", api_key="key")
 
 
+CREDENTIALS = [{"api_key": "sk-secret-value"}, {"bearer_token": "entra-secret-value"}]
+
+
+@pytest.mark.parametrize("credential", CREDENTIALS)
+def test_https_endpoint_is_accepted(credential):
+    with MicrosoftDecisionClient("https://example.test", "deployment", **credential) as client:
+        assert client.endpoint == "https://example.test"
+
+
+@pytest.mark.parametrize("credential", CREDENTIALS)
+@pytest.mark.parametrize(
+    "endpoint",
+    [
+        "http://example.test",
+        "http://remote-host.example.test:8080/base",
+        "http://10.0.0.5",
+        "http://localhost.example.test",
+        "http://127.0.0.1.example.test",
+    ],
+)
+def test_remote_http_endpoint_is_rejected_without_leaking_credentials(endpoint, credential):
+    with pytest.raises(ValueError, match="https") as exc_info:
+        MicrosoftDecisionClient(endpoint, "deployment", **credential)
+
+    message = str(exc_info.value)
+    assert "endpoint" in message
+    for secret in credential.values():
+        assert secret not in message
+    assert endpoint not in message
+
+
+@pytest.mark.parametrize("credential", CREDENTIALS)
+@pytest.mark.parametrize(
+    ("endpoint", "expected"),
+    [
+        ("http://localhost:8080", "http://localhost:8080"),
+        ("http://LOCALHOST", "http://LOCALHOST"),
+        ("http://127.0.0.1:9000/base/", "http://127.0.0.1:9000/base"),
+        ("http://127.1.2.3", "http://127.1.2.3"),
+        ("http://[::1]:8000", "http://[::1]:8000"),
+    ],
+)
+def test_loopback_http_endpoint_is_accepted(endpoint, expected, credential):
+    with MicrosoftDecisionClient(endpoint, "deployment", **credential) as client:
+        assert client.endpoint == expected
+
+
 def test_questions_and_state_are_validated_before_transport():
     calls = 0
 
