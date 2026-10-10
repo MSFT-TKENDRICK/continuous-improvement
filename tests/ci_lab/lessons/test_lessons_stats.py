@@ -64,7 +64,7 @@ def test_promotion_gate():
 
 
 def test_promotion_stratified_requires_each_intent():
-    ok, reasons = stats.promotion_ok_stratified({"refund": (1500, 30, 15, 0), "lookup": (40, 0, 0, 0)})
+    ok, reasons = stats.promotion_ok_stratified({"change": (1500, 30, 15, 0), "lookup": (40, 0, 0, 0)})
     assert not ok and any("stratum lookup" in r for r in reasons)
-    ok, reasons = stats.promotion_ok_stratified({"refund": (1500, 30, 15, 0), "lookup": (500, 0, 0, 0)})
+    ok, reasons = stats.promotion_ok_stratified({"change": (1500, 30, 15, 0), "lookup": (500, 0, 0, 0)})
     assert ok, reasons
