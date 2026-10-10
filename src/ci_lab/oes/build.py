@@ -17,6 +17,7 @@ Envelope kinds
 from __future__ import annotations
 
 import importlib.metadata as md
+import math
 import re
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
@@ -39,6 +40,7 @@ from ci_lab.contracts import (
     TaskScore,
     round_experiment_id,
 )
+from ci_lab.metrics.simplicity import simplicity_score
 
 from . import canonical
 from .models import (
@@ -261,6 +263,40 @@ def _results(baseline: str, stats: Mapping[str, ArmStats], pins: Mapping[str, Ev
             out.append(_cmp(f"suite_score.{suite}", "diagnostic", b.suites.get(suite, 0.0),
                             s.suites.get(suite, 0.0), baseline=baseline, variant=vid))
     return Results(sample_sizes={v: s.trials for v, s in stats.items()}, metric_results=out)
+
+
+SURFACE_METRICS = (
+    Metric(id="surface_complexity", name="Surface complexity", role="diagnostic", direction="decrease_is_good",
+           type="custom", aggregation="mean", unit="complexity",
+           description="Weighted surface-complexity composite of the evaluated harness "
+                       "(ci_lab.metrics.simplicity; RRSI dX input, never part of the score)."),
+    Metric(id="simplicity_score", name="Simplicity score", role="diagnostic", direction="increase_is_good",
+           type="ratio", aggregation="mean", unit="score",
+           description="ci_lab.metrics.simplicity.simplicity_score against the baseline surface "
+                       "(1 at dX <= -10%, 0.5 unchanged, 0 at dX >= +25%)."),
+)
+
+
+def _complexity(r: EvalResult) -> float | None:
+    v = (r.surface or {}).get("complexity")
+    return float(v) if isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v) else None
+
+
+def _surface(baseline: str, by_id: Mapping[str, EvalResult]) -> tuple[list[Metric], list[MetricResult]]:
+    """Diagnostic surface metrics, only when the baseline and at least one variant carry surface complexity."""
+    base = by_id[baseline]
+    bx = _complexity(base)
+    if bx is None:
+        return [], []
+    out: list[MetricResult] = []
+    for vid, r in by_id.items():
+        vx = _complexity(r)
+        if vid == baseline or vx is None:
+            continue
+        out.append(_cmp("surface_complexity", "diagnostic", bx, vx, baseline=baseline, variant=vid))
+        out.append(_cmp("simplicity_score", "diagnostic", simplicity_score(base.surface, base.surface),
+                        simplicity_score(r.surface, base.surface), baseline=baseline, variant=vid))
+    return ([m.model_copy() for m in SURFACE_METRICS] if out else []), out
 
 
 def _rate(count: int, n: int) -> float:
@@ -501,6 +537,8 @@ def round_envelope(campaign_id: str, round_no: int, *, incumbent: EvalResult, in
     winner = None if blocking else sel.winner
     results = _results(BASELINE_ID, stats, pins, primary="evolve_score", delta=params.delta, shipped=winner,
                        judge_errors=judge_errors, primary_ci=ci)
+    surface_defs, surface_results = _surface(BASELINE_ID, by_id)
+    results.metric_results.extend(surface_results)
     if blocking:
         outcome = "rerun"
         why = f"round {round_no} invalid: " + "; ".join(c.message or c.check_type for c in blocking)
@@ -566,7 +604,7 @@ def round_envelope(campaign_id: str, round_no: int, *, incumbent: EvalResult, in
                       population="evolve split", multiple_testing_policy="custom", peeking_policy="informal",
                       stopping_rule=f"fixed budget b_t={schedule.budget}; one evaluation per variant",
                       minimum_detectable_effect=params.delta),
-        variants=variants, metrics=_metrics("evolve_score", stats[BASELINE_ID].suites),
+        variants=variants, metrics=_metrics("evolve_score", stats[BASELINE_ID].suites) + surface_defs,
         analysis=_analysis(at, model="RRSI Alg.2 regularized selection (cost rule / weighted rule, "
                                      "non-compensatory safety guard, floor S* - delta)", estimator="bootstrap"),
         results=results, checks=checks, decision=decision, scorecard=scorecard,
