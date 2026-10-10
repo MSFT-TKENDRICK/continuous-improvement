@@ -121,28 +121,19 @@ Tools are plain typed functions with docstrings. Factories bind them to a run co
   - path guard (surface only, no frozen paths);
   - component tag vs touched paths;
   - YAML/JSON spec validation hook;
-  - leak screen against the frozen ASSERT test sets: 8-gram overlap with every case's seed text (and any expected-output field), verbatim seed titles of 6+ words, order ids and customer names. Text already in the incumbent surface is not a leak. `wired_deps` passes `campaign_leak_corpus(domain, repo)` to the critic: `OrderSupportDomain.leak_corpus()`, else `evals/assert/*/test_set.jsonl` under the repo. `load_test_set_corpus` is deterministic and cached per file size/mtime;
+  - leak screen against the frozen ASSERT test sets: 8-gram overlap with every case's seed text (and any expected-output field), verbatim seed titles of 6+ words, case literals and expected-output material. Text already in the incumbent surface is not a leak. `wired_deps` passes `campaign_leak_corpus(domain, repo)` from the harness domain; the loader is deterministic and cached per file size/mtime. `load_test_set_corpus` is deterministic and cached per file size/mtime;
   - denylist of eval-targeting phrases (`judge`, `score`, `grader`, `evaluator`, `rubric`, `ASSERT`, …);
   - no new tool bindings in specs;
   - file and diff size limits.
 
-## Domain (`src/ci_lab/domain/order_support.py`)
+## Domain (`src/ci_lab/domain/harness.py`)
 
-`OrderSupportDomain` implements `contracts.Domain`.
+`HarnessDomain` implements `contracts.Domain` for the repo-root harness tree.
 
-- **Surface:** `src/order_support/harness/**`, with `component_globs` per design §3. Everything else is frozen.
-- **`splits()`:** frozen ASSERT test-set cases are taken from every suite with a `test_set` stage; `judge_replay` is excluded. The split is a stable sha256 split:
-  - `floor(0.2 × categories)` whole categories per suite go to **ood**;
-  - the rest go to **heldout** when the hash is below 0.25, otherwise to **evolve**.
-- **`evaluate(harness_dir, split, k, experiment_id, variant)`** runs every case × trial through an injectable `CaseRunner`.
-  - The default is `AssertCaseRunner`, which runs an `order-support-evals` subprocess over a one-row dataset with `ORDER_SUPPORT_HARNESS_DIR=harness_dir`. It uses `env=obs.child_env(...)`.
-  - Each case runs inside an AGL `RolloutScope` when one is available.
-  - The judge score is combined with oracle violations into a `TaskScore`:
-    - a critical or policy violation scores 0;
-    - a major violation halves the score;
-    - a judge error scores `None`.
-  - Served models are recorded.
-- **`failures(result)`** returns typed `FailureRecord`s (C12). They never include raw tool outputs, and excerpts are empty for injection suites.
+- **Surface:** component globs come from the frozen harness manifest; the manifest and guard-owned files are excluded.
+- **Splits:** frozen case ids come from `evals/datasets/harness.yaml` and resolve only through `harness_*` test sets.
+- **Evaluation:** each case and trial runs in an isolated writable copy with a scrubbed credential-free environment. The runner records quality scores, typed violations, resource metrics, served models, and surface complexity.
+- **Failures:** typed `FailureRecord`s never expose raw tool output; injection-suite excerpts are empty.
 
 ## Run API (`src/ci_lab/meta/run.py`)
 
@@ -164,5 +155,4 @@ Tools are plain typed functions with docstrings. Factories bind them to a run co
 
 - `ci_lab.maf.loader` honors `x-ci` (`instructions_files`, `terminal_tool`, `skills_paths`, harness options).
 - `RolloutScope(key)` is a context manager that may expose `.env`.
-- `order_support.oracle` exposes an oracle class or a `check` function.
-- `order_support.cli` calls `obs.attach_from_env()`.
+- The harness ASSERT child attaches telemetry through `ci_lab.domain.harness_assert_wrapper`.
