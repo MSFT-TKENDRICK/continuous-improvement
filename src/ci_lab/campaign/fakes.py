@@ -16,7 +16,7 @@ import re
 import threading
 from collections.abc import Callable, Container, Mapping, Sequence
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 from ci_lab.campaign import records
 from ci_lab.campaign.deps import CampaignDeps
@@ -50,7 +50,7 @@ def default_hypothesis(eid: str, arm: str, directive: Mapping[str, Any]) -> str:
 class FakeRepo:
     """Commit registry + slot provisioning (stand-in for M6 gitops)."""
 
-    ROOT_EDITS: list[str] = []
+    ROOT_EDITS: ClassVar[list[str]] = []
 
     def __init__(self, root: Path) -> None:
         self.root = Path(root)
@@ -105,7 +105,8 @@ class StubDomain:
 
     def __init__(self, repo: FakeRepo, score_fn: ScoreFn = default_score,
                  evolve: Sequence[str] = ("c1", "c2", "c3", "c4"), heldout: Sequence[str] = ("h1", "h2"),
-                 tokens_per_case: int = 10) -> None:
+                 tokens_per_case: int = 10, name: str = "stub") -> None:
+        self.name = name
         self.repo = repo
         self.score_fn = score_fn
         self._splits = {"evolve": tuple(evolve), "heldout": tuple(heldout)}
@@ -263,6 +264,7 @@ class FakeStrategies:
 def fake_deps(root: Path, *, outbox: Outbox | None = None, score_fn: ScoreFn = default_score,
               hypothesis_fn: HypothesisFn = default_hypothesis, reject_first: Container[str] = (),
               publisher: Any = None, repo: str = "example/harness", ledger_root: Path | None = None,
+              domain_name: str = "stub",
               **overrides: Any) -> CampaignDeps:
     """Fully offline :class:`CampaignDeps`; publishing is a dry-run GitHubPublisher."""
     from ci_lab.publish.github import GitHubPublisher
@@ -272,12 +274,18 @@ def fake_deps(root: Path, *, outbox: Outbox | None = None, score_fn: ScoreFn = d
     outbox = outbox if outbox is not None else FileOutbox(root / "outbox.jsonl")
     if publisher is None:
         publisher = GitHubPublisher(repo, outbox=outbox, dry_run=True, journal=root / "publish-calls.jsonl")
-    kwargs: dict[str, Any] = dict(
-        domain=StubDomain(fake_repo, score_fn), make_agent=FakeAgents(fake_repo, hypothesis_fn),
-        provision_slot=fake_repo.provision_slot, head_commit=fake_repo.head_commit,
-        harness_tree=fake_repo.harness_tree, resolve_incumbent=fake_repo.resolve_incumbent,
-        get_strategy=FakeStrategies(fake_repo, hypothesis_fn),
-        critique=FakeCritic(reject_first), ledger=FileLedger(ledger_root or root / "experiments"),
-        publisher=publisher, outbox=outbox)
+    kwargs: dict[str, Any] = {
+        "domain": StubDomain(fake_repo, score_fn, name=domain_name),
+        "make_agent": FakeAgents(fake_repo, hypothesis_fn),
+        "provision_slot": fake_repo.provision_slot,
+        "head_commit": fake_repo.head_commit,
+        "harness_tree": fake_repo.harness_tree,
+        "resolve_incumbent": fake_repo.resolve_incumbent,
+        "get_strategy": FakeStrategies(fake_repo, hypothesis_fn),
+        "critique": FakeCritic(reject_first),
+        "ledger": FileLedger(ledger_root or root / "experiments"),
+        "publisher": publisher,
+        "outbox": outbox,
+    }
     kwargs.update(overrides)
     return CampaignDeps(**kwargs)

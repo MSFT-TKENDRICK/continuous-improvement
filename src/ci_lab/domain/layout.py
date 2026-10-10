@@ -6,6 +6,7 @@ shared by the domain's ``surface_globs`` (``src/order_support/harness`` for orde
 """
 from __future__ import annotations
 
+import posixpath
 import re
 from pathlib import Path, PurePosixPath
 from typing import Any
@@ -20,17 +21,18 @@ GUARDS_SUBDIR = "guards"
 
 def harness_root(domain: Domain) -> str:
     """Directory prefix shared by the domain's surface globs (the harness tree, design §3)."""
-    roots = set()
+    roots: list[str] = []
     for glob in domain.surface_globs:
         parts = []
         for part in glob.split("/"):
             if _GLOB_CHARS.search(part):
                 break
             parts.append(part)
-        roots.add("/".join(parts))
-    if len(roots) != 1:
+        roots.append("/".join(parts))
+    root = posixpath.commonpath(roots) if roots else ""
+    if not root:
         raise ValueError(f"surface globs {list(domain.surface_globs)} do not share one harness root")
-    return roots.pop()
+    return root
 
 
 def guards_rel(domain: Any = None) -> str:
