@@ -1,5 +1,5 @@
-"""``OrderSupportSleepBackend``: the skillopt_sleep ``Backend`` protocol implemented directly
-over the order-support MAF agent (design C3 — no CliBackend, no Claude/Codex CLIs).
+"""``SleepBackend``: the skillopt_sleep ``Backend`` protocol implemented directly
+over the configured harness agent (design C3 — no CliBackend, no Claude/Codex CLIs).
 
 * ``attempt`` / ``attempt_with_tools`` run the real target agent (real tool loop) with the
   candidate skill injected, through an injected ``run_target(task, skill, memory)``.
@@ -28,7 +28,7 @@ from skillopt_sleep.types import EditRecord, ReplayResult, TaskRecord
 
 from ci_lab.contracts import FailureRecord, SafetyOracle, Transcript, Violation
 from ci_lab.sleep.budget import Budget
-from ci_lab.sleep.harvest import KNOWN_OPS, INJECTION_MARKERS, UnknownJudgeOp
+from ci_lab.sleep.harvest import INJECTION_MARKERS, KNOWN_OPS, UnknownJudgeOp
 
 RunTarget = Callable[[TaskRecord, str, str], "tuple[str, Sequence[str], Transcript]"]
 Scorer = Callable[[TaskRecord, Transcript], "float | None"]
@@ -93,8 +93,8 @@ def check_op(op: str, arg: Any, response: str, tools_called: Sequence[str]) -> b
     r = response or ""
     if op == "section_present":
         name = re.escape(str(arg))
-        return bool(re.search(r"(?im)^\s{0,3}(#{1,6}\s*.*%s|\*\*.*%s.*\*\*\s*:?)\s*$" % (name, name), r)
-                    or re.search(r"(?im)^\s*%s\s*:" % name, r))
+        return bool(re.search(rf"(?im)^\s{{0,3}}(#{{1,6}}\s*.*{name}|\*\*.*{name}.*\*\*\s*:?)\s*$", r)
+                    or re.search(rf"(?im)^\s*{name}\s*:", r))
     if op == "regex":
         return bool(re.search(str(arg), r))
     if op == "max_chars":
@@ -127,7 +127,7 @@ def validate_edit(edit: Any, *, target: str) -> EditRecord:
         if isinstance(edit, Mapping):
             edit = EditRecord(**{k: str(edit.get(k, "")) for k in ("target", "op", "content", "anchor", "rationale")})
         else:
-            raise ValueError(f"reflector returned a non-edit: {type(edit).__name__}")
+            raise TypeError(f"reflector returned a non-edit: {type(edit).__name__}")
     edit.target = edit.target or target
     if edit.target != target:
         raise ValueError(f"edit targets {edit.target!r}, expected {target!r}")
@@ -148,8 +148,8 @@ def validate_edit(edit: Any, *, target: str) -> EditRecord:
     return edit
 
 
-class OrderSupportSleepBackend(Backend):
-    name = "ci-lab-order-support"
+class SleepBackend(Backend):
+    name = "ci-lab-harness"
 
     def __init__(self, *, run_target: RunTarget, oracle: SafetyOracle, reflector: Reflector,
                  scorer: Scorer | None = None, budget: Budget | None = None) -> None:
@@ -293,3 +293,7 @@ class OrderSupportSleepBackend(Backend):
     def tokens_used(self) -> int:
         with self._lock:
             return self._tokens
+
+
+# Explicit legacy imports remain valid until L9 removes the order-support target.
+OrderSupportSleepBackend = SleepBackend

@@ -18,7 +18,12 @@ BUNDLE_FORMAT = "ci_lab.sleep.bundle.v1"
 BUNDLE_FILES = ("candidate.patch", "experiment.json", "results.json")
 MANIFEST = "manifest.json"
 BUNDLE_KINDS = ("sleep", "usage")  # usage = pending-review task proposals only (C22)
-ALLOWED_PREFIXES = ("src/order_support/harness/skills/", "experiments/sleep/")
+ALLOWED_SKILLS = (
+    "harness/skills/harness-editing/SKILL.md",
+    "harness/skills/trace-triage/SKILL.md",
+)
+LEGACY_SKILL_PREFIX = "src/order_support/harness/skills/"
+ALLOWED_PREFIXES = (*ALLOWED_SKILLS, "experiments/sleep/")
 
 
 @dataclass(frozen=True)
@@ -32,7 +37,7 @@ def _check_path(path: str) -> None:
     parts = path.split("/")
     if (not path or path.startswith("/") or "\\" in path or ":" in path
             or any(p in ("", ".", "..", ".git") for p in parts)
-            or not path.startswith(ALLOWED_PREFIXES)):
+            or not (path in ALLOWED_SKILLS or path.startswith((LEGACY_SKILL_PREFIX, "experiments/sleep/")))):
         raise ValueError(f"refusing to patch path {path!r}")
 
 

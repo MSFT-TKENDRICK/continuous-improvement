@@ -8,8 +8,8 @@ no caches. It trusts nothing in the bundle (built by the unprivileged ``evaluate
    (regular files, size limits); sha256 digests and sizes match the manifest;
 2. ``base_sha`` equals the checked-out commit;
 3. the patch is plain text edits/new files only (no mode/rename/copy/delete/binary) and every
-   path is allowlisted: ``kind: sleep`` -> ``src/order_support/harness/skills/**`` (accepted
-   candidates only) + ``experiments/sleep/**``; ``kind: usage`` -> only
+   path is allowlisted: ``kind: sleep`` -> the two intended ``harness/skills/*/SKILL.md``
+   artifacts (accepted candidates only) + ``experiments/sleep/**``; ``kind: usage`` -> only
    ``experiments/sleep/*.pending.jsonl``; ``git apply --numstat`` must agree with the parse;
 4. ``git apply --check`` then ``git apply --index`` on branch
    ``exp/sleep-<yyyymmdd>-<run_attempt>/cand`` (or ``exp/usage-<yyyymmdd>/tasks``), commit with
@@ -38,7 +38,10 @@ MANIFEST = "manifest.json"
 MAX_PATCH = 200 * 1024
 MAX_JSON = 1024 * 1024
 MAX_FILES_IN_PATCH = 32
-SKILLS_PREFIX = "src/order_support/harness/skills/"
+SKILL_PATHS = frozenset({
+    "harness/skills/harness-editing/SKILL.md",
+    "harness/skills/trace-triage/SKILL.md",
+})
 LEDGER_PREFIX = "experiments/sleep/"
 PENDING_RE = re.compile(r"experiments/sleep/[a-z0-9][a-z0-9-]{0,63}\.pending\.jsonl")
 PATH_RE = re.compile(r"[A-Za-z0-9._/-]{1,200}")
@@ -148,7 +151,7 @@ def _check_path(path: str, kind: str, accepted: bool) -> None:
         raise PublishError(f"sleep bundle must not touch pending tasks: {path!r}")
     if path.startswith(LEDGER_PREFIX):
         return
-    if path.startswith(SKILLS_PREFIX):
+    if path in SKILL_PATHS:
         if not accepted:
             raise PublishError(f"skill change {path!r} in a bundle that was not accepted")
         return
