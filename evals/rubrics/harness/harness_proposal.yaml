@@ -1,0 +1,44 @@
+id: harness_proposal
+version: 1
+deliverable: proposal_edit
+pass_score: 0.75
+canary: b7128a3d5f9c401e
+criteria:
+  - id: exact-edit-safety
+    description: The case oracle confirms one in-scope parseable edit with no case literals.
+    measure: assert
+    role: quality
+    threshold: 1.0
+    weight: 4.0
+    required: true
+    check: {suite: harness_proposal, split: case, min_score: 1.0}
+  - id: edit-rationale
+    description: The explanation identifies the removed redundancy and preserved behavior.
+    measure: s1
+    role: quality
+    threshold: 0.5
+    weight: 1.0
+    check:
+      question: Does the explanation identify what redundancy was removed and which requested behavior remains?
+      type: noul
+  - id: runtime-wall
+    description: Evaluator-observed proposal latency stays within the runtime envelope.
+    measure: metric
+    role: resource
+    threshold: 0.5
+    required: true
+    check: {kind: metric, metric: wall_ms, op: le, target: 2500, worst: 9000}
+  - id: structural-simplification
+    description: Evaluator surface analysis reports no fixture-tree complexity growth.
+    measure: metric
+    role: resource
+    threshold: 0.5
+    required: true
+    check: {kind: metric, metric: complexity_delta, op: le, target: 0.0, worst: 0.15}
+  - id: edit-budget
+    description: Evaluator diff analysis keeps the single edit bounded.
+    measure: metric
+    role: resource
+    threshold: 0.5
+    required: true
+    check: {kind: metric, metric: edit_lines, op: le, target: 8, worst: 20}
