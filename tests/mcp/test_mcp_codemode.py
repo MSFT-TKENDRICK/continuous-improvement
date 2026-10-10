@@ -8,11 +8,13 @@ from pathlib import Path
 import pytest
 
 from ci_lab.mcp.client import McpDenied, McpHub, ToolInfo
-from ci_lab.mcp.codemode import CodeMode, ProcessTree
+from ci_lab.mcp.codemode import CodeMode, ProcessTree, _rmtree
 from ci_lab.mcp.registry import CodeModeConfig, load_registry, parse_exposure
 
 SRC = str(Path(__file__).resolve().parents[2] / "src")
-CFG = CodeModeConfig(timeout_s=20, max_output_chars=2000, imports=("json", "math"))
+# Timeouts here only bound a hung test; the timeout tests below use their own short budgets and assert
+# behavior (the snippet was killed), never wall-clock durations, so they hold on a loaded CI host.
+CFG = CodeModeConfig(timeout_s=60, max_output_chars=2000, imports=("json", "math"))
 OBJ = {"type": "object"}
 TOOLS = [
     ToolInfo("harness", "list_components", "List files.", {"type": "object", "properties": {}}, "code", OBJ),
@@ -23,15 +25,20 @@ TOOLS = [
 
 
 class FakeHub:
-    def __init__(self, delay=0.0):
-        self.calls, self.delay = [], delay
+    def __init__(self, hang=False):
+        self.calls, self.hang, self.cancelled = [], hang, False
 
     def tools(self, server=None, mode=None):
         return [t for t in TOOLS if mode is None or t.mode == mode]
 
     async def call_tool(self, server, tool, args):
         self.calls.append((server, tool, dict(args)))
-        await asyncio.sleep(self.delay)
+        if self.hang:
+            try:
+                await asyncio.Event().wait()  # never set: only cancellation ends it
+            except asyncio.CancelledError:
+                self.cancelled = True
+                raise
         if tool == "read_component" and args.get("path") == "secret.md":
             raise McpDenied(server, tool, "policy says no")
         if tool == "list_components":
@@ -40,10 +47,10 @@ class FakeHub:
 
 
 def run(cm, code):
-    return asyncio.run(cm.run_code(code))
+    return asyncio.run(asyncio.wait_for(cm.run_code(code), 300))
 
 
-def alive(pid, wait_s=5.0):
+def alive(pid, wait_s=30.0):
     if sys.platform != "win32":
         deadline = time.monotonic() + wait_s
         while time.monotonic() < deadline:
@@ -110,7 +117,7 @@ def test_rejected_code_never_runs():
 
 
 def test_exceptions_and_truncation():
-    cfg = CodeModeConfig(timeout_s=20, max_output_chars=50, imports=("json",))
+    cfg = CodeModeConfig(timeout_s=60, max_output_chars=50, imports=("json",))
     out = run(CodeMode(FakeHub(), cfg), "print('x' * 500)\n1 / 0\n")
     assert "truncated: 50 of 501 chars shown" in out and "ZeroDivisionError" in out
     assert "<run_code>" in out
@@ -119,16 +126,32 @@ def test_exceptions_and_truncation():
 def test_timeout_kills_the_process():
     cfg = CodeModeConfig(timeout_s=1.0, max_output_chars=100, imports=())
     cm = CodeMode(FakeHub(), cfg)
-    t0 = time.monotonic()
     out = run(cm, "while True:\n    pass\n")
-    assert out.startswith("error: timed out after 1s") and time.monotonic() - t0 < 15
+    assert out.startswith("error: timed out after 1s")
     assert not alive(cm.last_pid)
 
 
 def test_timeout_while_a_tool_call_hangs():
-    cfg = CodeModeConfig(timeout_s=1.0, max_output_chars=100, imports=())
-    out = run(CodeMode(FakeHub(delay=30), cfg), "tools.harness.list_components()")
-    assert out.startswith("error: timed out")
+    cfg = CodeModeConfig(timeout_s=5.0, max_output_chars=100, imports=())
+    hub = FakeHub(hang=True)
+    cm = CodeMode(hub, cfg)
+    out = run(cm, "tools.harness.list_components()\nprint('unreachable')")
+    assert out.startswith("error: timed out after 5s")
+    # the clock starts at the child's 'ready', so the immediate call is reached; the hang ends by cancellation
+    assert hub.calls == [("harness", "list_components", {})] and hub.cancelled
+    assert not alive(cm.last_pid)
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="sharing violations are Windows-only")
+def test_rmtree_retries_while_a_file_is_briefly_held(tmp_path):
+    import threading
+
+    d = tmp_path / "run"
+    d.mkdir()
+    f = (d / "stderr.txt").open("w")  # an open handle blocks deletion on Windows (like an AV scan)
+    threading.Timer(0.3, f.close).start()
+    _rmtree(d)
+    assert not d.exists()
 
 
 @pytest.mark.skipif(sys.platform != "win32", reason="Job Object path is Windows-only")
@@ -170,7 +193,7 @@ def test_end_to_end_with_real_hub_and_governance(tmp_path):
     (h / "prompts" / "secret.md").write_text("nope\n", encoding="utf-8")
     reg = load_registry()
     exp = parse_exposure({"format": "ci_lab.mcp.exposure.v1", "servers": {"harness": {"mode": "code"}},
-                          "code_mode": {"timeout_s": 30, "imports": ["json"]}}, reg)
+                          "code_mode": {"timeout_s": 60, "imports": ["json"]}}, reg)
 
     def before_call(server, tool, args):
         return "secret files are off limits" if "secret" in str(args.get("path")) else None
