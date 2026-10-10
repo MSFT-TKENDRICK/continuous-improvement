@@ -13,7 +13,8 @@ from assert_ai.stages.judge import JUDGE_SYSTEM_PROMPT
 from order_support import data, replay
 
 ASSERT_DIR = replay.REPO_ROOT / "evals" / "assert"
-CONFIGS = sorted(ASSERT_DIR.glob("*/eval_config.yaml"))
+CONFIGS = [p for p in sorted(ASSERT_DIR.glob("*/eval_config.yaml"))
+           if not p.parent.name.startswith("harness_")]
 LIVE_SUITES = [p for p in CONFIGS if p.parent.name != "judge_replay"]
 
 

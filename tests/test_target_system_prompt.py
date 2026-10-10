@@ -12,7 +12,7 @@ from ci_lab.testing import FakeChatClient
 from order_support import agent, data, replay
 
 LIVE_SUITES = [p for p in sorted((replay.REPO_ROOT / "evals" / "assert").glob("*/eval_config.yaml"))
-               if p.parent.name != "judge_replay"]
+               if p.parent.name != "judge_replay" and not p.parent.name.startswith("harness_")]
 
 
 def _target(path: Path, tmp_path: Path):
