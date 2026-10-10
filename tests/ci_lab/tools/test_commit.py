@@ -56,7 +56,7 @@ def test_rejects_unknown_component_and_empty(repo, layout):
 def test_rejects_component_path_mismatch(repo, layout, gitrun):
     wt, base = repo
     commit = _tool(repo, layout)
-    _write(wt, f"{layout.harness}/skills/refunds/SKILL.md", "# Refunds\nnew\n")
+    _write(wt, f"{layout.harness}/skills/changes/SKILL.md", "# Changes\nnew\n")
     out = commit("prompt", "mislabelled")
     assert out.startswith("ERROR: cannot commit") and "not 'prompt'" in out
     assert gitrun(wt, "rev-parse", "HEAD").strip() == base
@@ -67,9 +67,9 @@ def test_rejects_mixed_components_and_frozen(repo, layout):
     wt, _ = repo
     commit = _tool(repo, layout)
     _write(wt, f"{layout.harness}/prompts/system.md", "x\n")
-    _write(wt, f"{layout.harness}/tool_specs.yaml", "lookup_order: {}\n")
+    _write(wt, f"{layout.harness}/tool_specs.yaml", "read_file: {}\n")
     assert "not 'prompt'" in commit("prompt", "two components")
-    (wt / f"{layout.harness}/tool_specs.yaml").write_text("lookup_order:\n  description: Look up an order by id.\n",
+    (wt / f"{layout.harness}/tool_specs.yaml").write_text("read_file:\n  description: Read a harness file by path.\n",
                                                            encoding="utf-8", newline="\n")
     _write(wt, f"{layout.harness}/helper.py", "print(1)\n")
     assert "frozen" in commit("prompt", "code")
@@ -81,7 +81,7 @@ def test_rejects_mixed_components_and_frozen(repo, layout):
 def test_budget_and_allowed_components(repo, layout, gitrun):
     wt, base = repo
     commit = _tool(repo, layout, max_edits=1, allowed_components=("prompt",))
-    _write(wt, f"{layout.harness}/agent.yaml", "name: OrderSupport\n")
+    _write(wt, f"{layout.harness}/agent.yaml", "name: HarnessAgent\n")
     assert "may only edit prompt" in commit("config", "nope")
     (wt / f"{layout.harness}/agent.yaml").unlink()
     gitrun(wt, "checkout", "--", f"{layout.harness}/agent.yaml")
@@ -95,8 +95,8 @@ def test_budget_and_allowed_components(repo, layout, gitrun):
 def test_overlapping_component_globs(repo, layout):
     wt, base = repo
     commit = _tool(repo, layout)
-    _write(wt, f"{layout.harness}/skills/refunds/memory.md", "- learned\n")
+    _write(wt, f"{layout.harness}/skills/changes/memory.md", "- learned\n")
     assert commit("memory", "remember").startswith("committed")
-    _write(wt, f"{layout.harness}/agent.yaml", "name: OrderSupport\nmax_turns: 4\n")
+    _write(wt, f"{layout.harness}/agent.yaml", "name: HarnessAgent\nmax_turns: 4\n")
     assert commit("context_mgmt", "fewer turns").startswith("committed")
     assert [e.component for e in edits_since(wt, base)] == ["memory", "context_mgmt"]
