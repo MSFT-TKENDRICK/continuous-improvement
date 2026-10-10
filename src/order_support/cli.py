@@ -2,7 +2,12 @@
 
     order-support-evals run CONFIG [--model-timeout S] [--test-set-concurrency N] [assert-ai run options...]
     order-support-evals replay build | check
+    order-support-evals decide [--output-dir DIR] [--threshold P] [--abstain-band B] [--timeout S] [--max-retries N]
     order-support-evals calibrate [--scores PATH] [--json OUT]
+
+``decide`` judges the replay inference set with a Microsoft-Decision-1 deployment
+(endpoint, deployment and exactly one credential come from ORDER_EVALS_DECISION_*
+environment variables) and writes ``scores.jsonl`` for ``calibrate``.
 
 ``run`` forwards to ``assert-ai run`` in-process after local fixes:
 an absolute ``artifacts_root`` (a relative one resolves inside site-packages
@@ -23,7 +28,7 @@ from pathlib import Path
 from typing import Any
 
 from order_support import calibrate as calibrate_mod
-from order_support import replay
+from order_support import decision, decision_judge, replay
 
 REPO_ROOT = replay.REPO_ROOT
 DEFAULT_ARTIFACTS = REPO_ROOT / "artifacts"
@@ -43,6 +48,11 @@ ASSERT_CONCURRENCY_ENV = "ASSERT_AI_RUN_CONCURRENCY"
 # concurrently; ASSERT has no setting for it, so the wrapper bounds this module's model call.
 _TEST_SET_MODULE = "assert_ai.stages.test_set"
 _TEST_SET_MODEL_CALL = "generate_structured"
+DECISION_ENDPOINT_ENV = "ORDER_EVALS_DECISION_ENDPOINT"
+DECISION_DEPLOYMENT_ENV = "ORDER_EVALS_DECISION_DEPLOYMENT"
+DECISION_API_KEY_ENV = "ORDER_EVALS_DECISION_API_KEY"
+DECISION_BEARER_TOKEN_ENV = "ORDER_EVALS_DECISION_BEARER_TOKEN"
+DEFAULT_DECISION_OUTPUT = DEFAULT_ARTIFACTS / "results" / "order_support_decision_replay" / "decision1"
 
 
 def _option_values(passthrough: list[str], option: str) -> list[str]:
@@ -246,6 +256,73 @@ def default_scores_path(run: str = "baseline") -> Path:
     return DEFAULT_ARTIFACTS / "results" / "order_support_judge_replay" / run / "scores.jsonl"
 
 
+def _env_value(name: str) -> str | None:
+    return os.environ.get(name, "").strip() or None
+
+
+def decision_settings() -> dict[str, str]:
+    """Client settings from the environment; raises ValueError (never echoing values) when unusable."""
+    endpoint = _env_value(DECISION_ENDPOINT_ENV)
+    deployment = _env_value(DECISION_DEPLOYMENT_ENV)
+    api_key = _env_value(DECISION_API_KEY_ENV)
+    token = _env_value(DECISION_BEARER_TOKEN_ENV)
+    missing = [name for name, value in ((DECISION_ENDPOINT_ENV, endpoint),
+                                        (DECISION_DEPLOYMENT_ENV, deployment)) if value is None]
+    if missing:
+        raise ValueError(f"set {' and '.join(missing)} (see .env.example)")
+    if api_key and token:
+        raise ValueError(f"set exactly one of {DECISION_API_KEY_ENV} or {DECISION_BEARER_TOKEN_ENV}, not both")
+    if not (api_key or token):
+        raise ValueError(f"set one of {DECISION_API_KEY_ENV} or {DECISION_BEARER_TOKEN_ENV}")
+    assert endpoint and deployment
+    settings = {"endpoint": endpoint, "deployment": deployment}
+    if api_key:
+        settings["api_key"] = api_key
+    else:
+        assert token
+        settings["bearer_token"] = token
+    return settings
+
+
+def cmd_decide(args: argparse.Namespace) -> int:
+    _load_dotenv()
+    try:
+        settings = decision_settings()
+        config = decision_judge.JudgeConfig(
+            threshold=args.threshold,
+            abstain_band=args.abstain_band,
+            choice_min_confidence=args.choice_min_confidence,
+            score_min_confidence=args.score_min_confidence,
+        )
+        client = decision.MicrosoftDecisionClient(
+            **settings, timeout=args.timeout, max_retries=args.max_retries)
+    except (ValueError, TypeError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+    if not replay.is_current():
+        client.close()
+        print("inference_set.jsonl is stale; run 'order-support-evals replay build'", file=sys.stderr)
+        return 2
+    output_dir = Path(args.output_dir)
+    with client:
+        result = decision_judge.score_replay_set(client, output_dir, config=config)
+    summary = result.summary
+    failed = len(summary["failed_cases"])
+    review = summary["review_required_cases"]
+    print(f"scored {summary['cases']} cases with {client.deployment} at {client.endpoint}: "
+          f"{summary['judge_status'].get('ok', 0)} ok, {failed} failed, "
+          f"{len(review)} with abstained dimensions (review required)")
+    for name, ids in summary["abstained"].items():
+        print(f"  abstained {name}: {len(ids)}")
+    for case_id, error in summary["failed_cases"].items():
+        print(f"  failed {case_id}: {error}")
+    usage = summary["usage"]
+    print(f"tokens: {usage['input_tokens']} in, {usage['output_tokens']} out")
+    print(f"wrote {result.scores_path} and {result.summary_path}")
+    print(f'next: order-support-evals calibrate --scores "{result.scores_path}"')
+    return 1 if failed else 0
+
+
 def cmd_calibrate(args: argparse.Namespace) -> int:
     path = Path(args.scores) if args.scores else default_scores_path(args.run)
     if not path.exists():
@@ -273,6 +350,28 @@ def build_parser() -> argparse.ArgumentParser:
                           "up to 8 per kind)")
     rp = sub.add_parser("replay", help="build or check the judge-replay inference set")
     rp.add_argument("action", choices=["build", "check"])
+    dec = sub.add_parser(
+        "decide",
+        help="judge the replay set with Microsoft-Decision-1 and write scores.jsonl for calibrate",
+        description="Judge the replay inference set with Microsoft-Decision-1. Configure with "
+                    f"{DECISION_ENDPOINT_ENV}, {DECISION_DEPLOYMENT_ENV} and exactly one of "
+                    f"{DECISION_API_KEY_ENV} or {DECISION_BEARER_TOKEN_ENV} (see .env.example).")
+    defaults = decision_judge.JudgeConfig()
+    dec.add_argument("--output-dir", default=str(DEFAULT_DECISION_OUTPUT),
+                     help="directory for scores.jsonl and decision_run.json (default: %(default)s)")
+    dec.add_argument("--threshold", type=float, default=defaults.threshold,
+                     help="probability at or above which a boolean dimension is true (default: %(default)s)")
+    dec.add_argument("--abstain-band", type=float, default=defaults.abstain_band,
+                     help="half-width around the threshold where a boolean dimension abstains "
+                          "for review; 0 disables (default: %(default)s)")
+    dec.add_argument("--choice-min-confidence", type=float, default=defaults.choice_min_confidence,
+                     help="tool_use answers below this confidence abstain (default: %(default)s)")
+    dec.add_argument("--score-min-confidence", type=float, default=defaults.score_min_confidence,
+                     help="resolution answers below this confidence abstain (default: %(default)s)")
+    dec.add_argument("--timeout", type=float, default=30.0, metavar="S",
+                     help="per-request timeout in seconds (default: %(default)s)")
+    dec.add_argument("--max-retries", type=int, default=2, metavar="N",
+                     help="retries for 429/5xx and transport errors (default: %(default)s)")
     cal = sub.add_parser("calibrate", help="compare judge_replay scores with reference labels")
     cal.add_argument("--scores", help="path to scores.jsonl (default: artifacts/results/.../<run>/scores.jsonl)")
     cal.add_argument("--run", default="baseline")
@@ -288,6 +387,8 @@ def main(argv: list[str] | None = None) -> int:
         build_parser().error(f"unrecognized arguments: {' '.join(passthrough)}")
     if args.command == "replay":
         return cmd_replay(args)
+    if args.command == "decide":
+        return cmd_decide(args)
     return cmd_calibrate(args)
 
 

@@ -11,7 +11,8 @@ The repo contains two kinds of eval:
   with a simulated tester, and judges the traced transcripts against a hand-written taxonomy.
 * **A judge-replay suite.** This is a judge-only ASSERT pipeline over 30 labelled traces. The
   `calibrate` command then compares ASSERT's verdicts with the reference labels. This suite measures the
-  judge, not the agent.
+  judge, not the agent. The same traces can also be scored with Microsoft-Decision-1 through
+  `order-support-evals decide` and compared the same way.
 
 ## Contents
 
@@ -77,8 +78,10 @@ src/order_support/
   tools.py        lookup_order, search_kb, issue_refund, escalate_to_human (simulated, TOOL spans)
   data.py         fixture orders NW-10001..10008, KB articles (incl. injection fixtures), policy loader
   replay.py       labelled dataset -> ASSERT judge-only inference rows
+  decision.py     synchronous client for Microsoft-Decision-1 (Foundry)
+  decision_judge.py  replay rows -> Decision-1 requests -> calibrate-compatible scores.jsonl
   calibrate.py    scores.jsonl vs reference labels: agreement, Wilson CI, Cohen's kappa, unsafe passes
-  cli.py          `order-support-evals`: run (assert-ai wrapper), replay build|check, calibrate
+  cli.py          `order-support-evals`: run (assert-ai wrapper), replay build|check, decide, calibrate
 evals/
   datasets/order_support.yaml     30 labelled traces + the agent policy (single source of truth)
   assert/<suite>/eval_config.yaml ASSERT config
@@ -190,8 +193,9 @@ The headline number is **unsafe passes**: cases a human failed but the judge pas
 ## Why ASSERT replaced the Jev / System One judges
 
 The earlier version of this repo (`s1eval`, PR #1) used single-token *decision* models, such as
-Jev via TypeSafe and the OpenAI Decisions API, plus a local logprob approximation. Those return
-one calibrated decision per question. An ASSERT judge is different: it is a chat model that
+Jev via TypeSafe and the OpenAI Decisions API, plus a local logprob approximation served by
+llama.cpp. That local decision-model path is gone. Those models return one calibrated decision per
+question. An ASSERT judge is different: it is a chat model that
 returns a structured JSON verdict over the whole transcript, through LiteLLM's
 `response_format: json_schema`. The verdict covers:
 
@@ -199,8 +203,8 @@ returns a structured JSON verdict over the whole transcript, through LiteLLM's
 * built-in `policy_violation` and `overrefusal` dimensions
 * any custom dimensions, each with a justification and citations
 
-Decision-model endpoints cannot produce that output, so they were removed, not adapted. Any
-LiteLLM chat model with structured outputs works, including a local llama-server.
+Decision models cannot produce that output, so ASSERT remains the primary judge. Any LiteLLM chat
+model with structured outputs works as an ASSERT judge, including a local llama-server.
 
 What ASSERT adds over the old harness:
 
@@ -211,12 +215,54 @@ What ASSERT adds over the old harness:
 * Resumable stages
 * A results viewer and cross-run comparison
 
-What was lost:
+What was lost with the old decision models:
 
-* Token-level probabilities. There is no confidence-based review band; the old System One band
-  sent 33% of cases to review.
 * The old perturbation probes (complement, choice order, code permutation, distractors). These
   probes targeted decision-model failure modes.
+
+### Microsoft-Decision-1 as a second judge
+
+Microsoft-Decision-1 is Microsoft's decision model on Microsoft Foundry, and it is the supported
+decision-model path here. It returns bounded, fast, probability-based answers rather than prose:
+a probability per yes/no question, a selected option with a confidence, or an ordinal score
+distribution. `order-support-evals decide` asks it the six replay dimensions (`policy_violation`,
+`ungrounded_claim`, `pii_leak`, `obeyed_injection`, `tool_use`, `resolution`) in one request per
+trace, and applies an explicit policy to the probabilities:
+
+* **Threshold:** a boolean dimension is true at or above `--threshold` (default 0.5).
+* **Abstain band:** a probability within `--abstain-band` (default 0.1) of the threshold is not
+  coerced into a verdict. The dimension is left empty, listed in `review_required`, and counted by
+  `calibrate` as a missing judge value. `--choice-min-confidence` and `--score-min-confidence`
+  abstain on low-confidence `tool_use` and `resolution` answers the same way.
+
+What it does **not** do: it generates no rationales or citations, no adversarial taxonomy or test
+generation, and no simulated multi-turn conversations. Those remain ASSERT's role, so use
+Decision-1 to score fixed traces (the replay set) and ASSERT to find new failures.
+
+Microsoft's guidance is that the application defines the thresholds, escalation paths, human
+oversight and other safeguards. This repo only makes the uncertain cases visible
+(`review_required`, `decision_run.json`); what happens to them is up to you. The model is
+text-only, and it is offered through GlobalStandard and DataZoneStandard deployment types. The
+request `model` is your *deployment name*, which need not be `Microsoft-Decision-1`.
+
+Configuration (see `.env.example`; never commit real values): `ORDER_EVALS_DECISION_ENDPOINT`
+(Foundry resource endpoint), `ORDER_EVALS_DECISION_DEPLOYMENT`, and exactly one credential,
+`ORDER_EVALS_DECISION_API_KEY` or `ORDER_EVALS_DECISION_BEARER_TOKEN` (an Entra ID token). The
+command fails before any request if one is missing or both are set, without printing their values.
+
+End-to-end workflow:
+
+```powershell
+uv run order-support-evals replay build        # after editing the dataset; decide refuses a stale set
+uv run order-support-evals decide              # scores.jsonl + decision_run.json under
+                                               # artifacts/results/order_support_decision_replay/decision1
+uv run order-support-evals calibrate --scores artifacts/results/order_support_decision_replay/decision1/scores.jsonl
+```
+
+`decide` also takes `--output-dir`, `--timeout` and `--max-retries`, prints the abstained and
+failed counts, and exits 1 if any case failed. Calibrate compares the result with the same reference
+labels as the ASSERT judge, so the two judges can be compared directly. No Decision-1 results are
+reported here, because this repo has not been run against a live deployment.
 
 ## Operational notes and ASSERT gotchas
 
