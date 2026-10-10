@@ -41,6 +41,12 @@ policies:
         - write_file
         - commit_edit
         - submit_proposal_done
+        - background_agents_start_task
+        - background_agents_wait_for_first_completion
+        - background_agents_get_task_results
+        - background_agents_get_all_tasks
+        - background_agents_continue_task
+        - background_agents_clear_completed_task
       CiReflector: [read_brief, list_documents, read_history, submit_reflection]
       CiStudent: [list_files, read_file, write_file, submit_output]
 intervention_points:

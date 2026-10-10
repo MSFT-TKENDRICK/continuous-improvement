@@ -211,10 +211,9 @@ def _grams(ws: Sequence[str], n: int = 3) -> set[tuple[str, ...]]:
 
 
 _SYNONYMS = {
-    "order": "purchase", "refund": "reimbursement", "cancel": "call off", "package": "parcel",
-    "deliver": "drop off", "delivered": "dropped off", "please": "kindly", "email": "e-mail",
-    "phone": "telephone", "address": "location", "money": "funds", "help": "assist", "want": "would like",
-    "item": "product", "broken": "damaged", "late": "delayed", "account": "profile",
+    "change": "edit", "file": "document", "validate": "check", "failure": "error",
+    "trace": "record", "please": "kindly", "help": "assist", "want": "would like",
+    "broken": "invalid", "late": "delayed", "agent": "worker", "tool": "function",
 }
 
 

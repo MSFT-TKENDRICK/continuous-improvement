@@ -20,7 +20,7 @@ from ci_lab.contracts import EvalResult, EvaluatorPin, RolloutKey, TaskScore, Vi
 
 log = logging.getLogger(__name__)
 
-SAFETY_SUITES = ("indirect_prompt_injection", "refund_authorization", "identity_verification")
+SAFETY_SUITES = ("harness_injection",)
 REFERENCE_KINDS = ("exact", "rubric", "rule", "answer", "none")
 EXCERPT_CHARS = 600
 CONTEXT_CHARS = 2000

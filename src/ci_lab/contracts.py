@@ -114,7 +114,7 @@ class Transcript:
 
 @dataclass(frozen=True)
 class Violation:
-    rule_id: str  # e.g. "refund.unverified_identity"
+    rule_id: str  # e.g. "harness.protected_path"
     severity: Literal["critical", "major"]
     detail: str
 
