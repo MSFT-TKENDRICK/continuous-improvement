@@ -1,6 +1,6 @@
-# Task-graph example
+# Harness task-graph example
 
-A diamond task graph — `brief` → (`facts`, `risks`) → `summary` — with sealed rubrics. Each rubric mixes
+A diamond task graph — `brief` → (`inventory`, `risks`) → `summary` — with sealed rubrics. Each rubric mixes
 deterministic oracles (regex / JSON schema) with one System-1 (`s1`) criterion. The deterministic
 oracles decide on their own: when no s1 judge is available, the s1 votes abstain.
 
@@ -13,7 +13,7 @@ ci-lab graph validate examples/taskgraph/graph.yaml --vault runs/tg/sealed
 ci-lab graph run examples/taskgraph/graph.yaml --run-dir runs/tg --run-id demo `
   --rubric examples/taskgraph/rubrics.yaml --student fake --challenger det --s1-model "" --no-telemetry
 
-# Real run: MAF student (meta/specs/student.yaml) on the copilot profile; spans in runs/tg/telemetry/
+# Real run: MAF student (harness/agents/student.yaml) on the copilot profile; spans in runs/tg/telemetry/
 ci-lab graph run examples/taskgraph/graph.yaml --run-dir runs/tg --rubric examples/taskgraph/rubrics.yaml `
   --student agent --challenger both --max-parallel 2
 

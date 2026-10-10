@@ -1,51 +1,51 @@
-# Diamond task graph: brief -> (facts, risks) -> summary. Rubrics: rubrics.yaml (sealed by `graph run --rubric`).
+# Diamond task graph: brief -> (inventory, risks) -> summary.
 # Offline smoke: the `fake` student writes the first fenced block of each deliverable's instructions.
-id: order-escalation-review
-goal: Review the escalated orders and summarize facts and risks.
+id: harness-change-review
+goal: Review a proposed harness change and summarize its affected components and risks.
 deliverables:
   - id: brief
     title: Review brief
     output: {kind: file, path: out/brief.md}
-    rubric_commitment: 9ea583efe2c4e76050636cbd1df43303cf7c774f0b8bdc3aff259f7d0029b03c
+    rubric_commitment: 76a3ab0b7ced024ca0e1d70d41a088c1be73a3b3b0338d74a7ffe746c086b5b5
     budget: {max_attempts: 2, timeout_s: 120}
     instructions: |
-      Write the review brief for the escalated orders. Reference output:
+      Write the review brief for the proposed harness change. Reference output:
       ```
       # Brief
-      Scope: ORD-1 and ORD-2 (escalated last week).
+      Scope: prompt and loop components.
       ```
-  - id: facts
-    title: Order facts
+  - id: inventory
+    title: Component inventory
     depends_on: [brief]
-    output: {kind: json, path: out/facts.json}
-    rubric_commitment: 906e3ee2eb9a43ab8809905773b8f60af0fcd650634540f787bea42411b8e620
+    output: {kind: json, path: out/inventory.json}
+    rubric_commitment: 15429bd623c1c571f0ab07dc50515a601e2f7a96532936c9158ee24695159cf7
     budget: {max_attempts: 2, timeout_s: 120}
     instructions: |
-      From the brief, produce a JSON object with the order ids in scope. Reference output:
+      From the brief, produce a JSON object with the component names in scope. Reference output:
       ```
-      {"orders": ["ORD-1", "ORD-2"]}
+      {"components": ["prompt", "loop"]}
       ```
   - id: risks
-    title: Order risks
+    title: Harness risks
     depends_on: [brief]
     output: {kind: file, path: out/risks.md}
-    rubric_commitment: 89be81a3a699ba4453e9020f88b0b186ba30cb6129a6e0b4bd2b3febb4204649
+    rubric_commitment: e164ab1b6953fc15592bc8fa6e104caf950bf84473ed4443d6729469cd08fc9a
     budget: {max_attempts: 2, timeout_s: 120}
     instructions: |
       From the brief, list the open risks as a markdown list. Reference output:
       ```
       # Risks
-      - ORD-2 refund is late
+      - loop: call cap may increase
       ```
   - id: summary
     title: Review summary
-    depends_on: [facts, risks]
+    depends_on: [inventory, risks]
     output: {kind: file, path: out/summary.md}
-    rubric_commitment: 83a089404e452a02ce97b0acd3cf95fbe251e15b9f4637d9f8b5ff6e793d9110
+    rubric_commitment: d984df40d9566aa4739a5a2e5b3963a8cb755dc32f629de033e8175c868d52c9
     budget: {max_attempts: 2, timeout_s: 120}
     instructions: |
-      Combine the facts and risks into a two-line summary. Reference output:
+      Combine the inventory and risks into a two-line summary. Reference output:
       ```
       # Summary
-      2 orders escalated; 1 risk open.
+      2 components reviewed; 1 risk open.
       ```
