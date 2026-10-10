@@ -8,7 +8,7 @@ Copilot model lists change over time, so a baked-in id can go stale (`Model "cla
 
 | Model id (default) | Used by | Defined in | Override |
 |---|---|---|---|
-| `claude-sonnet-5` | Meta agents (analyst, proposer, critic, reflector) and their subagents (failure_analyst) | `src/ci_lab/meta/specs/*.yaml`, `manifest.yaml` | `CI_META_MODEL` (allowlisted) |
+| `claude-sonnet-5` | Meta agents (analyst, proposer, critic, reflector) and their subagents (failure_analyst) | `harness/agents/*.yaml`, `src/ci_lab/meta/specs/{critic.yaml,manifest.yaml}` | `CI_META_MODEL` (allowlisted) |
 | `claude-sonnet-5` | Lesson synthesizer (`guard` strategy) | `src/ci_lab/lessons_arm/specs/lesson_synthesizer.yaml` | `CI_META_MODEL` (allowlisted) |
 | `gpt-5-mini` | Order agent with `ORDER_AGENT_PROFILE=copilot` | `src/order_support/harness/agent.yaml` (`model.id`) | A committed harness change (hashed in the harness tree) |
 | `openai/local` | Order agent with the offline profile | `ORDER_AGENT_MODEL` default | `ORDER_AGENT_MODEL` |

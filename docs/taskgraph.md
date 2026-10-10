@@ -146,7 +146,7 @@ match. The difference is where concurrency comes from: MAF supersteps and fan-in
 
 - **`fake_student`** answers with the first fenced block of the instructions (or all of them). It is
   for offline smoke runs.
-- **`AgentStudentFactory`** runs the `meta/specs/student.yaml` MAF agent in a temporary workspace for
+- **`AgentStudentFactory`** runs the `harness/agents/student.yaml` MAF agent in a temporary workspace for
   each attempt, under `<run-dir>/students`. The workspace is seeded with the deliverable's `file`
   context, resolved relative to the graph file. Only the output path is writable, and the agent
   submits with `submit_output`.

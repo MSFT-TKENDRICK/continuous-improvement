@@ -3,7 +3,9 @@
 ``x-ci`` is our extension to the MAF declarative schema (``AgentDefinition`` rejects unknown
 top-level keys, so it is popped before validation):
 
-* ``instructions_files``: Markdown files (relative to the spec) appended to ``instructions``
+* ``instructions_files``: Markdown files (relative to the spec) appended to ``instructions``; a
+  spec in a harness tree (``harness/agents/*.yaml``) may use any file of its tree
+  (``../prompts/common.md``), other specs only files under their own dir
 * ``terminal_tool``: the ``submit_*`` tool whose call ends the run
 * ``skills_paths``: Agent Skills directories (relative to the spec dir, else the repo root)
 * ``documents``: run documents the agent may read with ``read_brief``
@@ -52,6 +54,7 @@ __all__ = [
     "SpecError",
     "TerminalSubmitMiddleware",
     "default_builder",
+    "evolvable_agents",
     "harness_builder",
     "load_manifest",
     "load_spec",
@@ -96,7 +99,7 @@ class MetaAgentSpec:
     role: str = "agent"
     subagents: tuple[MetaAgentSpec, ...] = ()
     subagent_instructions: str | None = None
-
+    harness_root: Path | None = None  # the harness tree an evolvable spec was loaded from
 
 def subagent_specs(spec: MetaAgentSpec) -> list[MetaAgentSpec]:
     """Every subagent below ``spec`` (depth-first, each key once)."""
@@ -152,26 +155,64 @@ def _resolve_skill_path(raw: str, spec_dir: Path) -> Path:
     return (REPO_ROOT / p).resolve()
 
 
-def load_spec(key_or_path: str | Path, *, manifest: Mapping[str, Any] | None = None) -> MetaAgentSpec:
+def evolvable_agents(manifest: Mapping[str, Any] | None = None) -> tuple[str, ...]:
+    """Keys whose specs live in the harness tree (``<harness_dir>/agents``), not in :data:`SPECS_DIR`."""
+    manifest = manifest if manifest is not None else load_manifest()
+    return tuple(str(k) for k in manifest.get("evolvable") or ())
+
+
+def _harness_root(harness_dir: Path | str | None) -> Path:
+    from ci_lab.harness_tree import repo_harness_dir
+
+    return Path(harness_dir).resolve() if harness_dir is not None else repo_harness_dir().resolve()
+
+
+def _tree_root(path: Path, harness_dir: Path | str | None) -> Path | None:
+    """The harness tree a path-loaded spec belongs to (``None`` = a standalone/frozen spec)."""
+    if harness_dir is not None and path.is_relative_to(root := _harness_root(harness_dir)):
+        return root
+    from ci_lab.harness_tree import MANIFEST_NAME
+
+    tree = path.parent.parent
+    return tree if path.parent.name == "agents" and (tree / MANIFEST_NAME).is_file() else None
+
+
+def load_spec(key_or_path: str | Path, *, manifest: Mapping[str, Any] | None = None,
+              harness_dir: Path | str | None = None) -> MetaAgentSpec:
     """Load + validate one meta-agent spec by manifest key (``"critic"``, or a ``subagents`` key)
-    or path, including its subagents (recursively)."""
+    or path, including its subagents (recursively).
+
+    Evolvable keys (manifest ``evolvable``: analyst, proposer, reflector, failure_analyst,
+    student) resolve to ``<harness_dir>/agents/<spec>``; ``harness_dir=None`` means the repo-root
+    ``harness/`` (:func:`ci_lab.harness_tree.repo_harness_dir`; no env lookup). Frozen specs
+    (critic, judge, adversary) ignore ``harness_dir``. A tree spec may read instruction files
+    anywhere in its tree (``../prompts/*.md``); other specs only under their own dir."""
     manifest = manifest if manifest is not None else load_manifest()
     subs = manifest.get("subagents") or {}
     if not isinstance(subs, Mapping):
         raise SpecError("manifest: subagents must be a mapping")
-    if isinstance(key_or_path, str) and key_or_path in manifest["agents"]:
+    tree: Path | None = None
+    if isinstance(key_or_path, str) and (key_or_path in manifest["agents"] or key_or_path in subs
+                                         or key_or_path in evolvable_agents(manifest)):
         key = key_or_path
-        entry: Mapping[str, Any] = manifest["agents"][key]
-        path = (SPECS_DIR / entry["spec"]).resolve()
-    elif isinstance(key_or_path, str) and key_or_path in subs:
-        key = key_or_path
-        entry = subs[key]
-        path = (SPECS_DIR / entry["spec"]).resolve()
+        entry: Mapping[str, Any] = manifest["agents"].get(key) or subs.get(key) or {}
+        rel = str(entry.get("spec") or f"{key}.yaml")
+        if key in evolvable_agents(manifest):
+            from ci_lab.harness_tree import HarnessTree, HarnessTreeError
+
+            tree = _harness_root(harness_dir)
+            try:
+                path = HarnessTree(tree).agent_spec_path(rel)
+            except HarnessTreeError as exc:
+                raise SpecError(f"{key}: {exc}") from exc
+        else:
+            path = (SPECS_DIR / rel).resolve()
     else:
         path = Path(key_or_path).resolve()
         key = path.stem
         entry = manifest["agents"].get(key) or subs.get(key) or {}
-    return _load(key, path, entry, manifest, stack=())
+        tree = _tree_root(path, harness_dir)
+    return _load(key, path, entry, manifest, stack=(), tree=tree)
 
 
 def _subagent_ref(ref: Any, parent: Path, manifest: Mapping[str, Any]) -> tuple[str, Path, Mapping[str, Any]]:
@@ -197,7 +238,7 @@ def _subagent_ref(ref: Any, parent: Path, manifest: Mapping[str, Any]) -> tuple[
 
 
 def _load(key: str, path: Path, entry: Mapping[str, Any], manifest: Mapping[str, Any], *,
-          stack: tuple[Path, ...], as_subagent: bool = False) -> MetaAgentSpec:
+          stack: tuple[Path, ...], as_subagent: bool = False, tree: Path | None = None) -> MetaAgentSpec:
     path = path.resolve()
     if path in stack:
         chain = " -> ".join(p.stem for p in (*stack[stack.index(path):], path))
@@ -246,10 +287,11 @@ def _load(key: str, path: Path, entry: Mapping[str, Any], manifest: Mapping[str,
             raise SpecError(f"{path.name}: terminal_tool disagrees with manifest")
 
     parts = [str(spec.get("instructions") or "").strip()]
+    base, where = (tree, "the harness dir") if tree is not None else (path.parent.resolve(), "the spec dir")
     for rel in xci.get("instructions_files") or []:
         f = (path.parent / rel).resolve()
-        if not f.is_relative_to(path.parent.resolve()) or not f.is_file():
-            raise SpecError(f"{path.name}: instructions file {rel!r} not found under the spec dir")
+        if not f.is_relative_to(base) or not f.is_file():
+            raise SpecError(f"{path.name}: instructions file {rel!r} not found under {where}")
         parts.append(f.read_text(encoding="utf-8").strip())
     skills = tuple(_resolve_skill_path(str(p), path.parent) for p in xci.get("skills_paths") or [])
     for s in skills:
@@ -259,8 +301,8 @@ def _load(key: str, path: Path, entry: Mapping[str, Any], manifest: Mapping[str,
     refs = xci.get("subagents") or []
     if not isinstance(refs, list):
         raise SpecError(f"{path.name}: x-ci.subagents must be a list")
-    children = tuple(_load(*_subagent_ref(r, path, manifest), manifest, stack=(*stack, path), as_subagent=True)
-                     for r in refs)
+    children = tuple(_load(*_subagent_ref(r, path, manifest), manifest, stack=(*stack, path), as_subagent=True,
+                           tree=tree) for r in refs)
     names = [c.name.lower() for c in children]
     if len(set(names)) != len(names):
         raise SpecError(f"{path.name}: subagent names must be unique (case-insensitive)")
@@ -277,7 +319,8 @@ def _load(key: str, path: Path, entry: Mapping[str, Any], manifest: Mapping[str,
         tools=tuple(tools), terminal_tool=terminal, documents=tuple(xci.get("documents") or ()),
         skills_paths=skills, harness=harness, runtime=str(entry.get("runtime") or manifest.get("runtime") or "harness"),
         max_nudges=nudges, role=role, subagents=children,
-        subagent_instructions=sub_instructions.strip() if isinstance(sub_instructions, str) else None)
+        subagent_instructions=sub_instructions.strip() if isinstance(sub_instructions, str) else None,
+        harness_root=tree)
 
 
 # ---------------------------------------------------------------- building

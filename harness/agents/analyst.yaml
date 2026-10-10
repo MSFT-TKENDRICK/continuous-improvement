@@ -31,6 +31,6 @@ tools:
       - name: submit_analysis
 x-ci:
   purpose: analyst
-  instructions_files: [prompts/common.md, prompts/analyst.md]
+  instructions_files: [../prompts/common.md, ../prompts/analyst.md]
   terminal_tool: submit_analysis
   documents: [brief, failures, analysis, history]

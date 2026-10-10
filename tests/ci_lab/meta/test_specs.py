@@ -6,6 +6,7 @@ import warnings
 import pytest
 import yaml
 
+from ci_lab.harness_tree import repo_harness_dir
 from ci_lab.meta.spec_loader import (
     AGENTS,
     SPECS_DIR,
@@ -60,8 +61,8 @@ def test_proposer_gets_agent_lightning_skill():
 
 @pytest.fixture
 def spec_copy(tmp_path):
-    shutil.copytree(SPECS_DIR, tmp_path / "specs")
-    return tmp_path / "specs"
+    shutil.copytree(repo_harness_dir(), tmp_path / "harness")
+    return tmp_path / "harness" / "agents"
 
 
 def _mutate(path, fn):
@@ -77,7 +78,7 @@ def _mutate(path, fn):
     (lambda d: d["tools"][0].update(bindings=[{"name": "other"}]), "same name"),
     (lambda d: d["tools"][0].update(bindings=[]), "exactly one binding"),
     (lambda d: d["x-ci"].update(terminal_tool="read_brief"), r"submit_\* tool"),
-    (lambda d: d["x-ci"].update(instructions_files=["../../../pyproject.toml"]), "not found under the spec dir"),
+    (lambda d: d["x-ci"].update(instructions_files=["../../../pyproject.toml"]), "not found under the harness dir"),
     (lambda d: d["x-ci"].update(skills_paths=["nope/missing"]), "does not exist"),
     (lambda d: d.update(kind="Workflow"), "kind|not a valid declarative"),
 ])
@@ -87,8 +88,9 @@ def test_spec_validation_errors(spec_copy, mutation, message):
         load_spec(path)
 
 
-def test_terminal_tool_must_agree_with_manifest(spec_copy):
-    path = _mutate(spec_copy / "critic.yaml", lambda d: d["x-ci"].update(terminal_tool="submit_analysis"))
+def test_terminal_tool_must_agree_with_manifest(tmp_path):
+    shutil.copytree(SPECS_DIR, tmp_path / "specs")
+    path = _mutate(tmp_path / "specs" / "critic.yaml", lambda d: d["x-ci"].update(terminal_tool="submit_analysis"))
     with pytest.raises(SpecError):
         load_spec(path)
 
@@ -157,3 +159,25 @@ def test_default_builder_rejects_models_outside_the_allowlist():
     with pytest.raises(SpecError, match="allowlist"):
         default_builder(allowed_models=["gpt-5-mini"])(spec, client=FakeChatClient(),
                                                        bindings={t: (lambda: "x") for t in spec.tools})
+
+
+def test_evolvable_specs_load_from_the_given_harness_dir(spec_copy):
+    root = spec_copy.parent
+    prompt = root / "prompts" / "analyst.md"
+    prompt.write_text(prompt.read_text(encoding="utf-8") + "\nCANDIDATE-MARKER\n", encoding="utf-8")
+    spec = load_spec("analyst", harness_dir=root)
+    assert spec.path == (spec_copy / "analyst.yaml").resolve() and spec.harness_root == root.resolve()
+    assert "CANDIDATE-MARKER" in spec.instructions
+    assert "CANDIDATE-MARKER" not in load_spec("analyst").instructions
+    assert load_spec("analyst").harness_root == repo_harness_dir().resolve()
+    assert load_spec("student", harness_dir=root).name == "CiStudent"
+    assert load_spec("proposer", harness_dir=root).subagents[0].path.parent == spec_copy.resolve()
+    critic = load_spec("critic", harness_dir=root)
+    assert critic.path == (SPECS_DIR / "critic.yaml").resolve() and critic.harness_root is None
+    assert critic.instructions == load_spec("critic").instructions
+
+
+def test_missing_evolvable_spec_fails_closed(spec_copy):
+    (spec_copy / "reflector.yaml").unlink()
+    with pytest.raises(SpecError, match="not found"):
+        load_spec("reflector", harness_dir=spec_copy.parent)
