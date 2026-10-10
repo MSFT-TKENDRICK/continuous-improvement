@@ -29,10 +29,10 @@ def test_seed_bundle_loads_and_is_immutable(seeds, tb):
         seeds.digest = "x"  # type: ignore[misc]
     with pytest.raises(TypeError):
         seeds.templates["x"] = None  # type: ignore[index]
-    pending = tb.call("issue_refund", order_id="A1", amount=5)
+    pending = tb.call("write_file", resource_id="A1", amount=5)
     got = R.evaluate(seeds, GuardView(steps=(), pending=pending), on="tool_call")
-    assert [m.rule.id for m in got] == ["refund.amount_exceeds_eligible", "refund.ineligible_order",
-                                        "refund.requires_verified_identity"]
+    assert [m.rule.id for m in got] == ["change.amount_exceeds_eligible", "change.disallowed_resource",
+                                        "change.requires_access"]
     m = got[-1]
     assert isinstance(m.rule, RuleSpec) and m.step_index == pending.i
-    assert "verify_identity" in m.fix and "{" not in m.message + m.fix
+    assert "verify_access" in m.fix and "{" not in m.message + m.fix
