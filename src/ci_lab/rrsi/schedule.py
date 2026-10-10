@@ -10,7 +10,16 @@ from dataclasses import asdict, dataclass
 from typing import Any
 
 from ci_lab import obs
-from ci_lab.contracts import ATTR_EXPERIMENT, ATTR_PHASE, ATTR_ROUND, ATTR_STRATEGY, SPAN_STEP, TEXT_COMPONENTS, ArmDirective
+from ci_lab.contracts import (
+    ATTR_EXPERIMENT,
+    ATTR_PHASE,
+    ATTR_ROUND,
+    ATTR_STRATEGY,
+    SPAN_STEP,
+    TEXT_COMPONENTS,
+    ArmDirective,
+    strategy_may_edit,
+)
 
 from .attribution import component_stats
 from .history import HistoryRecord, tried_components
@@ -24,7 +33,7 @@ def edit_budget(t: int, T: int, b_min: int, b_max: int) -> int:
         raise ValueError("T must be >= 1")
     t = min(max(t, 0), T)
     raw = b_min + (b_max - b_min) * 0.5 * (1.0 + math.cos(math.pi * t / T))
-    return int(math.ceil(round(raw, 9)))  # round() strips float noise such as 1.0000000000000002
+    return math.ceil(round(raw, 9))  # round() strips float noise such as 1.0000000000000002
 
 
 def stall_flag(trajectory: Sequence[float], t: int, w: int, delta: float) -> bool:
@@ -126,6 +135,11 @@ def _exploit_order(records: Sequence[HistoryRecord], components: Sequence[str], 
     return sorted(pool, key=lambda c: (-stats[c].success_rate, -stats[c].mean_delta_s, pos[c]))
 
 
+def _strategy_pool(strategy: str, components: Sequence[str]) -> tuple[str, ...]:
+    """Components the allocated optimizer can actually edit, preserving scheduler order."""
+    return tuple(c for c in components if strategy_may_edit(strategy, c))
+
+
 def plan_round(t: int, hp: Hyperparams, history: Sequence[HistoryRecord], trajectory: Sequence[float],
                delta: float, arms: Sequence[str] | None = None,
                components: Sequence[str] = TEXT_COMPONENTS, *, experiment_id: str | None = None) -> RoundSchedule:
@@ -150,19 +164,25 @@ def _plan(t: int, hp: Hyperparams, history: Sequence[HistoryRecord], trajectory:
     stalled = stall_flag(trajectory, t, hp.w, delta)
     u = untried(records, components)
     b = prune_set(records, t, hp.n_prune, components)
-    m = exploration_slots(stalled, u, hp.m_draft, len(arms))
+    requested_exploration = exploration_slots(stalled, u, hp.m_draft, len(arms))
     exploit = _exploit_order(records, components, b)
     alloc = allocate_strategies(t, len(arms), records, hp)
-    out = []
-    for i, arm in enumerate(arms):
-        if i < m:
-            focus, explore = u[i % len(u)], True
+    out: list[Directive] = []
+    explored: set[str] = set()
+    for i, (arm, strategy) in enumerate(zip(arms, alloc.strategies, strict=True)):
+        pool = _strategy_pool(strategy, components)
+        unexplored = [c for c in u if c in pool and c not in explored]
+        explore = len(explored) < requested_exploration and bool(unexplored)
+        if explore:
+            focus = unexplored[0]
+            explored.add(focus)
         else:
-            j = i - m
-            focus, explore = (exploit[j % len(exploit)] if exploit else None), False
+            eligible = [c for c in exploit if c in pool]
+            focus = eligible[i % len(eligible)] if eligible else None
         out.append(Directive(arm=arm, round=t, budget=budget, explore=explore, focus=focus, avoid=b, stalled=stalled,
-                             strategy=alloc.strategies[i], strategy_reason=alloc.reasons[i]))
-    return RoundSchedule(round=t, budget=budget, stalled=stalled, untried=u, prune=b, exploration_slots=m,
+                             strategy=strategy, strategy_reason=alloc.reasons[i]))
+    return RoundSchedule(round=t, budget=budget, stalled=stalled, untried=u, prune=b,
+                         exploration_slots=sum(d.explore for d in out),
                          delta=delta, directives=tuple(out), allocation=alloc)
 
 
