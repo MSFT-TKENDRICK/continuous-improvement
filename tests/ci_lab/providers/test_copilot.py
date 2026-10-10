@@ -6,14 +6,19 @@ from agent_framework import Agent, Content, Message, tool
 from pydantic import BaseModel
 
 from ci_lab.contracts import PROVIDER_MAPPING, PROVIDER_NAME
-from ci_lab.providers.copilot import (CopilotChatClient, CopilotSessionError, CopilotTimeoutError, copilot_scope,
-                                      session_scope)
+from ci_lab.providers.copilot import (
+    CopilotChatClient,
+    CopilotSessionError,
+    CopilotTimeoutError,
+    copilot_scope,
+    session_scope,
+)
 from ci_lab.providers.fake_sdk import Fail, FakeCall, FakeCopilotClient, Hang
 
 
-def lookup(order_id: str) -> str:
-    """Look up an order."""
-    return f"{order_id}: shipped"
+def lookup(path: str) -> str:
+    """Read a path."""
+    return f"{path}: found"
 
 
 def echo_results(prefix: str = "done"):
@@ -32,12 +37,12 @@ def user(text):
 
 def test_tool_loop_with_two_parallel_calls_through_agent():
     records = []
-    sdk, client = make([[FakeCall("lookup", {"order_id": "A"}), FakeCall("lookup", {"order_id": "B"})],
+    sdk, client = make([[FakeCall("lookup", {"path": "A"}), FakeCall("lookup", {"path": "B"})],
                         echo_results()], on_model_request=records.append)
     agent = Agent(client=client, instructions="Be terse.", tools=[lookup])
     result = asyncio.run(agent.run("where are A and B?"))
 
-    assert result.text == "done: A: shipped; B: shipped"
+    assert result.text == "done: A: found; B: found"
     assert len(sdk.sessions) == 1
     s = sdk.sessions[0]
     assert s.prompts == ["where are A and B?"]
@@ -65,11 +70,11 @@ def test_builtin_tools_are_never_available():
 
 
 def test_tool_exception_is_reported_to_copilot_as_failure():
-    def broken(order_id: str) -> str:
+    def broken(path: str) -> str:
         """Always fails."""
         raise RuntimeError("database down")
 
-    sdk, client = make([[FakeCall("broken", {"order_id": "A"})], echo_results("sorry")])
+    sdk, client = make([[FakeCall("broken", {"path": "A"})], echo_results("sorry")])
     result = asyncio.run(Agent(client=client, tools=[broken]).run("check A"))
     (_, name, tr), = sdk.sessions[0].tool_results
     assert name == "broken"
@@ -80,25 +85,25 @@ def test_tool_exception_is_reported_to_copilot_as_failure():
 
 
 def test_fallback_replay_for_history_without_live_session():
-    sdk, client = make(["It shipped."])
+    sdk, client = make(["Found it."])
     history = [
         Message(role="user", contents=["where is A?"]),
         Message(role="assistant", contents=[Content.from_function_call(call_id="call_9", name="lookup",
-                                                                       arguments={"order_id": "A"})]),
-        Message(role="tool", contents=[Content.from_function_result(call_id="call_9", result="A: shipped")]),
+                                                                       arguments={"path": "A"})]),
+        Message(role="tool", contents=[Content.from_function_result(call_id="call_9", result="A: found")]),
     ]
     resp = asyncio.run(client.get_response(history, options={"tools": [tool(lookup)], "instructions": "sys"}))
-    assert resp.text == "It shipped."
+    assert resp.text == "Found it."
     assert resp.additional_properties["copilot_path"] == "replay"
     prompt = sdk.sessions[0].prompts[0]
     assert "[user]\nwhere is A?" in prompt
-    assert '[assistant tool call call_9] lookup({"order_id": "A"})' in prompt
-    assert "[tool result call_9]\nA: shipped" in prompt
+    assert '[assistant tool call call_9] lookup({"path": "A"})' in prompt
+    assert "[tool result call_9]\nA: found" in prompt
     assert sdk.sessions[0].kwargs["system_message"]["content"] == "sys"
 
 
 def test_continuity_mismatch_aborts_and_replays():
-    scripts = iter([[[FakeCall("lookup", {"order_id": "A"})], "first"], ["replayed"]])
+    scripts = iter([[[FakeCall("lookup", {"path": "A"})], "first"], ["replayed"]])
     sdk, client = make(lambda kw: next(scripts))
 
     async def main():
@@ -122,12 +127,12 @@ def test_continuity_mismatch_aborts_and_replays():
 
 
 def test_session_isolation_with_identical_prompts_and_call_ids():
-    async def scoped_lookup(order_id: str) -> str:
-        """Look up an order."""
+    async def scoped_lookup(path: str) -> str:
+        """Read a path."""
         await asyncio.sleep(0.01)
-        return f"{order_id}@{session_scope.get()}"
+        return f"{path}@{session_scope.get()}"
 
-    sdk, client = make([[FakeCall("lookup", {"order_id": "A"}, call_id="call_same")], echo_results("r")])
+    sdk, client = make([[FakeCall("lookup", {"path": "A"}, call_id="call_same")], echo_results("r")])
     agent = Agent(client=client, instructions="sys", tools=[tool(scoped_lookup, name="lookup")])
 
     async def run(scope):
@@ -146,14 +151,14 @@ def test_session_isolation_with_identical_prompts_and_call_ids():
 
 
 def test_session_scope_callable_overrides_contextvar():
-    sdk, client = make([[FakeCall("lookup", {"order_id": "A"})], echo_results()], session_scope=lambda: "x")
+    _sdk, client = make([[FakeCall("lookup", {"path": "A"})], echo_results()], session_scope=lambda: "x")
     with copilot_scope("ignored"):
         asyncio.run(Agent(client=client, tools=[lookup]).run("q"))
     assert [lv.key[0] for lv in client._lives] == ["x"]
 
 
 def test_followup_turn_reuses_idle_session():
-    sdk, client = make([[FakeCall("lookup", {"order_id": "A"})], echo_results(), "second answer"])
+    sdk, client = make([[FakeCall("lookup", {"path": "A"})], echo_results(), "second answer"])
     agent = Agent(client=client, instructions="sys", tools=[lookup])
 
     async def main():
@@ -163,14 +168,14 @@ def test_followup_turn_reuses_idle_session():
         return r1, r2
 
     r1, r2 = asyncio.run(main())
-    assert r1.text == "done: A: shipped"
+    assert r1.text == "done: A: found"
     assert r2.text == "second answer"
     assert len(sdk.sessions) == 1
     assert sdk.sessions[0].prompts == ["where is A?", "thanks, anything else?"]
 
 
 def test_ttl_reap_aborts_orphaned_session_and_resolves_futures():
-    sdk, client = make([[FakeCall("lookup", {"order_id": "A"})], "never"], session_ttl_s=60)
+    sdk, client = make([[FakeCall("lookup", {"path": "A"})], "never"], session_ttl_s=60)
 
     async def main():
         r = await client._inner_get_response(messages=user("q"), stream=False, options={"tools": [tool(lookup)]})
@@ -196,7 +201,7 @@ def test_timeout_aborts_session_and_raises():
 
 
 def test_timeout_after_tool_round_aborts():
-    sdk, client = make([[FakeCall("lookup", {"order_id": "A"})], Hang()], timeout_s=0.1)
+    sdk, client = make([[FakeCall("lookup", {"path": "A"})], Hang()], timeout_s=0.1)
     with pytest.raises(CopilotTimeoutError):
         asyncio.run(Agent(client=client, tools=[lookup]).run("q"))
     assert sdk.sessions[0].aborted
@@ -211,7 +216,7 @@ def test_session_error_raises_and_destroys():
 
 
 def test_usage_and_served_model_mapping():
-    sdk, client = make([[FakeCall("lookup", {"order_id": "A"})], echo_results()])
+    _sdk, client = make([[FakeCall("lookup", {"path": "A"})], echo_results()])
     result = asyncio.run(Agent(client=client, tools=[lookup]).run("q"))
     u = result.usage_details
     assert (u["input_token_count"], u["output_token_count"], u["total_token_count"]) == (20, 10, 30)
@@ -228,7 +233,7 @@ def test_usage_and_served_model_mapping():
 
 def test_on_model_request_callback_shape():
     records = []
-    sdk, client = make([[FakeCall("lookup", {"order_id": "A"})], "fine"], on_model_request=records.append)
+    sdk, client = make([[FakeCall("lookup", {"path": "A"})], "fine"], on_model_request=records.append)
     with copilot_scope("rollout-7"):
         asyncio.run(Agent(client=client, tools=[lookup]).run("q"))
     assert len(records) == 2
@@ -295,7 +300,7 @@ def test_structured_output_json_schema_dict_and_failure():
 
 
 def test_tool_choice_none_fails_new_tool_requests():
-    sdk, client = make([[FakeCall("lookup", {"order_id": "A"})], "no tools then"])
+    sdk, client = make([[FakeCall("lookup", {"path": "A"})], "no tools then"])
     resp = asyncio.run(client._inner_get_response(messages=user("q"), stream=False,
                                                   options={"tools": [tool(lookup)], "tool_choice": "none"}))
     assert resp.text == "no tools then"
@@ -303,7 +308,7 @@ def test_tool_choice_none_fails_new_tool_requests():
 
 
 def test_close_aborts_sessions_and_leaves_injected_client_running():
-    sdk, client = make([[FakeCall("lookup", {"order_id": "A"})], "x"])
+    sdk, client = make([[FakeCall("lookup", {"path": "A"})], "x"])
 
     async def main():
         async with client:
