@@ -18,10 +18,11 @@ ROUND_YAML = WORKFLOW_DIR / "round.yaml"
 ARM_AGENT_YAML = WORKFLOW_DIR / "arm_agent.yaml"
 ARM_GEPA_YAML = WORKFLOW_DIR / "arm_gepa.yaml"
 ARM_SKILLOPT_YAML = WORKFLOW_DIR / "arm_skillopt.yaml"
+ARM_AGL_YAML = WORKFLOW_DIR / "arm_agl.yaml"
 # v2.4 §13: owned by the lessons arm (path only; importing ci_lab.lessons_arm here is not needed).
 ARM_GUARD_YAML = WORKFLOW_DIR.parent / "lessons_arm" / "workflows" / "arm_guard.yaml"
 ARM_YAMLS = {"agent": ARM_AGENT_YAML, "gepa": ARM_GEPA_YAML, "skillopt": ARM_SKILLOPT_YAML,
-             "guard": ARM_GUARD_YAML}  # by strategy
+             "guard": ARM_GUARD_YAML, "agl": ARM_AGL_YAML}  # by strategy
 ARM_YAML = ARM_AGENT_YAML
 CALIBRATE_YAML = WORKFLOW_DIR / "calibrate.yaml"
 CONFIRM_YAML = WORKFLOW_DIR / "confirm.yaml"
@@ -73,7 +74,7 @@ def assert_expression_free(source: str | Path) -> dict[str, Any]:
         if kind == "InvokeFunctionTool":
             for key, val in (action.get("arguments") or {}).items():
                 if isinstance(val, (dict, list)):
-                    raise ValueError(f"{action['id']}.{key}: arguments must be literal scalars")
+                    raise ValueError(f"{action['id']}.{key}: arguments must be literal scalars")  # noqa: TRY004
         else:
             msg = (action.get("input") or {}).get("messages")
             if not isinstance(msg, str) or not (action.get("agent") or {}).get("name"):

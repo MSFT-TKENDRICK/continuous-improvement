@@ -3,7 +3,15 @@ import asyncio
 import pytest
 
 from ci_lab import cli
-from ci_lab.contracts import (ARM_BRANCH_RE, RolloutKey, arm_branch, op_id, round_experiment_id)
+from ci_lab.contracts import (
+    ARM_BRANCH_RE,
+    STRATEGIES,
+    RolloutKey,
+    arm_branch,
+    op_id,
+    round_experiment_id,
+    strategy_may_edit,
+)
 from ci_lab.testing import Call, FakeChatClient, MemoryJournal, MemoryOutbox
 
 
@@ -21,6 +29,13 @@ def test_ids_are_validated_and_deterministic():
     key = RolloutKey("e", "v1", "c01", 0)
     assert key.rollout_id == RolloutKey("e", "v1", "c01", 0, attempt=1).rollout_id
     assert key.rollout_id != RolloutKey("e", "v1", "c01", 1).rollout_id
+
+
+def test_agl_contract_owns_only_structural_components():
+    assert "agl" in STRATEGIES
+    assert all(strategy_may_edit("agl", c) for c in (
+        "agent", "loop", "workflow", "mcp", "client_tool", "config", "context_mgmt", "memory"))
+    assert not any(strategy_may_edit("agl", c) for c in ("prompt", "skill", "guard"))
 
 
 def test_fake_client_drives_a_real_maf_tool_loop():

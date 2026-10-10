@@ -1,5 +1,6 @@
 import math
 import random
+from itertools import pairwise
 
 import pytest
 
@@ -38,8 +39,8 @@ def test_profiles_and_roundtrip():
         profile("nope")
 
 
-@pytest.mark.parametrize("bad", [dict(b_min=3, b_max=2), dict(b_min=0), dict(T=0), dict(ci_level=1.0),
-                                 dict(ci_lower_threshold="half"), dict(delta=-0.1), dict(w=0)])
+@pytest.mark.parametrize("bad", [{"b_min": 3, "b_max": 2}, {"b_min": 0}, {"T": 0}, {"ci_level": 1.0},
+                                 {"ci_lower_threshold": "half"}, {"delta": -0.1}, {"w": 0}])
 def test_hyperparam_validation(bad):
     with pytest.raises(ValueError):
         profile("paper", **bad)
@@ -60,6 +61,7 @@ def test_existing_profiles_keep_paper_faithful_resource_defaults():
         assert (p.w_x, p.x_cap, p.calls_cap, p.wall_cap, p.require_resource_metrics) == (0.0, None, None, None, False)
         assert not p.resource_aware
         assert "agl" not in p.strategies and "guard" not in p.strategies
+    assert "agl" not in P.DEFAULT_STRATEGIES
     assert "agl" in P.OPT_IN_STRATEGIES and "guard" in P.OPT_IN_STRATEGIES
 
 
@@ -69,6 +71,7 @@ def test_harness_profile_copies_local_plus_resource_knobs():
     assert h.resource_aware
     assert h.strategies == P.HARNESS_STRATEGIES
     assert h.strategies == tuple(s for s in ("agent", "gepa", "skillopt", "agl") if s in STRATEGIES)
+    assert h.strategies == ("agent", "gepa", "skillopt", "agl")
     assert {"agent", "gepa", "skillopt"} <= set(h.strategies)
     skip = {"name", "strategies", "w_x", "x_cap", "calls_cap", "wall_cap", "require_resource_metrics"}
     assert {k: v for k, v in h.to_dict().items() if k not in skip} == \
@@ -107,7 +110,7 @@ def test_cosine_budget_properties():
         seq = [S.edit_budget(t, T, b_min, b_max) for t in range(T + 1)]
         assert seq[0] == b_max and seq[-1] == b_min
         assert all(b_min <= b <= b_max for b in seq)
-        assert all(a >= b for a, b in zip(seq, seq[1:]))  # non-increasing
+        assert all(a >= b for a, b in pairwise(seq))  # non-increasing
 
 
 # ---------------------------------------------------------------- stall
