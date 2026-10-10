@@ -12,6 +12,9 @@ them like any other harness. Library code takes an explicit `harness_dir`. `None
 | `loops/loops.yaml` | loop (rrsi) | per-agent execution knobs, clamped to the frozen caps |
 | `tools/tools.yaml` | client_tool (agl) | per-agent tool exposure subsets and descriptions |
 | `mcp/exposure.yaml` | mcp (agl) | MCP exposure (see `ci_lab.mcp`) |
+| `workflows/*.yaml` | workflow (agl) | target-agent MAF declarative workflows: `triage`, `propose` |
+| `skills/<name>/SKILL.md` | skill (skillopt) | `harness-editing`, `trace-triage` (on the proposer's `skills_paths`) |
+| `guards/**` | guard (guard) | guard rule files, written only by the guard strategy (none yet) |
 
 ## Frozen manifest
 
@@ -52,6 +55,21 @@ replaces the bound function's own; `null` keeps it.
 `load_spec(..., harness_dir=)` applies both to tree specs (`MetaAgentSpec.max_nudges`, `max_tool_calls`,
 `max_turns`, `tools`, `tool_descriptions`); `harness_builder` enforces them with `loop_limit_middleware(spec)`
 (`ToolBudgetMiddleware`, `TurnLimitMiddleware`). Frozen specs (critic, judge, adversary) are unaffected.
+
+## Target workflows and skills
+
+`harness/workflows/` holds MAF declarative workflows for the target agents (not the campaign arm
+workflows, which stay frozen in `src/ci_lab/workflows/`):
+
+- `triage.yaml`: `CiFailureAnalyst`, then `CiAnalyst`.
+- `propose.yaml`: `CiProposer`, then the `self_check` function step.
+
+They follow the same expression-free contract as the arm workflows (`ci_lab.workflows.assert_expression_free`)
+and run with `ci_lab.workflows.runtime.build_workflow`/`run_or_resume`. `validate()` also requires every
+agent to be a spec name of the tree and every function to be in the manifest's `workflow_functions`.
+
+Each `skills/<name>/SKILL.md` needs YAML frontmatter with `name: <name>` and a `description`
+(SkillOpt/MAF skill format).
 
 ## Snapshots
 
