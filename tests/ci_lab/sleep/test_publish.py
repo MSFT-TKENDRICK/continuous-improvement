@@ -198,8 +198,9 @@ def test_rejects_skill_change_when_not_accepted(sleep_repo, tmp_path, h, monkeyp
 
 
 def test_rejects_usage_bundle_touching_reviewed_tasks(sleep_repo, tmp_path, h, monkeypatch, capsys):
-    old = (sleep_repo / "experiments/sleep/tasks.jsonl").read_text(encoding="utf-8")
-    patch = make_patch([FileChange("experiments/sleep/tasks.jsonl", old, old + "{}\n")])
+    path = "experiments/sleep/harness-editing.jsonl"
+    old = (sleep_repo / path).read_text(encoding="utf-8")
+    patch = make_patch([FileChange(path, old, old + "{}\n")])
     b = bundle(tmp_path, patch=patch, base_sha=head(sleep_repo, h), kind="usage", accepted=False, date="20260923")
     _refused(b, sleep_repo, monkeypatch, capsys, "pending.jsonl")
 
