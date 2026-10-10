@@ -41,7 +41,7 @@ __all__ = [
 Kind = Literal["manifest", "intent", "outcome", "proposal", "vote", "verdict", "commit", "reject", "abort",
                "exploit", "rubric_patch", "note"]
 Role = Literal["orchestrator", "planner", "examiner", "student", "voter", "judge", "adversary", "hardener"]
-Measure = Literal["deterministic", "assert", "s1", "llm"]
+Measure = Literal["deterministic", "assert", "s1", "llm", "metric"]
 Decision = Literal["commit", "revise", "reject"]
 SoftPref = Literal["student", "adversary", "tie"]
 KINDS: tuple[Kind, ...] = get_args(Kind)
@@ -148,6 +148,9 @@ def _hints(cls: type) -> dict[str, Any]:
 
 class _Strict:
     _UNIT: ClassVar[tuple[str, ...]] = ()
+    # Fields added after bodies were first persisted: omitted from ``to_json`` while empty/false so
+    # pre-existing WAL entries (and their hashes) round-trip byte-for-byte.
+    _OMIT_EMPTY: ClassVar[tuple[str, ...]] = ()
 
     def __post_init__(self) -> None:
         cls = type(self)
@@ -162,7 +165,8 @@ class _Strict:
         return None
 
     def to_json(self) -> dict[str, Any]:
-        return {f.name: _dump(getattr(self, f.name)) for f in fields(self)}  # type: ignore[arg-type]
+        return {f.name: _dump(v) for f in fields(self)  # type: ignore[arg-type]
+                if (v := getattr(self, f.name)) or f.name not in self._OMIT_EMPTY}
 
     @classmethod
     def from_json(cls, data: Mapping[str, Any]) -> Self:
@@ -218,7 +222,9 @@ class CriterionResult(_Strict):
     required: bool
     oracle: bool
     votes: int
+    resource: bool = False  # resource (cost/simplicity) criterion: reported, never in the quality score
     _UNIT = ("score",)
+    _OMIT_EMPTY = ("resource",)
 
     def _check(self) -> None:
         _nonneg(self.votes, "CriterionResult.votes")
@@ -276,12 +282,17 @@ class ProposalBody(_Strict):
     rubric_version: str
     artifact: ArtifactRef
     summary: str
+    # Evaluator-side measurements of the attempt (RunMeter / output size), written by the scheduler;
+    # never taken from student output. Scored by metric criteria.
+    measurements: Mapping[str, float] = field(default_factory=dict)
+    _OMIT_EMPTY = ("measurements",)
 
     def _check(self) -> None:
         attempt, _, _ = _id(ids.parse_proposal, self.proposal, "ProposalBody.proposal")
         _require(attempt == self.attempt, f"ProposalBody: proposal {self.proposal!r} not of attempt {self.attempt!r}")
         _id(ids.parse_rubric_version, self.rubric_version, "ProposalBody.rubric_version")
         _require(len(self.summary) <= _SUMMARY_MAX, f"ProposalBody.summary > {_SUMMARY_MAX} chars")
+        _require(all(k for k in self.measurements), "ProposalBody.measurements: empty name")
 
 
 @dataclass(frozen=True)
@@ -320,7 +331,10 @@ class VerdictBody(_Strict):
     votes: tuple[int, ...]
     correction: StudentCorrection | None
     escalated: bool
+    # Resource subscores (``resource.<criterion>``, ``resource_score``); ``score`` is quality-only.
+    subscores: Mapping[str, float] = field(default_factory=dict)
     _UNIT = ("score",)
+    _OMIT_EMPTY = ("subscores",)
 
     def _check(self) -> None:
         attempt, _, _ = _id(ids.parse_proposal, self.proposal, "VerdictBody.proposal")
@@ -328,6 +342,7 @@ class VerdictBody(_Strict):
         _id(ids.parse_rubric_version, self.rubric_version, "VerdictBody.rubric_version")
         _require(all(s >= 0 for s in self.votes), "VerdictBody.votes: negative seq")
         _require(len(set(self.votes)) == len(self.votes), "VerdictBody.votes: duplicates")
+        _require(all(0.0 <= v <= 1.0 for v in self.subscores.values()), "VerdictBody.subscores: must be in [0, 1]")
 
 
 @dataclass(frozen=True)
