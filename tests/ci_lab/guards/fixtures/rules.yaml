@@ -1,0 +1,90 @@
+schema_version: 1
+rules:
+  - id: action.requires_verified_access
+    version: 1
+    rung: R2
+    on: tool_call
+    target: apply_change
+    require: {kind: state, flag: access_verified, subject: current.args.item_id}
+    action: block
+    severity: critical
+    template: precondition.same_subject
+    slots: {tool: apply_change, precondition: verify_access, subject: item_id}
+    mode: shadow
+    provenance: {lesson_id: action.requires_verified_access, source: seed}
+
+  - id: verify.before_inspect
+    version: 1
+    rung: R2
+    on: tool_call
+    target: verify_access
+    require:
+      kind: not
+      of:
+        kind: prior
+        tool: inspect_item
+        status: ok
+        same: [[current.args.item_id, prior.args.item_id]]
+        where: {kind: arg, path: prior.result.owner, op: exists}
+    action: block
+    severity: critical
+    template: access.before_inspection
+    slots: {tool: verify_access, source: inspect_item}
+    mode: shadow
+    provenance: {lesson_id: verify.before_inspect, source: seed}
+
+  - id: action.item_approved
+    version: 1
+    rung: R2
+    on: tool_call
+    target: apply_change
+    require:
+      kind: prior
+      tool: inspect_item
+      status: ok
+      same: [[current.args.item_id, prior.args.item_id]]
+      where: {kind: arg, path: prior.result.approved, op: eq, value: true}
+    action: block
+    severity: critical
+    template: precondition.condition_unmet
+    slots: {tool: apply_change, precondition: inspect_item, condition: "the item is approved"}
+    mode: shadow
+    provenance: {lesson_id: action.item_approved, source: seed}
+
+  - id: action.amount_within_limit
+    version: 1
+    rung: R2
+    on: tool_call
+    target: apply_change
+    require:
+      kind: prior
+      tool: inspect_item
+      status: ok
+      same: [[current.args.item_id, prior.args.item_id]]
+      cmp: [{current: current.args.amount, op: le, prior: prior.result.limit}]
+    action: block
+    severity: major
+    template: arg.exceeds_prior
+    slots: {tool: apply_change, arg: amount, source: inspect_item}
+    mode: shadow
+    provenance: {lesson_id: action.amount_within_limit, source: seed}
+
+  - id: sensitive.before_access
+    version: 1
+    rung: R3
+    on: response
+    target: "*"
+    when: {kind: not, of: {kind: state, flag: access_verified}}
+    require:
+      kind: not
+      of:
+        kind: any
+        of:
+          - {kind: text, matches: '[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}'}
+          - {kind: text, matches: '(?:\+?1[-. ]?)?\(?\d{3}\)?[-. ]\d{3}[-. ]\d{4}\b'}
+          - {kind: text, matches: '(?i)\b\d{1,6}\s+(?:[a-z0-9.''-]+\s+){1,4}(?:street|st|avenue|ave|road|rd|boulevard|blvd|lane|ln|drive|dr|way|court|ct)\b'}
+    action: redact
+    severity: critical
+    template: pii.redacted
+    mode: shadow
+    provenance: {lesson_id: sensitive.before_access, source: seed}
