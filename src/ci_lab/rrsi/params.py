@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from dataclasses import asdict, dataclass, fields, replace
 from typing import Any, Literal
 
@@ -11,7 +12,12 @@ CiThreshold = Literal["zero", "delta"]
 
 # Contracts v2.4 added the "guard" strategy (lessons arm; writes harness/guards/*.yaml only).
 # It is opt-in via ``Hyperparams.strategies``; the default allocation stays over the text strategies.
-DEFAULT_STRATEGIES: tuple[str, ...] = tuple(s for s in STRATEGIES if s != "guard")
+# "agl" (structural Agent Lightning arm) is opt-in too, so existing profiles stay unchanged when it registers.
+OPT_IN_STRATEGIES: tuple[str, ...] = ("guard", "agl")
+DEFAULT_STRATEGIES: tuple[str, ...] = tuple(s for s in STRATEGIES if s not in OPT_IN_STRATEGIES)
+# Self-hosted harness target (contract v3 A8/A15). Computed at import over the *registered* strategies:
+# "agl" joins automatically once it is added to ``contracts.STRATEGIES`` (with its registration).
+HARNESS_STRATEGIES: tuple[str, ...] = tuple(s for s in ("agent", "gepa", "skillopt", "agl") if s in STRATEGIES)
 
 
 @dataclass(frozen=True)
@@ -55,6 +61,21 @@ class Hyperparams:
     strategy_floor_every: int = 3  # K: every strategy gets >= 1 arm in any K consecutive rounds
     strategy_prior: tuple[float, float] = (1.0, 1.0)  # Beta(a0, b0) prior on accepted rate
     strategy_cap: int | None = None  # max arms per strategy per round (None = unlimited)
+    # Resource regularization (contract v3 A14-A16; all off = paper-faithful selection). dX, dCalls and
+    # dWall are relative changes of surface complexity, mean (llm+tool) calls per completed trial and
+    # median wall ms. Caps are non-compensatory in both branches; w_x penalizes complexity growth in
+    # the weighted rule. S stays quality-only.
+    w_x: float = 0.0
+    x_cap: float | None = None
+    calls_cap: float | None = None
+    wall_cap: float | None = None
+    require_resource_metrics: bool = False  # missing surface/runtime data -> arm inadmissible
+
+    @property
+    def resource_aware(self) -> bool:
+        """True when any resource knob is active (gates the complexity tie-break and simplicity credit)."""
+        return bool(self.w_x or self.require_resource_metrics
+                    or any(c is not None for c in (self.x_cap, self.calls_cap, self.wall_cap)))
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "strategies", tuple(self.strategies))
@@ -83,6 +104,14 @@ class Hyperparams:
             raise ValueError("strategy_prior must be (a0, b0) with both > 0")
         if self.strategy_cap is not None and (self.strategy_cap < 1 or self.strategy_cap * len(s) < self.n_arms):
             raise ValueError("strategy_cap must be >= 1 and cap * len(strategies) >= n_arms")
+        if not math.isfinite(self.w_x) or self.w_x < 0:
+            raise ValueError("w_x must be finite and >= 0")
+        for cap in ("x_cap", "calls_cap", "wall_cap"):
+            v = getattr(self, cap)
+            if v is not None and (isinstance(v, bool) or not math.isfinite(v) or v <= -1.0):
+                raise ValueError(f"{cap} must be None or a finite relative change > -1")
+        if not isinstance(self.require_resource_metrics, bool):
+            raise TypeError("require_resource_metrics must be a bool")
 
     def with_(self, **changes: Any) -> Hyperparams:
         return replace(self, **changes)
@@ -118,6 +147,10 @@ PROFILES: dict[str, Hyperparams] = {
     "paper": Hyperparams(name="paper", n_arms=2, **{k: v for k, v in TABLE5["coding"].items() if k != "delta"},
                          **_WEIGHTS),
 }
+# Self-hosted harness target: the default ("local") campaign profile plus resource regularization
+# (contract v3 A15). Strategies are ``HARNESS_STRATEGIES`` (``agl`` only once registered).
+PROFILES["harness"] = PROFILES["local"].with_(name="harness", strategies=HARNESS_STRATEGIES, w_x=0.5, x_cap=0.10,
+                                              calls_cap=0.15, wall_cap=None, require_resource_metrics=True)
 
 
 def profile(name: str, **overrides: Any) -> Hyperparams:
