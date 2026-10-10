@@ -1,0 +1,17 @@
+kind: Workflow
+trigger:
+  kind: OnConversationStart
+  id: fixture_triage
+  actions:
+    - kind: InvokeAzureAgent
+      id: failure_analyst
+      agent: {name: CiFailureAnalyst}
+      input: {messages: "Report bounded failure causes."}
+    - kind: InvokeAzureAgent
+      id: analyst_review
+      agent: {name: CiAnalyst}
+      input: {messages: "Review the failure groups."}
+    - kind: InvokeAzureAgent
+      id: analyst
+      agent: {name: CiAnalyst}
+      input: {messages: "Submit the final grouped analysis."}

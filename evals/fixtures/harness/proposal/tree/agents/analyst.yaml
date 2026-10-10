@@ -1,0 +1,7 @@
+name: CiAnalyst
+description: Groups typed harness failures.
+instructions: >-
+  Read the typed digests, group shared causes, cite evidence ids, and avoid raw tool output.
+  Read the typed digests, group shared causes, cite evidence ids, and avoid raw tool output.
+instructions_files: [../prompts/analyst.md]
+tools: [read_brief, submit_analysis]

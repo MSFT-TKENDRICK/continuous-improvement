@@ -1,0 +1,4 @@
+format: ci_lab.loops.v1
+agents:
+  analyst: {max_nudges: 3, max_tool_calls: 12, max_turns: 8}
+code_mode: {max_runs: 4}

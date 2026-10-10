@@ -1,0 +1,6 @@
+format: ci_lab.tools.v1
+agents:
+  analyst:
+    read_brief: Read a bounded typed failure brief.
+    list_documents: List brief documents before reading one.
+    submit_analysis: Submit the grouped root causes.

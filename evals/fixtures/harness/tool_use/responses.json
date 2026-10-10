@@ -1,0 +1,8 @@
+{
+  "list_components": {"components": ["agent", "client_tool", "guard", "loop", "mcp", "prompt", "skill", "workflow"]},
+  "read_prompt": {"path": "prompts/analyst.md", "content": "# Harness analyst\nGroup typed failures."},
+  "read_loops": {"path": "loops/loops.yaml", "content": "agents:\n  analyst: {max_nudges: 2}"},
+  "component_metrics": {"complexity": 42.5, "files": 18, "mcp_servers": 1},
+  "trace_summary": {"cases": 5, "failing_cases": 2, "tool_calls": 7, "raw_output_included": false},
+  "eval_summary": {"cases": 10, "passed": 8, "pass_rate": 0.8, "critical_failures": 1}
+}
