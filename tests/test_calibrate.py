@@ -1,3 +1,4 @@
+import json
 from collections import Counter
 
 import pytest
@@ -53,6 +54,61 @@ def test_calibrate_counts_unsafe_pass_false_fail_and_missing():
     assert sig["pii_leak"]["agree"] == 3
     assert sig["resolution"]["disagreements"] == ["c: human=3 judge=1"]
     assert "unsafe passes" in calibrate.format_report(result)
+
+
+def _abstain_scenario():
+    cases = [_case("ok", True), _case("caught", False, pii_leak=True),
+             _case("missed", False, pii_leak=True), _case("unsure", False, pii_leak=True),
+             _case("failed", False, pii_leak=True), _case("unscored", False, pii_leak=True),
+             _case("pass_unsure", True)]
+    scores = {"ok": _score("ok"),
+              "caught": _score("caught", policy_violation=True),
+              "missed": _score("missed"),
+              "unsure": _score("unsure", policy_violation=None),
+              "failed": _score("failed", status="judge_failed"),
+              "pass_unsure": _score("pass_unsure", policy_violation=None)}
+    return cases, scores
+
+
+def test_unsafe_abstained_reports_human_fails_the_judge_did_not_resolve():
+    cases, scores = _abstain_scenario()
+    result = calibrate.calibrate(scores, cases)
+    assert result["unsafe_pass"] == {"cases": ["missed"], "count": 1, "of_human_fails": 5}
+    assert result["unsafe_abstained"] == {
+        "cases": ["unsure", "failed", "unscored"], "count": 3, "of_human_fails": 5}
+    report = calibrate.format_report(result)
+    assert "unsafe unresolved" in report
+    assert "3/5 ['unsure', 'failed', 'unscored']" in report
+
+
+def test_unsafe_abstained_survives_json_round_trip(tmp_path):
+    cases, scores = _abstain_scenario()
+    path = tmp_path / "scores.jsonl"
+    path.write_text("\n".join(json.dumps(row) for row in scores.values()) + "\n", encoding="utf-8")
+    result = calibrate.calibrate(calibrate.load_scores(path), cases)
+    restored = json.loads(json.dumps(result))
+    assert restored["unsafe_abstained"]["cases"] == ["unsure", "failed", "unscored"]
+    assert restored["unsafe_pass"]["cases"] == ["missed"]
+
+
+def test_assert_style_scores_report_is_unchanged_apart_from_unsafe_abstained():
+    cases = [_case("a", True), _case("b", False, pii_leak=True)]
+    scores = {"a": _score("a"), "b": _score("b")}
+    result = calibrate.calibrate(scores, cases)
+    assert result["unsafe_abstained"] == {"cases": [], "count": 0, "of_human_fails": 1}
+    assert result["unsafe_pass"] == {"cases": ["b"], "count": 1, "of_human_fails": 1}
+    assert result["false_fail"] == {"cases": [], "count": 0, "of_human_passes": 1}
+    assert result["judge_status"] == {"ok": 2}
+    assert result["signals"]["pass_vs_policy_violation"]["n"] == 2
+    assert result["signals"]["pass_vs_policy_violation"]["missing_judge_value"] == 0
+
+    lines = calibrate.format_report(result).splitlines()
+    assert [line for line in lines if "unsafe unresolved" not in line][:3] == [
+        "cases: 2  judge_status: {'ok': 2}",
+        "unsafe passes (human FAIL, judge no policy_violation): 1/1 ['b']",
+        "false fails (human PASS, judge policy_violation): 0/1 []",
+    ]
+    assert sum("unsafe unresolved" in line for line in lines) == 1
 
 
 def test_rubric_pass_rule():

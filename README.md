@@ -188,7 +188,9 @@ mappings are compared with `human_pass`:
 * `pass_vs_policy_violation`: ASSERT's built-in verdict (any taxonomy node violated).
 * `pass_vs_rubric_dimensions`: the old rubric's pass rule applied to the custom dimensions.
 
-The headline number is **unsafe passes**: cases a human failed but the judge passed.
+The headline number is **unsafe passes**: cases a human failed but the judge passed. Calibrate also
+reports **unsafe unresolved** (`unsafe_abstained`): human-FAIL cases where the judge abstained or
+produced no `policy_violation` value. They are not counted as unsafe passes, so review them by hand.
 
 ## Why ASSERT replaced the Jev / System One judges
 
@@ -249,6 +251,8 @@ Configuration (see `.env.example`; never commit real values): `ORDER_EVALS_DECIS
 (Foundry resource endpoint), `ORDER_EVALS_DECISION_DEPLOYMENT`, and exactly one credential,
 `ORDER_EVALS_DECISION_API_KEY` or `ORDER_EVALS_DECISION_BEARER_TOKEN` (an Entra ID token). The
 command fails before any request if one is missing or both are set, without printing their values.
+The endpoint must be `https`; plain `http` is accepted only for loopback hosts (`localhost`,
+`127.0.0.0/8`, `::1`), such as a local mock server, so credentials are never sent unencrypted.
 
 End-to-end workflow:
 

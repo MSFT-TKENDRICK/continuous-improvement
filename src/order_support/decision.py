@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ipaddress
 import json
 import math
 import re
@@ -450,6 +451,17 @@ class MicrosoftDecisionClient:
         self.close()
 
 
+def _is_loopback_host(hostname: str | None) -> bool:
+    if not hostname:
+        return False
+    if hostname.lower() == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(hostname).is_loopback
+    except ValueError:
+        return False
+
+
 def _normalize_endpoint(endpoint: str) -> str:
     endpoint = _require_nonempty_text(endpoint, "endpoint").strip().rstrip("/")
     if endpoint.endswith(SYSTEM_ONE_PATH):
@@ -465,6 +477,11 @@ def _normalize_endpoint(endpoint: str) -> str:
     ):
         raise ValueError(
             "endpoint must be an absolute HTTP(S) URL without credentials, query, or fragment"
+        )
+    if parsed.scheme == "http" and not _is_loopback_host(parsed.hostname):
+        raise ValueError(
+            "endpoint must use https; plain http is allowed only for loopback hosts "
+            "(localhost, 127.0.0.0/8, ::1) so credentials are never sent unencrypted"
         )
     normalized_path = parsed.path.rstrip("/")
     return urlunsplit((parsed.scheme.lower(), parsed.netloc, normalized_path, "", ""))
