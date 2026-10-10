@@ -1,13 +1,13 @@
 id: harness-maintenance
 goal: Produce small, singular harness maintenance deliverables.
 deliverables:
-  - {id: digest, title: Summarize failure, output: {kind: json, path: out/digest.json}, depends_on: []}
-  - {id: owner, title: Select owner, output: {kind: json, path: out/owner.json}, depends_on: [digest]}
-  - {id: prompt_patch, title: Trim prompt, output: {kind: patch, path: out/prompt.patch}, depends_on: [owner]}
-  - {id: loop_patch, title: Tighten loop, output: {kind: patch, path: out/loop.patch}, depends_on: [owner]}
-  - {id: tool_patch, title: Reduce tools, output: {kind: patch, path: out/tools.patch}, depends_on: [owner]}
-  - {id: workflow_patch, title: Simplify workflow, output: {kind: patch, path: out/workflow.patch}, depends_on: [owner]}
-  - {id: validation, title: State validation, output: {kind: text, path: out/validation.txt}, depends_on: [prompt_patch]}
-  - {id: risk, title: State safety risk, output: {kind: text, path: out/risk.txt}, depends_on: [tool_patch]}
-  - {id: decision, title: Recommend one edit, output: {kind: json, path: out/decision.json}, depends_on: [validation, risk]}
-  - {id: summary, title: Summarize result, output: {kind: text, path: out/summary.md}, depends_on: [decision]}
+  - {id: digest, title: Summarize failure, instructions: Write one bounded typed digest., output: {kind: json, path: out/digest.json}, depends_on: [], rubric_commitment: 5f8fe5a668b90e01f9da5838536f7c8ac4358549ddd77f5fb6c4f89dae207d38}
+  - {id: owner, title: Select owner, instructions: Select one owning component from the digest., output: {kind: json, path: out/owner.json}, depends_on: [digest], rubric_commitment: 18b7287bf3a94528c5224e4316b9c0cabf333213ea663ed8d04a1b62b2e57d09}
+  - {id: prompt_patch, title: Trim prompt, instructions: Produce one prompt-only patch that removes repetition., output: {kind: patch, path: out/prompt.patch}, depends_on: [owner], rubric_commitment: 504ed3af476b51b67cbe726238dfe27f8f82b26f5350945c89ece32a56e3119b}
+  - {id: loop_patch, title: Tighten loop, instructions: Produce one loop-only patch that lowers an unused allowance., output: {kind: patch, path: out/loop.patch}, depends_on: [owner], rubric_commitment: aa9e54dedebdc91bf394099b4bf1cc3ab52f2a323d112e658d3874ba1f9296f1}
+  - {id: tool_patch, title: Reduce tools, instructions: Produce one client-tool patch that removes an unused exposure., output: {kind: patch, path: out/tools.patch}, depends_on: [owner], rubric_commitment: 9c60ed06e9d958266422d49dd3615fe90bc51688542a349a2e7e610f3b337377}
+  - {id: workflow_patch, title: Simplify workflow, instructions: Produce one workflow patch that removes a redundant action., output: {kind: patch, path: out/workflow.patch}, depends_on: [owner], rubric_commitment: a4a6c058b533c54f70c617fadc7cb24ef32f11722545bc71c5d9cde663242c7a}
+  - {id: validation, title: State validation, instructions: State the one parser or validator needed for the patch., output: {kind: text, path: out/validation.txt}, depends_on: [prompt_patch], rubric_commitment: 4cef4bd1d419671bbe92aabc8ddb14bc1334f9bf5ebf22a8f68ff0733374d034}
+  - {id: risk, title: State safety risk, instructions: Name one containment risk of the proposed tool change., output: {kind: text, path: out/risk.txt}, depends_on: [tool_patch], rubric_commitment: d7b10c9b6c82e1d7619ab08c6231c8bed6b3bdfa8fbf91ac6aca81cc6eb1e12e}
+  - {id: decision, title: Recommend one edit, instructions: Choose one edit using the validation and risk inputs., output: {kind: json, path: out/decision.json}, depends_on: [validation, risk], rubric_commitment: a06d71b64bf48e1e9d95b7901f95cd1ba3df0f6bf6bddc8169868499936dc59e}
+  - {id: summary, title: Summarize result, instructions: Summarize the selected edit and its validation in three lines., output: {kind: text, path: out/summary.md}, depends_on: [decision], rubric_commitment: 954ff2fc79dd7215cb63333e2f7f1c2fe14f11f37a053e75768415cb2a9e2195}

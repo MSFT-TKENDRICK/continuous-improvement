@@ -1,0 +1,37 @@
+id: harness_taskgraph
+version: 1
+deliverable: taskgraph_deliverable
+pass_score: 0.75
+canary: c8239b4e60ad512f
+criteria:
+  - id: exact-deliverable
+    description: The case oracle confirms the declared output kind path dependencies and containment.
+    measure: assert
+    role: quality
+    threshold: 1.0
+    weight: 4.0
+    required: true
+    check: {suite: harness_taskgraph, split: case, min_score: 1.0}
+  - id: dependency-consistency
+    description: The artifact is consistent with the declared dependency inputs.
+    measure: s1
+    role: quality
+    threshold: 0.5
+    weight: 1.0
+    check:
+      question: Is the artifact limited to the selected deliverable and consistent with its declared dependency inputs?
+      type: noul
+  - id: runtime-wall
+    description: Evaluator-observed student runtime stays within the runtime envelope.
+    measure: metric
+    role: resource
+    threshold: 0.5
+    required: true
+    check: {kind: metric, metric: wall_ms, op: le, target: 2000, worst: 8000}
+  - id: structural-simplification
+    description: Evaluator surface analysis reports no fixture-tree complexity growth when the deliverable edits the tree.
+    measure: metric
+    role: resource
+    threshold: 0.5
+    required: true
+    check: {kind: metric, metric: complexity_delta, op: le, target: 0.0, worst: 0.15}
