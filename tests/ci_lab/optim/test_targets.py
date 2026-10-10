@@ -4,7 +4,7 @@ import pytest
 
 from ci_lab.optim.targets import TargetError, TextTarget, on_surface, resolve_targets
 
-H = "src/order_support/harness"
+H = "harness"
 
 
 @pytest.mark.parametrize("bad", ["/etc/passwd", "../x.md", "a/../../x.md", ".git/config", "C:/x.md", ""])
@@ -23,8 +23,7 @@ def test_resolve_components_and_explicit(worktree):
     got = resolve_targets(worktree, ["prompt", "skill", "memory", "config", f"{H}/agent.yaml#instructions"])
     assert [(c, t.id) for c, t in got] == [
         ("prompt", f"{H}/prompts/system.md"),
-        ("skill", f"{H}/skills/order-support/SKILL.md"),
-        ("memory", f"{H}/skills/order-support/memory.md"),
+        ("skill", f"{H}/skills/harness-editing/SKILL.md"),
         ("prompt", f"{H}/agent.yaml#instructions"),
     ]
     assert [c for c, _ in resolve_targets(worktree, [], default_focus=("skill",))] == ["skill"]
@@ -45,7 +44,7 @@ def test_read_write_text_and_yaml_key(worktree):
     assert t.read(worktree) == "Base."
     t.write(worktree, "New\ninstructions.")
     assert t.read(worktree) == "New\ninstructions."
-    assert "name: OrderSupport" in (worktree / H / "agent.yaml").read_text()
+    assert "name: HarnessImprover" in (worktree / H / "agent.yaml").read_text()
     with pytest.raises(TargetError):
         TextTarget.parse(f"{H}/agent.yaml#name.sub").read(worktree)
     p = TextTarget.parse(f"{H}/prompts/system.md")
