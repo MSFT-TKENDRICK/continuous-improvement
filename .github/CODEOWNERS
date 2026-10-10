@@ -15,12 +15,15 @@
 /src/ci_lab/guards/**                   @MSFT-TKENDRICK
 /src/ci_lab/governance/**               @MSFT-TKENDRICK
 **/harness/guards/**                    @MSFT-TKENDRICK
-/src/order_support/harness/guards/**    @MSFT-TKENDRICK
 
-# Measurement: safety oracle and System-1 judge (evaluator is frozen per campaign, I1)
-/src/order_support/oracle.py            @MSFT-TKENDRICK
+# Frozen harness control plane, evaluator assets and System-1 judge
+/harness/harness.yaml                  @MSFT-TKENDRICK
+/src/ci_lab/harness_tree/**            @MSFT-TKENDRICK
+/src/ci_lab/governance/policies/harness.acs.yaml @MSFT-TKENDRICK
 /src/ci_lab/judge/**                    @MSFT-TKENDRICK
-/evals/assert/judge_replay/**           @MSFT-TKENDRICK
+/evals/assert/**                        @MSFT-TKENDRICK
+/evals/datasets/harness.yaml            @MSFT-TKENDRICK
+/evals/rubrics/harness/**               @MSFT-TKENDRICK
 
 # Dev-loop lint: lessons encoded as structure (R5)
 /lint/rules/**                          @MSFT-TKENDRICK

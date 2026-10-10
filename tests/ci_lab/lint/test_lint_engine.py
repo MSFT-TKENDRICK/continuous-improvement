@@ -212,7 +212,7 @@ def test_seed_rules_catch_known_lessons(tmp_path):
     rules = load_rules(rule_files(REPO))
     files = {
         "src/ci_lab/campaign/x.py": "from opentelemetry import trace\ntrace.set_tracer_provider(tp)\n",
-        "src/ci_lab/guards/x.py": "from order_support.oracle import grade\n",
+        "src/ci_lab/guards/x.py": "from ci_lab.domain.harness_scoring import grade_case\n",
         "src/ci_lab/rules/x.py": "import re\nre.compile('a')\n",
         "src/ci_lab/lessons/x.py": "P = 'datasets/heldout/cases.jsonl'\n",
         "src/ci_lab/sleep/x.py": "from ci_lab import obs\nobs.span('ci.x', {'a': str(o)})\n",

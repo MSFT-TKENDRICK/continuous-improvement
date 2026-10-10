@@ -77,11 +77,15 @@ def test_every_rule_has_the_owner_and_anchors_exist():
 
 @pytest.mark.parametrize("path", [
     "lint/rules/workflows.yaml",
-    "src/order_support/harness/guards/order_support.yaml",
+    "harness/guards/README.md",
+    "harness/harness.yaml",
     "src/ci_lab/rules/engine.py",
     "src/ci_lab/judge/provider.py",
-    "src/order_support/oracle.py",
-    "evals/assert/judge_replay/eval_config.yaml",
+    "src/ci_lab/harness_tree/manifest.yaml",
+    "src/ci_lab/governance/policies/harness.acs.yaml",
+    "evals/assert/harness_triage/eval_config.yaml",
+    "evals/datasets/harness.yaml",
+    "evals/rubrics/harness/harness_triage.yaml",
     ".github/workflows/sleep-nightly.yml",
     ".github/extensions/ci-guardrails/policy.mjs",
     ".github/CODEOWNERS",
@@ -93,12 +97,12 @@ def test_protected_paths_are_owned(path):
 
 def test_frozen_guardrail_paths_are_owned():
     for f in frozen_list("FROZEN_PATHS"):
-        target = f if (REPO / f).exists() else f"src/order_support/{f}"
-        assert owned(target) == OWNERS, f
+        assert (REPO / f).exists(), f
+        assert owned(f) == OWNERS, f
     for d in frozen_list("FROZEN_DIRS"):
-        assert owned(f"{d}x.yaml") == OWNERS or owned(f"src/order_support/{d}x.yaml") == OWNERS, d
+        assert owned(f"{d}x.yaml") == OWNERS, d
 
 
 def test_unprotected_paths_are_not_owned():
-    for path in ("README.md", "src/ci_lab/sleep/night.py", "docs/harness.md", "src/order_support/agent.py"):
+    for path in ("README.md", "src/ci_lab/sleep/night.py", "docs/harness.md", "harness/skills/trace-triage/SKILL.md"):
         assert owned(path) == [], path

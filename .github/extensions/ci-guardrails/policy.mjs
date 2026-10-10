@@ -1,4 +1,4 @@
-// ci-guardrails policy (design §13.1 R5, §13.4): pure deny logic for the Copilot CLI PreToolUse hook.
+// ci-guardrails policy (design Â§13.1 R5, Â§13.4): pure deny logic for the Copilot CLI PreToolUse hook.
 // Dev-loop analogue of poteto/noodle's block-sleep hook: structure that coding agents cannot talk past.
 // No I/O here; extension.mjs supplies env and the current branch.
 
@@ -8,11 +8,13 @@ export const FROZEN_PATHS = Object.freeze([
   "src/ci_lab/contracts.py",
   "src/ci_lab/rulespec.py",
   "src/ci_lab/rules/templates.yaml",
-  "harness/guards/BUNDLE.lock",
-  "src/order_support/oracle.py",
+  "harness/harness.yaml",
+  "src/ci_lab/harness_tree/manifest.yaml",
+  "src/ci_lab/governance/policies/harness.acs.yaml",
+  "evals/datasets/harness.yaml",
 ]);
-// Frozen directories (any file below them). `harness/guards/` matches at any depth, e.g.
-// src/order_support/harness/guards/**; the others are repo-relative. Mirrored in .github/CODEOWNERS.
+// Frozen directories (any file below them). `harness/guards/` matches at any depth; the others are repo-relative.
+// Mirrored in .github/CODEOWNERS.
 export const FROZEN_DIRS = Object.freeze([
   "lint/rules/",
   "harness/guards/",
@@ -284,8 +286,8 @@ function editTargets(toolArgs) {
 
 // ------------------------------------------------------------------ entry point
 
-const SEE_HOOKS = "docs/lint.md; design §13.1 R5, §13.4";
-const SEE_CONTRACTS = "FLEET.md (frozen contracts); design §13.6";
+const SEE_HOOKS = "docs/lint.md; design Â§13.1 R5, Â§13.4";
+const SEE_CONTRACTS = "FLEET.md (frozen contracts); design Â§13.6";
 
 function shellDecision(command, ctx) {
   const lower = command.replace(/\\/g, "/").toLowerCase();

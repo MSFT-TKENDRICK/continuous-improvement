@@ -1,4 +1,4 @@
-// node --test tests/ci_lab/lint/policy.test.mjs — pure ci-guardrails policy (no SDK, no I/O).
+// node --test tests/ci_lab/lint/policy.test.mjs â€” pure ci-guardrails policy (no SDK, no I/O).
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
@@ -100,7 +100,6 @@ test("frozen contract edits are denied unless CI_ALLOW_CONTRACT_EDIT=1", () => {
   const edit = (toolName, toolArgs, env = {}) => evaluate({ toolName, toolArgs, workingDirectory: cwd }, { env });
   assert.equal(rule(edit("edit", { path: "C:\\x\\ci\\lint\\src\\ci_lab\\contracts.py", old_str: "a" })),
     "frozen-contract");
-  assert.equal(rule(edit("create", { path: "harness/guards/BUNDLE.lock", file_text: "" })), "frozen-contract");
   assert.equal(rule(edit("edit", { path: "src/ci_lab/rules/../rulespec.py" })), "frozen-contract");
   assert.equal(rule(edit("apply_patch", { input: "*** Begin Patch\n*** Update File: src/ci_lab/rules/templates.yaml\n" })),
     "frozen-contract");
@@ -115,27 +114,26 @@ test("frozen contract edits are denied unless CI_ALLOW_CONTRACT_EDIT=1", () => {
   assert.equal(frozenTarget("/home/u/repo/SRC/ci_lab/Contracts.py"), "src/ci_lab/contracts.py");
 });
 
-test("frozen directories (lint/rules, any harness/guards, ci_lab/rules) and the oracle are denied", () => {
+test("frozen directories and harness control-plane files are denied", () => {
   const cwd = "C:\\x\\ci\\lint";
   const edit = (toolName, toolArgs, env = {}) => evaluate({ toolName, toolArgs, workingDirectory: cwd }, { env });
   assert.equal(frozenTarget("lint/rules/workflows.yaml", cwd), "lint/rules/**");
   assert.equal(frozenTarget("lint\\rules\\new-rule.yaml", cwd), "lint/rules/**");
-  assert.equal(frozenTarget("src/order_support/harness/guards/order_support.yaml", cwd), "harness/guards/**");
+  assert.equal(frozenTarget("harness/guards/runtime.yaml", cwd), "harness/guards/**");
   assert.equal(frozenTarget("/home/u/repo/pkg/Harness/Guards/x.yaml"), "harness/guards/**");
   assert.equal(frozenTarget("src/ci_lab/rules/engine.py", cwd), "src/ci_lab/rules/**");
-  assert.equal(frozenTarget("harness/guards/BUNDLE.lock", cwd), "harness/guards/BUNDLE.lock");
-  assert.equal(frozenTarget("src/order_support/oracle.py", cwd), "src/order_support/oracle.py");
+  assert.equal(frozenTarget("src/ci_lab/harness_tree/manifest.yaml", cwd), "src/ci_lab/harness_tree/manifest.yaml");
   for (const p of ["src/ci_lab/lint/rules.py", "lint/rules_old/x.yaml", "src/ci_lab/guards/engine.py",
-    "tests/ci_lab/rules/test_engine.py", "docs/lint.md", "src/order_support/harness/skills/x/SKILL.md"]) {
+    "tests/ci_lab/rules/test_engine.py", "docs/lint.md", "harness/skills/x/SKILL.md"]) {
     assert.equal(frozenTarget(p, cwd), null, p);
   }
   assert.equal(rule(edit("create", { path: "lint/rules/new.yaml", file_text: "" })), "frozen-contract");
   assert.equal(rule(edit("apply_patch", {
-    input: "*** Begin Patch\n*** Update File: src/order_support/harness/guards/order_support.yaml\n",
+    input: "*** Begin Patch\n*** Update File: harness/guards/runtime.yaml\n",
   })), "frozen-contract");
   assert.equal(rule(edit("edit", { path: "lint/rules/new.yaml" }, { CI_ALLOW_CONTRACT_EDIT: "1" })), null);
   assert.equal(rule(sh("Set-Content lint\\rules\\x.yaml 'id: x'")), "frozen-contract");
-  assert.equal(rule(sh("rm -rf src/order_support/harness/guards", {}, "bash")), "frozen-contract");
+  assert.equal(rule(sh("rm -rf harness/guards", {}, "bash")), "frozen-contract");
   assert.equal(rule(sh("echo x > src/ci_lab/rules/engine.py", {}, "bash")), "frozen-contract");
   assert.match(sh("Remove-Item lint/rules -Recurse").reason, /lint\/rules\/\*\* is a frozen contract/);
   assert.equal(rule(sh("Get-Content lint/rules/workflows.yaml")), null);
