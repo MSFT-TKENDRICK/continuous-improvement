@@ -1,229 +1,176 @@
-# The self-improving harness
+# Harness architecture
 
-The repository evaluates and improves its own repo-root harness tree. `ci_lab` keeps the evaluator, governance, selection, and orchestration frozen while candidate arms edit bounded agent-facing assets. Every
-agent and workflow runs on the Microsoft Agent Framework (MAF, Python, declarative YAML,
-checkpointed), using models reached through the GitHub Copilot SDK with ambient auth.
+CI Lab is a Python, harness-only self-improvement system. The target is the repo-root
+[`harness/`](../harness/) tree. The control plane under `src/ci_lab/`, evaluation assets under
+`evals/`, schemas, and GitHub automation are frozen relative to a candidate.
 
-Each change to the harness's editable prompts, skills, or structural components is an **experiment**:
-- an OES envelope;
-- an `exp/<eid>/<arm>` branch, built in its own worktree slot;
-- scored by ASSERT evals plus the System-1 judge.
+## Pillars
 
-Experiments are driven either by an RRSI campaign, whose accepted arms become stacked draft PRs, or
-by the nightly SkillOpt-Sleep GitHub Action, which opens one draft PR. Rollouts flow through the Agent
-Lightning journal/store. DSPy/GEPA owns prompts, SkillOpt owns skills, and the LLM-only AGL
-strategy owns structural components.
+### Microsoft Agent Framework core
 
-Lessons mined from traces and dev transcripts are encoded **as structure** rather than prose. They
-become frozen rules and guards that the model cannot bypass, plus lint checks that fail CI. Every
-step is traced to OpenTelemetry and shown on the Aspire dashboard and the Copilot canvas dashboard.
+[`ci_lab.maf`](maf.md) loads prompt agents from declarative YAML and executes expression-free
+declarative workflows. `FileCheckpointStorage` checkpoints every workflow superstep and
+`run_or_resume` resumes from the latest checkpoint. Branching and side effects stay in typed,
+idempotent Python tools; PowerFx and .NET are intentionally absent.
 
-Nothing is adopted automatically. Every change lands as a draft PR that a human reviews and merges.
+The evolvable target includes declarative agents, prompts, skills, target workflows, target-agent
+loop limits, client-tool exposure, and MCP exposure. Campaign arm workflows, retries, critique
+policy, evaluator parallelism, bus quorum, and judge policy remain frozen under `src/ci_lab/`.
 
-## Architecture
+### Optimizers with distinct ownership
 
-```mermaid
-flowchart TB
-  subgraph Runtime["MAF core (ci_lab.maf)"]
-    MAF["Declarative agents and workflows<br/>(YAML, no PowerFx)"]
-    CKPT[("FileCheckpointStorage<br/>checkpoints / resume")]
-    MAF --- CKPT
-  end
-  PROV["Copilot SDK provider<br/>(ci_lab.providers, ambient gh auth)"] --> MAF
-  AGENT["Self-hosted harness target<br/>(repo-root harness tree)"]
-  MAF --> AGENT
+The authoritative mapping is `ci_lab.contracts.COMPONENT_OWNERS`:
 
-  subgraph Eval["Evaluation"]
-    ASSERT["ASSERT behavior suites<br/>+ judge replay"]
-    JUDGE["System-1 judge<br/>(ci_lab.judge: audit, DSPy rubric align)"]
-    ASSERT --> JUDGE
-  end
-  AGENT --> ASSERT
+| Component | Dedicated owner |
+|---|---|
+| `prompt` | `gepa` |
+| `skill` | `skillopt` |
+| `guard` | `guard` |
+| `agent` | `agl` |
+| `loop` | `agl` |
+| `workflow` | `agl` |
+| `mcp` | `agl` |
+| `client_tool` | `agl` |
+| `config` | `agl` |
+| `context_mgmt` | `agl` |
+| `memory` | `agl` |
 
-  subgraph Campaign["OES / RRSI campaign (ci_lab.campaign)"]
-    RRSI["RRSI schedule + selection<br/>(ci_lab.rrsi)"]
-    META["Meta agents: analyst, proposer,<br/>critic, reflector (ci_lab.meta)"]
-    OES[("OES 0.1.0 envelopes<br/>+ ledger (ci_lab.oes, ci_lab.ledger)")]
-    WT["Experiment branches exp/eid/arm<br/>in worktree slots (gitops)"]
-    PR["Stacked draft PRs<br/>(accepted arms only)"]
-    RRSI --> META --> WT --> PR
-    RRSI --> OES
-  end
-  Eval -->|scores| RRSI
-  WT -->|candidate harness| ASSERT
+`strategy_may_edit` gives the general `agent` proposer permission to edit any text component except
+`guard`. That general permission does not change dedicated ownership: DSPy/GEPA remains the prompt
+optimizer, SkillOpt remains the skill optimizer, the lessons arm owns guards, and AGL owns structural
+components.
 
-  subgraph Optim["Optimizers"]
-    STRAT["Arm strategies (ci_lab.strategies)"]
-    GEPA["DSPy / GEPA: prompts<br/>SkillOpt: skills"]
-    AGLALG["AGL LLM resource algorithm:<br/>structural components"]
-    STRAT --> GEPA
-    STRAT --> AGLALG
-  end
-  META --> STRAT
+[`ci_lab.optim`](optim.md) uses DSPy as the LM/prompt layer, GEPA for prompt candidates, and
+SkillOpt 0.2.x for skills. [`ci_lab.sleep`](sleep.md) runs the two harness skills through
+SkillOpt-Sleep nightly.
 
-  AGL[("Agent Lightning data plane<br/>(ci_lab.agl, journal-first)")]
-  AGENT -->|rollouts| AGL
-  AGL --> GEPA
-  AGL --> AGLALG
+[`ci_lab.agl`](agl.md) uses Agent Lightning 1.0.2 as a rollout journal/store and optional loopback
+proxy. Its improvement algorithm is CI Lab's `LlmResourceAlgorithm`: a Copilot SDK optimizer model
+assigns bounded structural credit and proposes one contained edit. It never imports `verl`, performs
+RL training, requires a GPU, optimizes prompts, or optimizes skills. Runtime metrics are emitted
+journal-side because Agent Lightning 1.0.2 has no server hook-loading seam.
 
-  subgraph Sleep["SkillOpt-Sleep nightly (ci_lab.sleep)"]
-    NIGHT["sleep-nightly.yml:<br/>gate, evaluate, publish"]
-    DRAFT["One draft PR<br/>(never merged automatically)"]
-    NIGHT --> DRAFT
-  end
-  GEPA --> NIGHT
-  NIGHT --> OES
+### ASSERT and System-1 evaluation
 
-  subgraph Structure["Lessons as structure"]
-    LES["Lessons mining<br/>(ci_lab.lessons)"]
-    ARM["Lessons arm<br/>(ci_lab.lessons_arm)"]
-    RULES["Frozen rules engine<br/>(ci_lab.rules, RuleSpec YAML)"]
-    GUARDS["Runtime guards<br/>(ci_lab.guards, harness/guards)"]
-    LINT["ci-lab lint / reflect,<br/>.githooks, ci-guardrails, CODEOWNERS"]
-    LES --> ARM --> RULES --> GUARDS
-    LES --> LINT
-  end
-  AGL --> LES
-  NIGHT -->|"lessons hook (opt-in)"| LES
-  ARM --> RRSI
-  GUARDS --> AGENT
+[`HarnessDomain`](../src/ci_lab/domain/harness.py) evaluates each case in a separate temporary
+writable copy with a scrubbed environment. It validates the candidate before execution and verifies
+that the source tree did not change. Candidate output cannot supply evaluator measurements.
 
-  subgraph Obs["Telemetry"]
-    OTEL["ci_lab.obs, ci_lab.telemetry<br/>(OTel, JSONL spans)"]
-    ASP["Aspire dashboard<br/>(hash-pinned)"]
-    CANVAS["Copilot canvas dashboard<br/>(ci-harness-dashboard)"]
-    OTEL --> ASP
-    OTEL --> CANVAS
-  end
-  MAF -.spans.-> OTEL
-  NIGHT -."spans artifact".-> OTEL
-  OES -.-> CANVAS
-```
+The five frozen suites are:
 
-## Agent bus, task graph and adversary
+| Suite | Purpose |
+|---|---|
+| `harness_triage` | Attribute a typed failure to the responsible component and reason code. |
+| `harness_proposal` | Make one bounded, parseable edit without case-specific literals. |
+| `harness_taskgraph` | Produce one dependency-correct deliverable without rubric leakage. |
+| `harness_tool_use` | Use the requested read-only MCP capability in direct or code mode. |
+| `harness_injection` | Ignore instructions embedded in evidence and avoid forbidden effects. |
 
-Three packages add an audited loop of student, voters and judge:
+Each rubric contains deterministic quality, a System-1 criterion when judgement is needed, and
+evaluator-owned resource criteria. The fake CI profile uses scripted target responses and a
+scripted judge. Live tiers require explicit target and judge pins and a reachable System-1 endpoint;
+a served target-model mismatch invalidates the trial.
 
-- [bus.md](bus.md): `ci_lab.bus`, a write-ahead, hash-chained log per topic. Voters score each
-  proposal, a deterministic judge decides, and a successor agent sees only the corrected
-  trajectory.
-- [taskgraph.md](taskgraph.md): `ci_lab.taskgraph`, graphs of single deliverables with sealed,
-  hidden rubrics, run in parallel by `ci-lab graph run`.
-- [adversary.md](adversary.md): `ci_lab.adversary`, gamers and an LLM adversary that attack the
-  rubric. Exploits feed rubric hardening and an evaluator-experiment proposal.
+`TaskScore.score` is quality-only. Deterministic correctness/safety and System-1 quality criteria
+enter the primary score. Runtime and simplification criteria are stored as resource subscores.
+Required missing metrics score zero and record `metric.missing`; the parent evaluator also invalidates
+a result missing its required evaluator metrics.
 
-Campaign arm steps (`workflows/steps.py`) use the bus through `ci_lab.campaign.bus_adapter` when
-`hyper.bus` is true (the default):
+### OES and RRSI election
 
-| Step | With the bus | With `hyper.bus: false` (legacy, kept for one release) |
-|---|---|---|
-| `critique_N` | `proposal.json` becomes a student proposal on topic `<eid>/<arm>`. The replayed critic, `critic-checks` and any `CampaignDeps.bus_voters` vote, and the judge appends a verdict. | `deps.critique` |
-| `repair_N` | agent arms only: `succeed` starts a fresh proposer on the leak-screened student projection | `reinvoke_proposer` with a `sanitize_correction` text (also used for non-agent arms) |
-| `evaluate` | the domain evaluation runs as an `evaluate` effect keyed by arm, split and head, so a rerun reuses the result | direct `deps.domain.evaluate` |
-| `record` | the envelope gets `x-ci-bus: {run, topics, heads}` | no extension |
+Every calibration, round, confirmation, and sleep night is represented by an
+[OES](oes.md) envelope. [RRSI](rrsi.md) schedules arms and elects a winner against the
+contemporaneous incumbent.
 
-The bus lives in `<run_root>/bus`. Inspect it with `ci-lab bus verify <run_root>/bus`, `ci-lab bus
-tail <run_root>/bus <eid>/<arm>` and `ci-lab bus heads <run_root>/bus <eid>`. After the arms run and
-before `select`, the out-of-band challenger lane
-(`hyper.challenger`, default `det`) attacks each arm's last proposal. It records exploits but never
-changes selection or history; see [adversary.md](adversary.md#in-campaigns).
+The `harness` profile requires resource metrics and applies non-compensatory gates in both RRSI
+branches:
 
-## Module docs
+- surface complexity growth `dX <= 0.10`;
+- mean `(llm_calls + tool_calls)` growth `dCalls <= 0.15`;
+- wall-time change is recorded from median `wall_ms` but is diagnostic because `wall_cap=None`.
 
-| Doc | Module | What it covers |
-|---|---|---|
-| [maf.md](maf.md) | `ci_lab.maf` | MAF core: declarative agents/workflows without PowerFx, tool registry, checkpoints |
-| [providers.md](providers.md) | `ci_lab.providers` | `CopilotChatClient` on the Copilot SDK (ambient auth), client factory and profiles |
-| [models.md](models.md) | `ci_lab.providers.models`, `campaign.preflight` | Every model id, its override (`CI_META_MODEL`, `CI_ASSERT_MODEL`, ...) and the copilot model preflight |
-| [template.md](template.md) | `ci_lab.template` | Use this repo as a GitHub template: `ci-lab template init` / `doctor`, opt-in workflows, swapping in your own agent |
-| [judge.md](judge.md) | `ci_lab.judge` | System-1 judge provider, agreement audit, DSPy rubric alignment (proposal only) |
-| [oes.md](oes.md) | `ci_lab.oes` | Open Experiment Standard 0.1.0 envelopes for every experiment |
-| [rrsi.md](rrsi.md) | `ci_lab.rrsi` | RRSI Algorithms 1 and 2 with the v2 safeguards (pure) |
-| [campaign.md](campaign.md) | `ci_lab.campaign` | RRSI campaigns as checkpointed MAF workflows, arms, stacked draft PRs |
-| [meta-agents.md](meta-agents.md) | `ci_lab.meta` | Analyst, proposer, critic and reflector agents, plus the arm filesystem and commit tools |
-| [strategies.md](strategies.md) | `ci_lab.strategies` | Arm strategies (`agent`, `gepa`, `skillopt`, `guard`, `agl`) |
-| [optim.md](optim.md) | `ci_lab.optim` | DSPy LM, GEPA and SkillOpt over harness text (lazy imports) |
-| [ledger-gitops-cache.md](ledger-gitops-cache.md) | `ci_lab.ledger`, `gitops`, `cache` | Durable experiment state, worktree slot pool, shared uv caches |
-| [agl.md](agl.md) | `ci_lab.agl` | Agent Lightning 1.0.2 journal/store plus LLM-only structural optimizer |
-| [sleep.md](sleep.md) | `ci_lab.sleep` | SkillOpt-Sleep nightly: gate, evaluate and publish a draft PR; opt-in lessons hook |
-| [lessons.md](lessons.md) | `ci_lab.lessons` | Mining traces into lessons and routing them to enforcement rungs |
-| [lessons-arm.md](lessons-arm.md) | `ci_lab.lessons_arm` | Lessons become guard rules through a paired guard-off/on experiment arm |
-| [rules.md](rules.md) | `ci_lab.rules` | Frozen, pure rules engine over `RuleSpec` YAML |
-| [guards.md](guards.md) | `ci_lab.guards` | Runtime trajectory correction inside MAF (block, redact, remediate) |
-| [lint.md](lint.md) | `ci_lab.lint` | `ci-lab lint`/`reflect`, git hooks, `lint.yml`, the ci-guardrails extension, CODEOWNERS |
-| [telemetry.md](telemetry.md) | `ci_lab.telemetry` | TracerProvider ownership, JSONL spans, hash-pinned Aspire dashboard, `telemetry pull` |
-| [canvas.md](canvas.md) | `ci-harness-dashboard` | The Copilot app canvas showing campaigns, evals, nights, rollouts and traces |
-| [chat.md](chat.md) | `ci_lab.chat` | `ci-lab chat serve`: the experiment-designer AG-UI agent that drafts and (with approval) launches campaigns |
-| [bus.md](bus.md) | `ci_lab.bus` | Write-ahead agent bus: hash-chained topics, invariants, voters, judge, projection and succession, `ci-lab bus` |
-| [taskgraph.md](taskgraph.md) | `ci_lab.taskgraph` | Task graphs: parallel single deliverables, sealed hidden rubrics, student firewall, `ci-lab graph` |
-| [adversary.md](adversary.md) | `ci_lab.adversary` | Gamers and LLM adversary, exploit duels, gated rubric hardening, campaign challenger lane |
-| [governance.md](governance.md) | `ci_lab.governance` | AGT/ACS policies on every MAF agent, campaign launch gate, SRE arm vetoes, hash-chained audit, `ci-lab governance` |
+Missing incumbent or candidate surface/runtime data makes an arm inadmissible. Complexity growth is
+also penalized in the weighted branch. Simplicity credit is behavior-gated: the tree must validate,
+required agents must exist, critical safety must be non-inferior, and quality change must be
+non-negative. Edit-line or output-line reduction alone is not simplicity.
+
+### Agent bus, voters, judge, and adversary
+
+[`ci_lab.bus`](bus.md) is a hash-chained write-ahead log. Students and adversaries append proposals;
+deterministic, ASSERT, System-1, rules, critic, or LLM voters append votes; a deterministic judge
+folds them into a verdict. Required unanswered criteria, oracle vetoes, lost quorum, and failed
+required criteria fail closed. A successor agent receives a sanitized projection, not rejected raw
+history.
+
+Campaign critique/evaluate steps use the bus by default. The challenger lane runs after arms and
+before selection, records exploits and evaluator proposals, but cannot become a strategy, alter arm
+results, or enter RRSI history. Non-template rubric hardening is Wilson-gated; see
+[adversary limitations](adversary.md#limitations).
+
+### Governance and deterministic lessons
+
+[`ci_lab.governance`](governance.md) applies AGT identity/audit/SRE primitives and frozen ACS
+policies to MAF agents, MCP calls, and campaign launches. It is application-layer policy, not an OS
+sandbox.
+
+[`ci_lab.lessons`](lessons.md) reduces trusted failures to typed trajectories, clusters recurring
+patterns, and routes them to deterministic enforcement. [`ci_lab.rules`](rules.md) evaluates frozen
+RuleSpec YAML. [`ci_lab.guards`](guards.md) can block, redact, or remediate a trajectory.
+[`ci_lab.lessons_arm`](lessons-arm.md) evaluates guard changes with paired guard-off/guard-on trials.
+Lint, CODEOWNERS, and draft-only publishing keep these changes reviewable.
+
+### Telemetry, Aspire, canvas, and chat
+
+OpenTelemetry spans and local JSONL records are produced by campaign, sleep, taskgraph, MAF, and AGL
+paths. [`ci-lab dashboard`](telemetry.md) starts an optional, hash-pinned Aspire dashboard.
+
+The native [`ci-harness-dashboard`](canvas.md) Copilot canvas reads local JSONL, ledgers, OES
+envelopes, ASSERT outputs, AGL journals, bus logs, and optionally Aspire's API. Aspire cannot be
+embedded or reverse-proxied; the canvas opens it as a top-level page after a user click.
+
+The canvas Chat tab is a local CopilotKit UI over [`ci-lab chat serve`](chat.md). It drafts campaign
+configuration and can request a launch. The Python server enforces a single-use, thread-bound human
+approval before launch. Chat does not run held-out confirmation; use `ci-lab campaign confirm`
+separately.
+
+## Incumbents, candidates, and activation
+
+At round start the campaign copies and hashes the incumbent `harness/**` tree. Analyst, proposer,
+repair, and critic use that immutable round snapshot. Candidate evaluation alone loads an arm's
+harness directory. This prevents an in-progress arm from changing the context used to create or
+judge other arms. An elected candidate becomes active at the next round, not midway through the
+current one.
 
 ## Trust boundaries
 
-- **MAF all the way down, fail-closed.** Meta agents are MAF harness agents built from declarative
-  specs. A spec can declare read-only **subagents** (`x-ci.subagents`). Each one runs as a MAF
-  background agent (`create_harness_agent(background_agents=...)`) on the parent's chat client, so it
-  uses the same Copilot SDK provider. The proposer uses this to hand failure drill-downs to
-  `failure_analyst` ([meta-agents.md](meta-agents.md#subagents)). Sleep nights run on the MAF
-  declarative `WorkflowFactory` with `FileCheckpointStorage`. If MAF can't be imported, the
-  `copilot` and `offline` profiles raise an error rather than falling back to the sequential
-  interpreter, which runs only when requested ([sleep.md](sleep.md)).
-- **Draft PRs only.** Campaigns, sleep nights, judge alignment, `ci-lab reflect` and the lessons hook
-  only propose changes. Merging is always a human decision.
-- **Governed agents.** Every MAF agent is built through the governed factory and checked against
-  ACS policies; campaign launches pass a kill-switch, error-budget and protected-scope gate, and a
-  real publish needs an identity-bound approval ([governance.md](governance.md)). This is
-  application-layer policy, not an OS sandbox.
-- **Frozen paths.** These are listed in `.github/extensions/ci-guardrails/policy.mjs`:
-  - contracts;
-  - `RuleSpec` and the rules engine;
-  - `lint/rules/**`;
-  - `**/harness/guards/**`;
-  - the safety oracle.
+- `harness/harness.yaml` must match `src/ci_lab/harness_tree/manifest.yaml`; a candidate cannot
+  change owners, globs, required agents, or caps.
+- Harness evaluation copies the candidate and fixtures to a temporary directory, forwards only an
+  environment allowlist, and forwards no GitHub token or git credentials.
+- MCP server process definitions and maximum limits are frozen. The candidate may only narrow
+  exposure and select direct or code mode.
+- MCP code mode uses AST restrictions, an isolated interpreter, framed RPC, output/time caps, and
+  process-tree termination. It is isolation against accidental or naive misuse, not an OS sandbox.
+- MAF checkpoints contain pickle data. Keep them private to one run; do not restore them from
+  untrusted artifacts.
+- Publishing is draft-only until a human explicitly lands an accepted stack.
 
-  The ci-guardrails extension denies agent edits to them in the dev loop. `.github/CODEOWNERS`
-  requires owner review for them, and for the judge, the workflows and the extensions
-  ([lint.md](lint.md#codeowners)).
-- **Unlocked dependency sync.** `uv.lock` is intentionally not committed, because it is generated
-  against an internal package proxy. CI resolves from the version bounds in `pyproject.toml`. So the workflows run
-  `uv sync` rather than `uv sync --frozen`. Each workflow says so in a comment
-  ([sleep.md](sleep.md), [lint.md](lint.md)).
-- **Spans artifact.** `sleep-nightly.yml` uploads its redacted spans as the `spans` artifact. This
-  is the default name `ci-lab telemetry pull` expects ([telemetry.md](telemetry.md)).
+## Current limitations
 
-## Known limitations
-
-- **PII redaction is not subject-scoped.** Verifying *any* order in a conversation disables
-  redaction for the rest of it, including other customers' data.
-- **Response blocks are not expressible.** A `*` tool pattern can't block, and responses have no
-  tool target. A rule can therefore remediate or redact a response, but it cannot block one.
-- **Redaction only changes the returned text.** The conversation history still holds the PII.
-- **Rule conflict detection is conservative.** `ci_lab.rules` only reports conflicts it can show
-  syntactically, for rules on the same `on`/`target`:
-  - identical predicates with a different action or mode;
-  - directly contradictory `require` facts under the same (or no) `when`.
-
-  Semantic overlaps, such as different `when` predicates that match the same steps, are not detected.
-- **The campaign must enforce lessons-arm N5.** Prose deletions in the lessons arm are proposals.
-  `ci_lab.lessons_arm` does not enforce N5 on its own.
-- **The Aspire login URL format is assumed.** `ci-lab dashboard url --with-token` and `open` build
-  `<ui_url>/login?t=<browser token>` themselves. A newer Aspire release that changes its login route
-  would break auto-login. Only 13.6.1 is pinned: win-arm64, win-x64, linux-x64 and osx-arm64 have sha256 pins.
-  Other platforms need `--trust-new` on first use.
-- **`reflect` drops many events.** Its detectors only read the transcript events they recognize.
-  Everything else in a Copilot session is ignored.
-- **The `Domain.evaluate` case filter is deferred.** Evaluation always runs the full case set for a
-  domain.
-- **AGL is deliberately not an RL trainer.** This implementation uses Agent Lightning 1.0.2 only
-  for its journal/store/proxy substrate and an LLM-only structural algorithm. It never imports
-  `verl`, needs no GPU, never optimizes prompts (DSPy/GEPA), and never optimizes skills (SkillOpt).
-- **Subagent state is in memory.** MAF background-agent tasks live in the parent's session and do
-  not survive a process restart ([meta-agents.md](meta-agents.md#subagents)).
-- **Sleep nights don't resume.** The nightly job always starts a night fresh
-  ([sleep.md](sleep.md#known-limitations)).
-- **The Copilot SDK has no temperature or seed control.** Copilot-backed agents can't be made deterministic
-  through sampling settings. Determinism comes from fixtures, the replay journal and paired
-  evaluation.
-- **MAF declarative agents are experimental** upstream. Their YAML schema and loader may change
-  between MAF releases. `pyproject.toml` bounds them to `agent-framework-declarative>=1.1,<2`.
+- Skill optimization is tested and workflow-pinned to SkillOpt **0.2.x**
+  (`skillopt>=0.2.0,<0.3`).
+- MAF declarative agents/workflows are experimental upstream; package bounds reduce, but do not
+  remove, schema and loader drift risk.
+- The GitHub Copilot SDK provider exposes no reliable temperature or seed control. Fake fixtures,
+  journals, and paired evaluation provide determinism instead.
+- AGT/ACS middleware and MCP code mode are not OS sandboxes.
+- Non-template adversary rubric patches are effectively blocked on small corpora: at
+  `epsilon=0.05`, the Wilson gate needs at least 52 held-out honest samples when there are zero new
+  false rejections (about 172 honest inputs before the 30% split).
+- Agent Lightning's server store is in memory; the local append-only journal remains authoritative
+  and can repopulate it.
+- MAF background subagent state and chat approval interrupts are in memory and do not survive
+  process restart.
+- SkillOpt-Sleep nights start fresh rather than resuming an interrupted workflow.
+- The canvas is local, loopback, single-user tooling. Its CopilotKit integration uses the
+  development-only direct-agent API and keeps no chat history across page reloads.
