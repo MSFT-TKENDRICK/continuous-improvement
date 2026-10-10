@@ -27,6 +27,7 @@ from ci_lab.strategies.base import (
     Committer,
     check_edit_budget,
     git_commit,
+    optimizer_commit_message,
     optimizer_span,
     write_report,
 )
@@ -293,8 +294,13 @@ class LlmResourceAlgorithm:
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_bytes(original)
             raise
-        commit = self.committer(Path(ctx.worktree), [proposal.path],
-                                f"{ctx.directive.arm}: agl {proposal.hypothesis}"[:200])
+        message = optimizer_commit_message(
+            ctx.directive.arm,
+            self.name,
+            proposal.component,
+            proposal.hypothesis,
+        )
+        commit = self.committer(Path(ctx.worktree), [proposal.path], message)
         return Edit(proposal.component, proposal.hypothesis, (proposal.path,), commit)
 
     async def propose(self, ctx: ArmContext) -> list[Edit]:
