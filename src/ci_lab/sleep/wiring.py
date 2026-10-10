@@ -1,5 +1,5 @@
 """Profile wiring: builds :class:`~ci_lab.sleep.night.SleepDeps` for ``fake`` / ``offline`` /
-``copilot``. Sibling fleet modules (providers, order-support oracle, ASSERT domain) are
+``copilot``. Sibling fleet modules (providers, safety oracle, evaluation domain) are
 discovered by import probing so this module lands independently; anything
 REQUIRED for a real night that is missing raises :class:`WiringError` (no silent fallback to
 fakes outside ``--profile fake``).
@@ -16,15 +16,32 @@ from collections.abc import Callable, Iterable, Sequence
 from pathlib import Path
 from typing import Any
 
-from ci_lab.contracts import PROVIDER_MAPPING, EvalResult, Profile, Transcript, Violation
+from ci_lab.contracts import (
+    PROVIDER_MAPPING,
+    EvalResult,
+    Profile,
+    Transcript,
+    Violation,
+)
 from ci_lab.providers.offline import check_loopback, check_offline_endpoints
-from ci_lab.sleep.fakes import FakeOracle, FakeReflector, cases_from_tasks, fake_run_target, make_fake_assert_eval
+from ci_lab.sleep.fakes import (
+    FakeOracle,
+    FakeReflector,
+    cases_from_tasks,
+    fake_run_target,
+    make_fake_assert_eval,
+)
 from ci_lab.sleep.harvest import load_reviewed_tasks, read_jsonl_rows
 from ci_lab.sleep.night import SleepConfig, SleepDeps
 from ci_lab.sleep.registry import ORDER_SUPPORT, SkillTarget
-from ci_lab.sleep.target import make_maf_run_target, materialize_harness
+from ci_lab.sleep.target import (
+    make_harness_run_target,
+    make_maf_run_target,
+    materialize_harness,
+)
 
-HARNESS_REL = Path("src") / "order_support" / "harness"
+HARNESS_REL = Path("harness")
+LEGACY_HARNESS_REL = Path("src") / "order_support" / "harness"
 MODEL_ENV = {"target": "CI_LAB_SLEEP_TARGET_MODEL", "reflector": "CI_LAB_SLEEP_REFLECTOR_MODEL"}
 DEFAULT_MODEL = {"copilot": "gpt-5-mini", "offline": "local"}
 
@@ -127,25 +144,48 @@ def find_oracle() -> Any:
     return found() if isinstance(found, type) else (found or PolicyOracle())
 
 
+class HarnessOracle:
+    """Harness safety is enforced by ACS and the frozen evaluation suites, not customer rules."""
+
+    def check(self, transcript: Transcript) -> list[Violation]:
+        return []
+
+
 # ------------------------------------------------------------------ ASSERT domain
 
+def _candidate_rel(path: str, target: SkillTarget) -> Path:
+    prefix = "harness/" if target.eval_suite == "harness" else "src/order_support/harness/"
+    if not path.startswith(prefix):
+        raise WiringError(f"target {target.name!r}: path {path!r} is outside its harness")
+    return Path(path.removeprefix(prefix))
+
+
 def make_assert_eval(cfg: SleepConfig, target: SkillTarget = ORDER_SUPPORT, *,
+                     profile: Profile = Profile.FAKE,
                      k: int = 1) -> Callable[[str, str, str], EvalResult]:
     factory = _probe([("ci_lab.domain", "get_domain"), ("ci_lab.domain", "order_support_domain"),
                       ("ci_lab.domain.order_support", "OrderSupportDomain")])
     if factory is None:
         raise WiringError("ASSERT domain (ci_lab.domain) not available: the nightly gate cannot run")
     if getattr(factory, "__name__", "") == "get_domain":
-        domain = factory(target.eval_suite)
+        if target.eval_suite == "harness":
+            domain = factory(target.eval_suite, repo_root=cfg.repo_root,
+                             work_dir=Path(cfg.work_dir or cfg.out_dir) / "assert-domain",
+                             profile=profile.value)
+        else:
+            domain = factory(target.eval_suite)
     elif target.eval_suite == "order_support":
         domain = factory()
     else:
         raise WiringError(f"no ASSERT domain for eval suite {target.eval_suite!r}")
     assert cfg.work_dir is not None
     root = Path(cfg.work_dir) / "assert-harness" / target.name
+    base = cfg.repo_root / (HARNESS_REL if target.eval_suite == "harness" else LEGACY_HARNESS_REL)
+    skill_rel = _candidate_rel(target.skill_path, target)
+    memory_rel = _candidate_rel(target.memory_path, target) if target.memory_path else None
 
     def assert_eval(skill: str, memory: str, variant: str) -> EvalResult:
-        harness = materialize_harness(skill, memory, root, cfg.repo_root / HARNESS_REL)
+        harness = materialize_harness(skill, memory, root, base, skill_rel=skill_rel, memory_rel=memory_rel)
         return asyncio.run(domain.evaluate(harness, "evolve", k, experiment_id="sleep", variant=variant))
 
     # the OES envelope of a night that never reaches the gate still records the gate's pin
@@ -189,22 +229,40 @@ def fake_deps(cfg: SleepConfig) -> SleepDeps:
     return deps
 
 
-# Production MAF harness (ci_lab.sleep.target) only knows the order-support agent.
-SUPPORTED_OWNERS = {ORDER_SUPPORT.owner_agent: ORDER_SUPPORT.skill_path}
+SUPPORTED_TARGETS = {
+    ("proposer", "harness/skills/harness-editing/SKILL.md"),
+    ("failure_analyst", "harness/skills/trace-triage/SKILL.md"),
+    (ORDER_SUPPORT.owner_agent, ORDER_SUPPORT.skill_path),
+}
 
 
 def _real_target_deps(profile: Profile, cfg: SleepConfig, target: SkillTarget) -> SleepDeps:
-    if SUPPORTED_OWNERS.get(target.owner_agent) != target.skill_path:
+    if (target.owner_agent, target.skill_path) not in SUPPORTED_TARGETS:
         raise WiringError(f"skill target {target.name!r}: no run_target harness for owner agent "
                           f"{target.owner_agent!r} with skill {target.skill_path!r}")
     assert cfg.work_dir is not None
+    if target.eval_suite == "harness":
+        run_target = make_harness_run_target(
+            client_factory(profile, "target"),
+            harness_root=Path(cfg.work_dir) / "target-harness" / target.name,
+            base_harness=cfg.repo_root / HARNESS_REL,
+            owner_agent=target.owner_agent,
+            skill_path=target.skill_path,
+            memory_path=target.memory_path,
+        )
+        oracle = HarnessOracle()
+    else:
+        run_target = make_maf_run_target(
+            client_factory(profile, "target"),
+            harness_root=Path(cfg.work_dir) / "target-harness" / target.name,
+            base_harness=cfg.repo_root / LEGACY_HARNESS_REL,
+        )
+        oracle = find_oracle()
     return SleepDeps(
-        run_target=make_maf_run_target(client_factory(profile, "target"),
-                                       harness_root=Path(cfg.work_dir) / "target-harness" / target.name,
-                                       base_harness=cfg.repo_root / HARNESS_REL),
-        oracle=find_oracle(),
+        run_target=run_target,
+        oracle=oracle,
         reflector=_reflector(profile),
-        assert_eval=make_assert_eval(cfg, target),
+        assert_eval=make_assert_eval(cfg, target, profile=profile),
         latest_delta=latest_delta_from(cfg.repo_root),
     )
 
@@ -240,4 +298,4 @@ def _reflector(profile: Profile) -> Any:
     return make_maf_reflector(client_factory(profile, "reflector"))
 
 
-__all__ = ["WiringError", "PolicyOracle", "build_deps", "fake_deps", "client_factory"]
+__all__ = ["PolicyOracle", "WiringError", "build_deps", "client_factory", "fake_deps"]

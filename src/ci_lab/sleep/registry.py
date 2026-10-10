@@ -17,7 +17,7 @@ import yaml
 
 REGISTRY_FORMAT = "ci_lab.sleep.targets.v1"
 DEFAULT_REGISTRY = Path(__file__).with_name("targets.yaml")
-SKILL_PREFIX = "src/order_support/harness/skills/"
+SKILL_PREFIXES = ("harness/skills/", "src/order_support/harness/skills/")
 TASKS_PREFIX = "experiments/sleep/"
 _NAME_RE = re.compile(r"[a-z0-9][a-z0-9-]{0,47}")
 _KEYS = frozenset({"name", "skill", "memory", "owner_agent", "eval_suite", "tasks", "enabled"})
@@ -47,14 +47,28 @@ ORDER_SUPPORT = SkillTarget(
     skill_path="src/order_support/harness/skills/order-support/SKILL.md",
     memory_path="src/order_support/harness/skills/order-support/memory.md",
     owner_agent="order-support", eval_suite="order_support")
+HARNESS_EDITING = SkillTarget(
+    name="harness-editing",
+    skill_path="harness/skills/harness-editing/SKILL.md",
+    owner_agent="proposer", eval_suite="harness",
+    tasks_file="experiments/sleep/harness-editing.jsonl")
+TRACE_TRIAGE = SkillTarget(
+    name="trace-triage",
+    skill_path="harness/skills/trace-triage/SKILL.md",
+    owner_agent="failure_analyst", eval_suite="harness",
+    tasks_file="experiments/sleep/trace-triage.jsonl")
+DEFAULT_TARGETS = (HARNESS_EDITING, TRACE_TRIAGE)
 
 
-def _rel(value: Any, prefix: str, what: str, name: str) -> str:
+def _rel(value: Any, prefixes: Sequence[str], what: str, name: str) -> str:
     path = str(value or "")
     parts = path.split("/")
-    if (not path.startswith(prefix) or "\\" in path or ":" in path
+    if (not path.startswith(tuple(prefixes)) or "\\" in path or ":" in path
             or any(p in ("", ".", "..", ".git") for p in parts)):
-        raise RegistryError(f"target {name}: {what} {path!r} must be a plain path under {prefix}")
+        raise RegistryError(
+            f"target {name}: {what} {path!r} must be a plain path under "
+            + " or ".join(prefixes)
+        )
     return path
 
 
@@ -67,12 +81,12 @@ def parse_target(raw: Any) -> SkillTarget:
     name = str(raw.get("name") or "")
     if not _NAME_RE.fullmatch(name):
         raise RegistryError(f"bad target name {name!r}")
-    skill = _rel(raw.get("skill"), SKILL_PREFIX, "skill", name)
+    skill = _rel(raw.get("skill"), SKILL_PREFIXES, "skill", name)
     if not skill.endswith("/SKILL.md"):
         raise RegistryError(f"target {name}: skill must point at a SKILL.md")
     memory = raw.get("memory")
-    memory = _rel(memory, SKILL_PREFIX, "memory", name) if memory else None
-    tasks = _rel(raw.get("tasks") or "experiments/sleep/tasks.jsonl", TASKS_PREFIX, "tasks", name)
+    memory = _rel(memory, SKILL_PREFIXES, "memory", name) if memory else None
+    tasks = _rel(raw.get("tasks") or "experiments/sleep/tasks.jsonl", (TASKS_PREFIX,), "tasks", name)
     if not tasks.endswith(".jsonl") or tasks.endswith(".pending.jsonl"):
         raise RegistryError(f"target {name}: tasks must be a reviewed .jsonl file (not pending)")
     owner, suite = str(raw.get("owner_agent") or ""), str(raw.get("eval_suite") or "")
