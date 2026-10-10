@@ -27,7 +27,7 @@ from ci_lab.mcp.registry import (
 _LAZY = {
     "McpHub": "ci_lab.mcp.client", "McpDenied": "ci_lab.mcp.client", "McpToolError": "ci_lab.mcp.client",
     "ToolInfo": "ci_lab.mcp.client", "maf_tools": "ci_lab.mcp.client",
-    "CodeMode": "ci_lab.mcp.codemode", "check_code": "ci_lab.mcp.codemode",
+    "CodeMode": "ci_lab.mcp.codemode", "check_code": "ci_lab.mcp.codecheck",
 }
 
 __all__ = [
