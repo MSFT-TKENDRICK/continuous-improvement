@@ -29,7 +29,7 @@ def test_example_validates_and_runs_offline(tmp_path: Path, capsys: pytest.Captu
     assert main([*run_args(tmp_path / "run"), "--no-telemetry"]) == 0
     doc = json.loads((tmp_path / "run" / "graph_result.json").read_text())
     assert {t: r["status"] for t, r in doc["tasks"].items()} == dict.fromkeys(
-        ("brief", "facts", "risks", "summary"), "committed")
+        ("brief", "inventory", "risks", "summary"), "committed")
     assert doc["critical_path"][0] == "brief" and doc["critical_path"][-1] == "summary"
     capsys.readouterr()
     assert main(["bus", "verify", str(tmp_path / "run" / "bus")]) == 0
