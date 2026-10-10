@@ -71,13 +71,13 @@ def _strategies(hyper: Mapping[str, Any]) -> set[str]:
     return {s for s in (raw.split(",") if isinstance(raw, str) else raw) if s}
 
 
-def _meta_uses(strategies: set[str]) -> list[ModelUse]:
+def _meta_uses(strategies: set[str], meta_harness_dir: Path | None = None) -> list[ModelUse]:
     from ci_lab.meta.spec_loader import AGENTS, SpecError, load_spec, subagent_specs
 
     uses: list[ModelUse] = []
     try:
         for key in AGENTS:
-            spec = load_spec(key)
+            spec = load_spec(key, harness_dir=meta_harness_dir)
             uses.append(ModelUse(spec.model, f"meta agent {key}", META_HINT))
             uses += [ModelUse(s.model, f"meta subagent {s.key}", META_HINT) for s in subagent_specs(spec)]
         if "guard" in strategies:
@@ -118,14 +118,14 @@ def _offline_endpoint(env: Mapping[str, str]) -> tuple[str, str] | None:
 
 def campaign_model_plan(hyper: Mapping[str, Any], *, env: Mapping[str, str] | None = None,
                         harness_dir: Path | None = None, evals_dir: Path | None = None,
-                        tester_model: str | None = None) -> ModelPlan:
+                        tester_model: str | None = None, meta_harness_dir: Path | None = None) -> ModelPlan:
     """Every model a ``copilot``-profile campaign with ``hyper`` will use (see module doc)."""
     from ci_lab.domain.order_support import ASSERT_MODEL_ENV, HARNESS_ROOT, REPO_ROOT
     from ci_lab.optim import lm
 
     env = os.environ if env is None else env
     strategies = _strategies(hyper)
-    plan = ModelPlan(copilot=_meta_uses(strategies))
+    plan = ModelPlan(copilot=_meta_uses(strategies, meta_harness_dir))
     if strategies & {"gepa", "skillopt"}:
         model = lm.resolve_model(Profile.COPILOT, "optimizer", env=env)
         users = "optimizer LM (" + "/".join(sorted(strategies & {"gepa", "skillopt"})) + ")"
@@ -156,7 +156,8 @@ def campaign_model_plan(hyper: Mapping[str, Any], *, env: Mapping[str, str] | No
 
 def make_preflight(profile: Profile | str, *, harness_dir: Path | None = None, evals_dir: Path | None = None,
                    tester_model: str | None = None, env: Mapping[str, str] | None = None,
-                   list_models: ListModels | None = None, fetch: ServedModels | None = None) -> Preflight | None:
+                   list_models: ListModels | None = None, fetch: ServedModels | None = None,
+                   meta_harness_dir: Path | None = None) -> Preflight | None:
     """The campaign preflight for ``profile``: ``None`` for ``fake``/``offline`` (no Copilot models).
 
     ``env`` is read when the preflight runs (default ``os.environ``); ``list_models``/``fetch``
@@ -166,7 +167,7 @@ def make_preflight(profile: Profile | str, *, harness_dir: Path | None = None, e
 
     async def preflight(hyper: Mapping[str, Any]) -> None:
         plan = campaign_model_plan(hyper, env=env, harness_dir=harness_dir, evals_dir=evals_dir,
-                                   tester_model=tester_model)
+                                   tester_model=tester_model, meta_harness_dir=meta_harness_dir)
         await check_copilot_models(plan.copilot, list_models=list_models)
         for base, key, uses in plan.served:
             await asyncio.to_thread(check_served_models, base, key, uses, fetch=fetch)
