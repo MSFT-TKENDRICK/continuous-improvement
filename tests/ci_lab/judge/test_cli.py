@@ -16,7 +16,7 @@ from ci_lab.judge import provider as P
 from ci_lab.judge.s1types import Answer
 
 ROOT = Path(__file__).resolve().parents[3]
-REPLAY_CONFIG = ROOT / "evals" / "assert" / "judge_replay" / "eval_config.yaml"
+REPLAY_CONFIG = Path(__file__).parent / "fixtures" / "eval_config.yaml"
 
 
 def _parse(argv: list[str]) -> argparse.Namespace:
