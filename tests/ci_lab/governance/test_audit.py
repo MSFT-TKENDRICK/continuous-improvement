@@ -42,7 +42,7 @@ def test_append_verify_head_and_oes_extension(tmp_path):
 @pytest.mark.parametrize("field", ["prompt", "content", "arguments", "snapshot", "messages"])
 def test_content_fields_rejected(tmp_path, field):
     with pytest.raises(ga.AuditError, match="content-free"):
-        ga.AuditTrail(tmp_path / "a.jsonl").append({**rec(), field: "secret customer text"})
+        ga.AuditTrail(tmp_path / "a.jsonl").append({**rec(), field: "secret user text"})
     assert not (tmp_path / "a.jsonl").exists()
 
 
