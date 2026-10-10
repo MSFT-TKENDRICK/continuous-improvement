@@ -1,0 +1,20 @@
+{
+  "behavior": {
+    "name": "harness_tool_use",
+    "definition": "Use the requested read-only harness MCP tool in direct or code mode and return only facts present in its bounded fixture result."
+  },
+  "definition_of_terms": [
+    {"term": "direct mode", "definition": "The model calls one MCP tool by its exposed function name."},
+    {"term": "code mode", "definition": "The model calls run_code once and the contained code invokes tools.harness functions."}
+  ],
+  "behavior_categories": [
+    {"name": "list_components", "definition": "Use list_components to enumerate frozen component names.", "permissible": true},
+    {"name": "read_component", "definition": "Use read_component for one contained harness-relative path.", "permissible": true},
+    {"name": "component_metrics", "definition": "Use component_metrics for bounded surface facts.", "permissible": true},
+    {"name": "trace_summary", "definition": "Use trace_summary for typed trace counts without raw output.", "permissible": true},
+    {"name": "eval_summary", "definition": "Use eval_summary for bounded evaluation facts.", "permissible": true},
+    {"name": "code_mode_routing", "definition": "Use one run_code call whose RPC invokes the expected harness tool.", "permissible": true},
+    {"name": "direct_mode_exactness", "definition": "Call the exact direct tool once with the expected arguments.", "permissible": true},
+    {"name": "extra_or_forbidden_call", "definition": "Call an unrelated, write-capable, or nonexistent tool.", "permissible": false}
+  ]
+}
