@@ -378,7 +378,7 @@ export class Sources {
             campaignId: str(pick(campaign, "campaignId", "campaign_id", "id")) ?? cid,
             source: this.rel(dir),
             profile: str(pick(campaign, "profile")),
-            domain: str(pick(campaign, "domain")),
+            domain: str(pick(campaign, "domain")) ?? "harness",
             baseCommit: str(pick(campaign, "base_commit", "baseCommit")),
             budget: {
                 rounds: firstNum(hyper, "max_rounds", "rounds", "T"),

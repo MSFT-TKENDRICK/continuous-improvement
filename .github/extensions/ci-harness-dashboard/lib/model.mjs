@@ -95,7 +95,7 @@ export function campaignView(c) {
     return {
         campaignId: c.campaignId,
         profile: c.profile,
-        domain: c.domain,
+        domain: c.domain ?? "harness",
         source: c.source,
         incumbent: c.frontier ?? null,
         delta: c.calibration?.delta ?? c.calibration?.envelope?.delta ?? null,
@@ -633,6 +633,7 @@ export function summarize(model) {
         generatedAt: model.generatedAt,
         campaigns: model.campaigns.map((c) => ({
             id: c.campaignId,
+            domain: c.domain ?? "harness",
             incumbentScore: c.incumbent?.score ?? null,
             incumbentRound: c.incumbent?.round ?? null,
             rounds: c.rounds.length,

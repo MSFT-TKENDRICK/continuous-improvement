@@ -717,7 +717,7 @@
               "hypothesis": "v1: clarify refund policy",
               "commit": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
               "files": [
-                "src/order_support/harness/prompts/system.md"
+                "harness/prompts/analyst.md"
               ]
             }
           ],
@@ -739,7 +739,7 @@
               "hypothesis": "v2: clarify refund policy",
               "commit": "cccccccccccccccccccccccccccccccccccccccc",
               "files": [
-                "src/order_support/harness/prompts/system.md"
+                "harness/prompts/analyst.md"
               ]
             }
           ],
