@@ -36,9 +36,9 @@ from ci_lab.providers.streaming import response_updates
 __all__ = ["DEFAULT_CID", "FakeDesignerClient", "parse_request"]
 
 DEFAULT_CID = "chat-demo"
-GREETING = ("I design RRSI campaigns. Tell me what to improve, how many arms and rounds you can afford, "
-            "and whether to run locally or via the workflow. Say \"draft\" to save a design and "
-            "\"launch\" to start it after you approve.")
+GREETING = ("I design RRSI campaigns that improve the harness. Tell me which harness behavior or metric "
+            "to improve, how many arms and rounds you can afford, and whether to run locally or via the "
+            "workflow. Say \"draft\" to save a design and \"launch\" to start it after you approve.")
 _CID_RE = re.compile(r"\b[a-z0-9][a-z0-9-]{2,40}\b")
 _COUNT_RE = re.compile(r"\b(\d+)[- ]?(?P<unit>arms?|rounds?)\b")
 
@@ -116,7 +116,7 @@ class FakeDesignerClient(FunctionInvocationLayer, ChatMiddlewareLayer, ChatTelem
             return [Content.from_function_call(
                 call_id=call_id, name="draft_campaign",
                 arguments={"cid": req["cid"], "hyper": {"arms": req["arms"]}, "rounds": req["rounds"],
-                           "target": req["target"], "rationale": "scripted fake-profile draft"})]
+                           "target": req["target"], "rationale": "improve the harness (fake profile)"})]
         return GREETING
 
     async def _respond(self, messages: Sequence[Message]) -> ChatResponse:
