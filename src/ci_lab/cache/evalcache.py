@@ -57,7 +57,9 @@ def _score_json(score: TaskScore) -> dict[str, Any]:
     return {"case_id": score.case_id, "trial": score.trial, "suite": score.suite, "score": score.score,
             "violations": [{"rule_id": v.rule_id, "severity": v.severity, "detail": v.detail}
                            for v in score.violations],
-            "tokens_in": score.tokens_in, "tokens_out": score.tokens_out, "served_model": score.served_model}
+            "tokens_in": score.tokens_in, "tokens_out": score.tokens_out, "served_model": score.served_model,
+            "wall_ms": score.wall_ms, "llm_calls": score.llm_calls, "tool_calls": score.tool_calls,
+            "subscores": dict(score.subscores)}
 
 
 def _score_from(d: dict[str, Any]) -> TaskScore:
@@ -65,7 +67,9 @@ def _score_from(d: dict[str, Any]) -> TaskScore:
                      violations=tuple(Violation(v["rule_id"], v["severity"], v["detail"])
                                       for v in d.get("violations", ())),
                      tokens_in=int(d.get("tokens_in", 0)), tokens_out=int(d.get("tokens_out", 0)),
-                     served_model=d.get("served_model"))
+                     served_model=d.get("served_model"), wall_ms=float(d.get("wall_ms") or 0.0),
+                     llm_calls=int(d.get("llm_calls") or 0), tool_calls=int(d.get("tool_calls") or 0),
+                     subscores={str(k): float(v) for k, v in (d.get("subscores") or {}).items()})
 
 
 class EvalCache:

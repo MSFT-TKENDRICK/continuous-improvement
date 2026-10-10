@@ -135,6 +135,13 @@ class TaskScore:
     tokens_in: int = 0
     tokens_out: int = 0
     served_model: str | None = None
+    # Evaluator-measured runtime cost of this trial (ci_lab.metrics.RunMeter); never agent-supplied.
+    wall_ms: float = 0.0
+    llm_calls: int = 0
+    tool_calls: int = 0
+    # Named diagnostic subscores (e.g. "resource.<criterion>", "resource_score"); ``score`` stays the
+    # deliverable-quality score and never folds these in.
+    subscores: dict[str, float] = field(default_factory=dict, hash=False)
 
 
 @dataclass(frozen=True)
@@ -151,6 +158,8 @@ class EvalResult:
     split: Literal["evolve", "heldout", "ood", "aa"]
     pin: EvaluatorPin
     scores: list[TaskScore] = field(default_factory=list)
+    # Evaluator-measured surface metrics of the evaluated harness (ci_lab.metrics.surface_metrics).
+    surface: dict[str, float] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -179,10 +188,36 @@ class Domain(Protocol):
 
 # ---------------------------------------------------------------- arms / RRSI
 
-COMPONENTS = ("prompt", "skill", "client_tool", "config", "memory", "context_mgmt", "guard")
+COMPONENTS = ("prompt", "skill", "client_tool", "config", "memory", "context_mgmt", "guard",
+              "agent", "loop", "workflow", "mcp")
 # Components text strategies (agent/gepa/skillopt) may target; "guard" (harness/guards/**) is
 # written only by the guard strategy (v2.4 §13, frozen for text optimizers).
 TEXT_COMPONENTS = tuple(c for c in COMPONENTS if c != "guard")
+# Owning optimizer per component. "agl" (Agent Lightning) is a component owner, not an RRSI arm
+# strategy, so it is deliberately absent from STRATEGIES.
+COMPONENT_OWNERS: Mapping[str, str] = {
+    "prompt": "gepa",
+    "skill": "skillopt",
+    "guard": "guard",
+    "agent": "agl",
+    "loop": "agl",
+    "workflow": "agl",
+    "mcp": "agl",
+    "client_tool": "agl",
+    "config": "agl",
+    "context_mgmt": "agl",
+    "memory": "agl",
+}
+
+
+def strategy_may_edit(strategy: str, component: str) -> bool:
+    """Whether ``strategy`` may write ``component``: the generalist ``agent`` strategy may edit every text
+    component, ``guard`` only guards, any other strategy only the components it owns."""
+    if strategy == "agent":
+        return component in TEXT_COMPONENTS
+    if strategy == "guard":
+        return component == "guard"
+    return COMPONENT_OWNERS.get(component) == strategy
 
 
 @dataclass(frozen=True)
