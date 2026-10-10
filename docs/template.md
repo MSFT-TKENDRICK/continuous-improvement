@@ -92,6 +92,11 @@ Python project in `pyproject.toml` is optional.
 | `CI_HARNESS_ENABLED` | `campaign-scheduled`, `sleep-nightly`, `usage-harvest`, `governance-native` | `true` to opt in. Anything else: the `opt_in` job prints a notice and the workflow does nothing. |
 | `CAMPAIGN_ID` | `campaign-scheduled` | Campaign to advance on the weekly schedule (unset: no campaign runs). See [campaign.md](campaign.md). |
 | `CAMPAIGN_ROUNDS` | `campaign-scheduled` | Rounds per run, 1–9 (default 1). |
+| `CI_LAB_TARGET_MODEL` | `campaign-scheduled`, `sleep-nightly` | Pinned harness target model (default `gpt-5-mini`). |
+| `CI_LAB_JUDGE_MODEL` | `campaign-scheduled`, `sleep-nightly` | Pinned harness judge model (default `s1/llamacpp/qwen3.5-4b`). |
+| `CI_S1_LLAMA_URL` | `campaign-scheduled`, `sleep-nightly` | Required URL of the System-1 llama.cpp judge for live harness evaluation. |
+| `CI_LAB_SLEEP_TARGET_MODEL` | `sleep-nightly` | Pinned SkillOpt target model (default `gpt-5-mini`). |
+| `CI_LAB_SLEEP_REFLECTOR_MODEL` | `sleep-nightly` | Pinned SkillOpt reflector model (default `gpt-5-mini`). |
 | `SLEEP_USAGE_THRESHOLD` | `sleep-nightly` | New reviewed tasks needed before a night runs (default 1). See [sleep.md](sleep.md). |
 | `SLEEP_LESSONS` | `sleep-nightly` | Lessons hook for the night (unset: off). See [lessons.md](lessons.md). |
 | `CI_TELEMETRY` | `sleep-nightly` | OTel opt-in for the agent during evals (`auto`, `1`, `true`, `on`; unset: off). See [telemetry.md](telemetry.md). |
