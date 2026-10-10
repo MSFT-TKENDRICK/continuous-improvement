@@ -7,7 +7,15 @@ from typing import Any
 
 import pytest
 
-from ci_lab.contracts import ArmResult, CriticVerdict, Edit, EvalResult, EvaluatorPin, TaskScore, Violation
+from ci_lab.contracts import (
+    ArmResult,
+    CriticVerdict,
+    Edit,
+    EvalResult,
+    EvaluatorPin,
+    TaskScore,
+    Violation,
+)
 from ci_lab.oes import canonical
 from ci_lab.oes.build import (
     ConfirmStats,
@@ -27,7 +35,7 @@ PIN = EvaluatorPin("e0e1e2e3e4e5e6e7e8e9e0e1e2e3e4e5e6e7e8e9", "gpt-judge", "Git
 SPLITS = {"evolve": "sha256:" + "1" * 64, "heldout": "sha256:" + "2" * 64}
 H0, H1, H2 = "a" * 40, "b" * 40, "c" * 40
 T0, T1, T2 = "d0" * 20, "d1" * 20, "d2" * 20
-CRIT = Violation("refund.unverified_identity", "critical", "refund before verification")
+CRIT = Violation("change.unverified_identity", "critical", "change before verification")
 PARAMS = RrsiParams(delta=0.02, delta_method="aa_bootstrap_q95", beta0=0.10, beta1=44.5, ws=0.0, wc=15.0, wn=0.5)
 
 
@@ -36,7 +44,7 @@ def make_eval(tree: str, split: str = "evolve", *, base: float = 0.6, n: int = 9
     scores = []
     for i in range(n):
         score = None if i < missing else round(min(1.0, base + (i % 3 - 1) * 0.1), 3)
-        scores.append(TaskScore(case_id=f"c{i:02d}", trial=0, suite=("refund", "identity", "tone")[i % 3],
+        scores.append(TaskScore(case_id=f"c{i:02d}", trial=0, suite=("change", "identity", "tone")[i % 3],
                                 score=score, violations=(CRIT,) if i < crit else (), tokens_in=tokens - 50,
                                 tokens_out=50, served_model="gpt-target"))
     return EvalResult(harness_tree=tree, split=split, pin=pin, scores=scores)  # type: ignore[arg-type]
@@ -44,7 +52,7 @@ def make_eval(tree: str, split: str = "evolve", *, base: float = 0.6, n: int = 9
 
 def make_arm(name: str, head: str | None, tree: str | None, ev: EvalResult | None, *,
              passed: bool = True) -> ArmResult:
-    edits = [Edit("prompt", f"{name}: clarify refund policy", ("src/order_support/harness/prompts/system.md",),
+    edits = [Edit("prompt", f"{name}: clarify change policy", ("harness/prompts/system.md",),
                   head)] if head else []
     return ArmResult(arm=name, base_commit=H0, head_commit=head, harness_tree=tree, edits=edits,
                      critic=CriticVerdict(passed=passed, reasons=[] if passed else ["touches frozen path"]),
@@ -104,7 +112,7 @@ def build_sleep(*, candidate: bool = True, assert_passed: bool = True, **kw: Any
         budget_used={"tasks": 32, "rollouts": 64, "tokens": 120000, "wallClockSeconds": 1800.5},
         budget_limits={"tasks": 50, "rollouts": 200, "tokens": 500000, "wallClockSeconds": 7200},
         candidate_digest="sha256:" + "3" * 64 if candidate else None, incumbent_digest="sha256:" + "4" * 64,
-        night_index=7, skill_path="src/order_support/harness/skills/order-support/SKILL.md",
+        night_index=7, skill_path="harness/skills/harness-agent/SKILL.md",
         exported_at=AT, source_version=VERSION, **kw)
 
 

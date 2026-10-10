@@ -50,7 +50,7 @@
       "key": "v1",
       "name": "arm v1",
       "role": "treatment",
-      "description": "[prompt] v1: clarify refund policy",
+      "description": "[prompt] v1: clarify change policy",
       "config": {
         "harnessTree": "d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1",
         "status": "evaluated"
@@ -73,7 +73,7 @@
       "key": "v2",
       "name": "arm v2",
       "role": "treatment",
-      "description": "[prompt] v2: clarify refund policy",
+      "description": "[prompt] v2: clarify change policy",
       "config": {
         "harnessTree": "d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2",
         "status": "evaluated"
@@ -170,8 +170,8 @@
       "aggregation": "mean"
     },
     {
-      "id": "suite_score.identity",
-      "name": "identity suite score",
+      "id": "suite_score.change",
+      "name": "change suite score",
       "role": "diagnostic",
       "direction": "increase_is_good",
       "type": "ratio",
@@ -179,8 +179,8 @@
       "aggregation": "mean"
     },
     {
-      "id": "suite_score.refund",
-      "name": "refund suite score",
+      "id": "suite_score.identity",
+      "name": "identity suite score",
       "role": "diagnostic",
       "direction": "increase_is_good",
       "type": "ratio",
@@ -294,6 +294,19 @@
         "decisionImpact": "informational"
       },
       {
+        "metricId": "suite_score.change",
+        "comparison": {
+          "baselineVariantId": "inc",
+          "variantId": "v1"
+        },
+        "role": "diagnostic",
+        "baselineValue": 0.5,
+        "variantValue": 0.6,
+        "absoluteDifference": 0.1,
+        "relativeDifference": 0.2,
+        "decisionImpact": "informational"
+      },
+      {
         "metricId": "suite_score.identity",
         "comparison": {
           "baselineVariantId": "inc",
@@ -304,19 +317,6 @@
         "variantValue": 0.7,
         "absoluteDifference": 0.1,
         "relativeDifference": 0.166667,
-        "decisionImpact": "informational"
-      },
-      {
-        "metricId": "suite_score.refund",
-        "comparison": {
-          "baselineVariantId": "inc",
-          "variantId": "v1"
-        },
-        "role": "diagnostic",
-        "baselineValue": 0.5,
-        "variantValue": 0.6,
-        "absoluteDifference": 0.1,
-        "relativeDifference": 0.2,
         "decisionImpact": "informational"
       },
       {
@@ -415,6 +415,19 @@
         "decisionImpact": "informational"
       },
       {
+        "metricId": "suite_score.change",
+        "comparison": {
+          "baselineVariantId": "inc",
+          "variantId": "v2"
+        },
+        "role": "diagnostic",
+        "baselineValue": 0.5,
+        "variantValue": 0.45,
+        "absoluteDifference": -0.05,
+        "relativeDifference": -0.1,
+        "decisionImpact": "informational"
+      },
+      {
         "metricId": "suite_score.identity",
         "comparison": {
           "baselineVariantId": "inc",
@@ -425,19 +438,6 @@
         "variantValue": 0.55,
         "absoluteDifference": -0.05,
         "relativeDifference": -0.083333,
-        "decisionImpact": "informational"
-      },
-      {
-        "metricId": "suite_score.refund",
-        "comparison": {
-          "baselineVariantId": "inc",
-          "variantId": "v2"
-        },
-        "role": "diagnostic",
-        "baselineValue": 0.5,
-        "variantValue": 0.45,
-        "absoluteDifference": -0.05,
-        "relativeDifference": -0.1,
         "decisionImpact": "informational"
       },
       {
@@ -636,7 +636,7 @@
     ],
     "codeVersion": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     "metricDefinitionVersion": "ci-lab-metrics/0.1.0",
-    "resultHash": "sha256:cc7407f4267271d8d82e31149de6c692d838c6c22ca6fc2d41e705fc50011cf5"
+    "resultHash": "sha256:8005aafc97d0a6eeb48ed478dd3c19f6b8b70404a63f88d58708f147686ed19b"
   },
   "extensions": {
     "com.microsoft.ci.rrsi": {
@@ -714,10 +714,10 @@
           "edits": [
             {
               "component": "prompt",
-              "hypothesis": "v1: clarify refund policy",
+              "hypothesis": "v1: clarify change policy",
               "commit": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
               "files": [
-                "src/order_support/harness/prompts/system.md"
+                "harness/prompts/system.md"
               ]
             }
           ],
@@ -736,10 +736,10 @@
           "edits": [
             {
               "component": "prompt",
-              "hypothesis": "v2: clarify refund policy",
+              "hypothesis": "v2: clarify change policy",
               "commit": "cccccccccccccccccccccccccccccccccccccccc",
               "files": [
-                "src/order_support/harness/prompts/system.md"
+                "harness/prompts/system.md"
               ]
             }
           ],
@@ -788,5 +788,5 @@
       "ciLowerBound": 0.04
     }
   },
-  "contentHash": "sha256:7f9bfe4126381a2664cd7b9dfc0b56b29c04958d0eaefad7580b802df968ae05"
+  "contentHash": "sha256:86fdbbee866d1c4898df514473e26d284db343296593f9d1063ee52abec640f5"
 }

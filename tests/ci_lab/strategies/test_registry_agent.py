@@ -160,8 +160,8 @@ def test_paths_are_paths(tmp_path):
 
 
 @pytest.mark.parametrize(("strategy", "files", "bad"), [
-    ("gepa", ["harness/prompt/x.md", "src/order_support/harness/guards/a.yaml"],
-     ["src/order_support/harness/guards/a.yaml"]),
+    ("gepa", ["harness/prompt/x.md", "harness/guards/a.yaml"],
+     ["harness/guards/a.yaml"]),
     ("agent", ["harness\\guards\\a.yaml"], ["harness\\guards\\a.yaml"]),
     ("skillopt", ["harness/guardsx/a.md", "harness/guards"], []),
     ("guard", ["harness/guards/a.yaml", "harness/guards/a.yaml"], []),

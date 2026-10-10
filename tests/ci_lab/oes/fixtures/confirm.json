@@ -132,8 +132,8 @@
       "aggregation": "mean"
     },
     {
-      "id": "suite_score.identity",
-      "name": "identity suite score",
+      "id": "suite_score.change",
+      "name": "change suite score",
       "role": "diagnostic",
       "direction": "increase_is_good",
       "type": "ratio",
@@ -141,8 +141,8 @@
       "aggregation": "mean"
     },
     {
-      "id": "suite_score.refund",
-      "name": "refund suite score",
+      "id": "suite_score.identity",
+      "name": "identity suite score",
       "role": "diagnostic",
       "direction": "increase_is_good",
       "type": "ratio",
@@ -247,6 +247,19 @@
         "decisionImpact": "informational"
       },
       {
+        "metricId": "suite_score.change",
+        "comparison": {
+          "baselineVariantId": "h0",
+          "variantId": "final"
+        },
+        "role": "diagnostic",
+        "baselineValue": 0.5,
+        "variantValue": 0.6,
+        "absoluteDifference": 0.1,
+        "relativeDifference": 0.2,
+        "decisionImpact": "informational"
+      },
+      {
         "metricId": "suite_score.identity",
         "comparison": {
           "baselineVariantId": "h0",
@@ -257,19 +270,6 @@
         "variantValue": 0.7,
         "absoluteDifference": 0.1,
         "relativeDifference": 0.166667,
-        "decisionImpact": "informational"
-      },
-      {
-        "metricId": "suite_score.refund",
-        "comparison": {
-          "baselineVariantId": "h0",
-          "variantId": "final"
-        },
-        "role": "diagnostic",
-        "baselineValue": 0.5,
-        "variantValue": 0.6,
-        "absoluteDifference": 0.1,
-        "relativeDifference": 0.2,
         "decisionImpact": "informational"
       },
       {
@@ -402,7 +402,7 @@
     ],
     "codeVersion": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
     "metricDefinitionVersion": "ci-lab-metrics/0.1.0",
-    "resultHash": "sha256:736ec763afe94088d20fc12944d678a9e9e8551a64c5d13071d4039ba7c7ebe3"
+    "resultHash": "sha256:e7faa31a457ad881b619762bb1a85ecaaf9eafcc92a5f2fcc22d155da94bd87f"
   },
   "extensions": {
     "com.microsoft.ci.rrsi": {
@@ -459,5 +459,5 @@
       "ciLowerBound": 0.03
     }
   },
-  "contentHash": "sha256:11c7cb96ea0dd2a402b7c70d7ea2d54a5f15ef4d8fd125b2c11da5a017506799"
+  "contentHash": "sha256:17e7a1ea393a5c75ba135c2426e852d05842800be9bda458137d46b9190fd7e0"
 }

@@ -33,12 +33,12 @@ def harness(tmp_path: Path) -> Path:
     _w(h, "harness.yaml", "format: 1\ncomponents:\n  prompt: [prompts/**]\n" * 20)
     _w(h, "prompts/system.md", "x" * 101)
     _w(h, "agents/triage.yaml",
-       "kind: Prompt\nname: triage\ninstructions: " + "y" * 40 + "\ntools:\n  - lookup\n  - refund\n")
+       "kind: Prompt\nname: triage\ninstructions: " + "y" * 40 + "\ntools:\n  - lookup\n  - change\n")
     _w(h, "workflows/flow.yaml",
        "kind: Workflow\ntrigger:\n  actions:\n    - id: a\n    - id: b\n      actions:\n        - id: c\n")
-    _w(h, "tools/lookup.yaml", "format: 1\ntools:\n  lookup: {}\n  refund: {}\n  cancel: {}\n")
+    _w(h, "tools/lookup.yaml", "format: 1\ntools:\n  lookup: {}\n  change: {}\n  cancel: {}\n")
     _w(h, "mcp/servers.json", '{"servers": {"a": {}, "b": {}}}')
-    _w(h, "skills/refunds/SKILL.md", "line one\n\nline two\nline three\n")
+    _w(h, "skills/changes/SKILL.md", "line one\n\nline two\nline three\n")
     _w(h, "loop/policy.py",
        "# comment\n\ndef f(x):\n    if x and x > 1:\n        return [i for i in x if i]\n    return 0\n")
     return h
