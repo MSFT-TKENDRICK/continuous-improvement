@@ -209,7 +209,7 @@ litellm.completion(model="openai/gpt-5-mini", api_base="http://127.0.0.1:8765/v1
 
 **Scope.** Each request runs in its own `copilot_scope`, so requests never share sessions.
 
-**Tracing.** copilot-serve is a long-lived service, so it never inherits a pinned `TRACEPARENT` (design §12.5). Each request is handled inside `obs.use_carrier(request.headers)`, so the request joins the trace of whoever sent its W3C `traceparent` header. Clients add that header per request with `obs.carrier()`; the OFFLINE factory client does this automatically through an httpx request hook. The Copilot CLI subprocess also gets `service_env()`, which is the current environment minus `TRACEPARENT`/`TRACESTATE`.
+**Tracing.** copilot-serve is a long-lived service, so it never inherits a pinned `TRACEPARENT` (design §12.5). Each request is handled inside `obs.use_carrier(request.headers)`, which extracts from an empty context so a request without `traceparent` cannot inherit an ambient server span. The OFFLINE factory captures the caller carrier before model/HTTP auto-instrumentation and injects only that context into the request. The Copilot CLI subprocess also gets `service_env()`, which is the current environment minus `TRACEPARENT`/`TRACESTATE`.
 
 **Spawning.** `serve.spawn(model=..., key_file=...)` starts `ci-lab copilot-serve` as a child process:
 
