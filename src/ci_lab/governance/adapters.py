@@ -12,6 +12,8 @@ Snapshot shape written by the hosts (``ci_lab.governance.maf`` and the campaign 
 
 from __future__ import annotations
 
+import ast
+import json
 from collections.abc import Callable, Iterable, Mapping
 from functools import lru_cache
 from typing import Any
@@ -37,6 +39,11 @@ _PII = {
     "card": re2.compile(r"\b(?:\d[ -]?){12,18}\d\b"),
 }
 _LEAK_SCREENS: list[Callable[[str], list[str]]] = []
+_HARNESS_NETWORK_IMPORTS = frozenset({
+    "aiohttp", "ftplib", "http", "httpx", "requests", "socket", "subprocess",
+    "telnetlib", "urllib", "webbrowser",
+})
+_HARNESS_UNSAFE_CALLS = frozenset({"__import__", "compile", "eval", "exec", "open"})
 
 
 def register_leak_screen(screen: Callable[[str], list[str]] | None) -> None:
@@ -220,6 +227,71 @@ def campaign_startup(inv: Mapping[str, Any]) -> dict[str, Any]:
     return {"decision": "allow"}
 
 
+def _harness_code_reason(code: str, allowed_imports: set[str]) -> str | None:
+    try:
+        tree = ast.parse(code)
+    except (SyntaxError, ValueError):
+        return "code_invalid"
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.Import, ast.ImportFrom)):
+            modules = ([alias.name for alias in node.names] if isinstance(node, ast.Import)
+                       else [node.module or ""])
+            roots = {name.split(".", 1)[0] for name in modules}
+            if roots & _HARNESS_NETWORK_IMPORTS:
+                return "network_import_forbidden"
+            if not roots <= allowed_imports:
+                return "import_not_allowed"
+        if isinstance(node, ast.Call):
+            name = node.func.id if isinstance(node.func, ast.Name) else None
+            if name in _HARNESS_UNSAFE_CALLS:
+                return "unsafe_call_forbidden"
+    return None
+
+
+def harness_tools(inv: Mapping[str, Any]) -> dict[str, Any]:
+    """Frozen per-agent harness tool, path, size, and code-mode policy."""
+    policy, snap, args = _parts(inv)
+    if killed := _killed(snap):
+        return killed
+    call = snap.get("call") or {}
+    name, agent = call.get("name"), (snap.get("agent") or {}).get("name")
+    if not isinstance(args, Mapping):
+        return {"decision": "deny", "reason": "arguments_invalid"}
+    allowed = set((policy.get("agent_tools") or {}).get(agent, ()))
+    if not isinstance(name, str) or name not in allowed:
+        return {"decision": "deny", "reason": "tool_not_allowed",
+                "message": "Tool is not allowed for this harness agent."}
+    try:
+        size = len(json.dumps(args, ensure_ascii=False, separators=(",", ":")).encode())
+    except (TypeError, ValueError):
+        return {"decision": "deny", "reason": "arguments_invalid"}
+    if size > int(policy.get("max_argument_bytes", 32768)):
+        return {"decision": "deny", "reason": "arguments_too_large"}
+    for key in policy.get("path_args") or ():
+        raw = args.get(key)
+        if raw is None:
+            continue
+        if not isinstance(raw, str):
+            return {"decision": "deny", "reason": "path_invalid"}
+        path = raw.replace("\\", "/")
+        if path.startswith("/") or re2.match(r"^[A-Za-z]:", path) or ".." in path.split("/"):
+            return {"decision": "deny", "reason": "path_outside_root"}
+    if name == "run_code":
+        code = args.get("code")
+        if not isinstance(code, str):
+            return {"decision": "deny", "reason": "code_invalid"}
+        if len(code) > int(policy.get("max_code_chars", 12000)):
+            return {"decision": "deny", "reason": "code_too_large"}
+        reason = _harness_code_reason(code, set(policy.get("allowed_imports") or ()))
+        if reason:
+            return {"decision": "deny", "reason": reason}
+        if float(args.get("timeout_s", 0)) > float(policy.get("timeout_s_max", 60)):
+            return {"decision": "deny", "reason": "runtime_limit_exceeded"}
+        if int(args.get("max_output_chars", 0)) > int(policy.get("max_output_chars_max", 20000)):
+            return {"decision": "deny", "reason": "output_limit_exceeded"}
+    return {"decision": "allow"}
+
+
 DISPATCHER: dict[str, Callable[[Mapping[str, Any]], dict[str, Any]]] = {
     "ci.order_support.tools": order_support_tools,
     "ci.meta.tools": meta_tools,
@@ -227,6 +299,7 @@ DISPATCHER: dict[str, Callable[[Mapping[str, Any]], dict[str, Any]]] = {
     "ci.screen_input": screen_input,
     "ci.redact_output": redact_output,
     "ci.campaign.startup": campaign_startup,
+    "ci.harness.tools": harness_tools,
 }
 
 

@@ -352,9 +352,9 @@ async def run_tool_use(row: Mapping[str, Any], harness_dir: Path, profile: str,
         allowed = set(row.get("expected", {}).get("rpc_tools") or
                       (row.get("mcp") or {}).get("available_tools") or ())
 
-        def govern(_server: str, tool: str, _args: dict[str, Any]) -> str | None:
-            return None if tool in allowed else "tool is outside the frozen case exposure"
+        from ci_lab.governance.maf import harness_mcp_before_call
 
+        govern = harness_mcp_before_call(agent_name="CiFailureAnalyst", allowed_tools=allowed)
         hub = McpHub(registry, exposure, roots={"harness_root": harness_dir}, before_call=govern)
         await hub.__aenter__()
         close = hub.__aexit__
