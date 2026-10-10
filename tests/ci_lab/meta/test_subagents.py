@@ -23,13 +23,13 @@ from ci_lab.meta.spec_loader import (
 )
 from ci_lab.testing import Call, FakeChatClient
 
-H = "src/order_support/harness"
+H = "harness"
 PROMPT = f"{H}/prompts/system.md"
-FAILURE = FailureRecord(case_id="refund-abc", suite="order_support_refund_authorization", category="refund_no_id",
+FAILURE = FailureRecord(case_id="change-abc", suite="harness_proposal", category="write_without_read",
                         rule_ids=("judge.policy_violation",), rubric_scores={"policy_violation": 0.0},
-                        excerpt="Refund issued before the order was looked up.")
+                        excerpt="The edit was written before the resource was read.")
 SUB_MARK = "You are the failure analyst subagent"
-ANSWER = "ROOT CAUSE: system.md never says to look the order up before refunding (refund-abc)."
+ANSWER = "ROOT CAUSE: system.md never says to read the resource before editing (change-abc)."
 
 
 def _named(name):
@@ -185,7 +185,8 @@ class RoutingClient(FakeChatClient):
 
     async def _respond(self, messages, options):
         text = str(options.get("instructions") or "") + " ".join(m.text or "" for m in messages)
-        sub = SUB_MARK in text
+        tools = {tool.name for tool in options.get("tools", [])}
+        sub = SUB_MARK in text or ("read_brief" in tools and "submit_proposal_done" not in tools)
         (self.sub_requests if sub else self.parent_requests).append((list(messages), dict(options)))
         self.script = self.sub_script if sub else self.parent_script
         return await super()._respond(messages, options)
@@ -210,15 +211,15 @@ def test_proposer_delegates_to_failure_analyst_and_gets_its_answer(repo, tmp_pat
                      worktree=wt, base_commit=base, failures=[FAILURE], profile=Profile.FAKE,
                      run_dir=tmp_path / "runs" / "arm-a")
     surface = ArmSurface(layout.surface, layout.component_globs, layout.frozen)
-    new = "You are a helpful order support agent.\nAlways verify identity first.\nLook the order up first.\n"
+    new = "You are a careful harness agent.\nRead the resource before editing.\nValidate every change.\n"
     parent = [
-        [Call("background_agents_start_task", {"agent_name": "CiFailureAnalyst", "input": "Why do refunds fail?",
-                                               "description": "refund drill-down"})],
+        [Call("background_agents_start_task", {"agent_name": "CiFailureAnalyst", "input": "Why do changes fail?",
+                                               "description": "change drill-down"})],
         [Call("background_agents_wait_for_first_completion", {"task_ids": [1]})],
         [Call("background_agents_get_task_results", {"task_id": 1})],
         [Call("write_file", {"path": PROMPT, "content": new})],
-        [Call("commit_edit", {"component": "prompt", "hypothesis": "Order lookup before refunds."})],
-        [Call("submit_proposal_done", {"summary": "lookup first", "predicted_fixes": ["refund-abc"]})],
+        [Call("commit_edit", {"component": "prompt", "hypothesis": "Read resources before changes."})],
+        [Call("submit_proposal_done", {"summary": "read first", "predicted_fixes": ["change-abc"]})],
     ]
     sub = [
         [Call("read_brief", {"name": "failures"})],
@@ -229,18 +230,18 @@ def test_proposer_delegates_to_failure_analyst_and_gets_its_answer(repo, tmp_pat
     client = RoutingClient(parent, sub)
     result = asyncio.run(run_proposer(ctx, client, surface=surface))
 
-    assert result.submission.predicted_fixes == ["refund-abc"] and len(result.edits) == 1
+    assert result.submission.predicted_fixes == ["change-abc"] and len(result.edits) == 1
     assert len(client.sub_requests) == 4 and not client.sub_script and not client.parent_script
     sub_tools = {t.name for t in client.sub_requests[0][1]["tools"]}
     assert sub_tools == set(load_spec("failure_analyst").tools)
     parent_tools = {t.name for t in client.parent_requests[0][1]["tools"]}
     assert {"background_agents_start_task", "write_file", "commit_edit"} <= parent_tools
     sub_texts = _texts(client.sub_requests)
-    assert "refund-abc" in sub_texts[1]  # failures document (not readable by the proposer) reached the subagent
-    assert "Always verify identity first." in sub_texts[2]
+    assert "change-abc" in sub_texts[1]  # failures document (not readable by the proposer) reached the subagent
+    assert "Read resources before edits." in sub_texts[2]
     assert (wt / PROMPT).read_text(encoding="utf-8") == new  # subagent write refused; parent's edit landed
     parent_texts = _texts(client.parent_requests)
     # subagent answer flowed back via get_task_results, sanitized for the student (contract v2 §6)
-    assert any("never says to look the order up before refunding" in t for t in parent_texts)
-    assert not any("refund-abc" in t for t in parent_texts)
+    assert any("never says to read the resource before editing" in t for t in parent_texts)
+    assert not any("change-abc" in t for t in parent_texts)
     assert "CiFailureAnalyst" in str(client.parent_requests[0][1].get("instructions"))

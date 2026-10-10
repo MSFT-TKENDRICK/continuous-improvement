@@ -8,9 +8,9 @@ import pytest
 
 AGENT_YAML = """\
 kind: Prompt
-name: OrderSupport
-description: Answers order questions.
-instructions: You are the order support agent.
+name: CiStudent
+description: Inspects harness resources.
+instructions: You are the harness student agent.
 model:
   id: gpt-5-mini
   provider: GitHubCopilot
@@ -19,15 +19,15 @@ model:
     reasoningEffort: low
 tools:
   - kind: function
-    name: lookup_order
-    description: Look up an order by id.
+    name: read_file
+    description: Read a resource by id.
     bindings:
-      - name: lookup_order
+      - name: read_file
     parameters:
       properties:
-        order_id:
+        resource_id:
           kind: string
-          description: The order id.
+          description: The resource id.
           required: true
 """
 
@@ -50,18 +50,18 @@ def write(tmp_path: Path) -> Callable[[str, str], Path]:
 
 @pytest.fixture
 def agent_yaml(write: Callable[[str, str], Path]) -> Path:
-    return write("agents/order_support.yaml", AGENT_YAML)
+    return write("agents/harness_agent.yaml", AGENT_YAML)
 
 
 @pytest.fixture
-def lookup_calls() -> list[str]:
+def read_calls() -> list[str]:
     return []
 
 
 @pytest.fixture
-def lookup_order(lookup_calls: list[str]) -> Callable[[str], str]:
-    def lookup_order(order_id: str) -> str:
-        lookup_calls.append(order_id)
-        return f"order {order_id}: shipped"
+def read_file(read_calls: list[str]) -> Callable[[str], str]:
+    def read_file(resource_id: str) -> str:
+        read_calls.append(resource_id)
+        return f"resource {resource_id}: ready"
 
-    return lookup_order
+    return read_file

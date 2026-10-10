@@ -16,26 +16,26 @@ KEY = RolloutKey("camp-r00", "base", "case-1", trial=0)
 def _body(scope: RolloutScope) -> None:
     scope.record_model_request({"model": "m"})
     scope.record_model_request({"model": "m"})
-    scope.score("assert.policy", 0.75, suite="refund_authorization", violations=[])
+    scope.score("assert.policy", 0.75, suite="harness_policy", violations=[])
     scope.reward(0.75, source="assert", reason="judged")
 
 
 def test_sync_scope_records_and_succeeds(tmp_path: Path) -> None:
     j = FileRolloutJournal(tmp_path)
     assert current_rollout.get() is None
-    with RolloutScope(j, KEY, {"intent": "refund"}) as scope:
+    with RolloutScope(j, KEY, {"intent": "change"}) as scope:
         assert current_rollout.get() is scope
         _body(scope)
     assert current_rollout.get() is None
     rec = j.load(KEY.rollout_id)
-    assert rec is not None and rec.status == "succeeded" and rec.input == {"intent": "refund"}
+    assert rec is not None and rec.status == "succeeded" and rec.input == {"intent": "change"}
     types = [e["event_type"] for e in rec.events]
     assert types == ["model_request", "model_request", "ci.score", "reward", "ci.metric"]
     reward = rec.events[-2]
     assert reward["data"] == {"value": 0.75, "message": None, "source": "assert", "reason": "judged"}
     assert reward["event_id"] == op_id(KEY.rollout_id, "0", "reward", "reward")
     assert rec.events[2]["data"] == {"name": "assert.policy", "value": 0.75,
-                                     "suite": "refund_authorization", "violations": []}
+                                     "suite": "harness_policy", "violations": []}
     assert rec.events[-1]["data"]["llm_calls"] == 2
 
 
