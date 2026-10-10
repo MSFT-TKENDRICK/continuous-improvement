@@ -54,7 +54,7 @@ test("campaign view: incumbent, rounds, ΔS/ΔC, budget, stop flag", async () =>
     assert.equal(campaignOf("tone-a1-confirm"), "tone-a1");
     assert.equal(campaignOf("plain"), null);
     assert.equal(campaignView({ campaignId: "new" }).domain, "harness");
-    assert.equal(campaignView({ campaignId: "legacy", domain: "order_support" }).domain, "order_support");
+    assert.equal(campaignView({ campaignId: "custom", domain: "external_domain" }).domain, "external_domain");
 });
 
 test("experiments include rounds, calibration, confirm and sleep nights", async () => {
@@ -205,21 +205,21 @@ test("evals: dimensions, judge agreement, errors, staleness", async () => {
     const base = m.evals.find((e) => e.runId === "baseline");
     assert.equal(base.status, "completed");
     assert.equal(base.rows, 4);
-    const pv = base.dimensions.find((d) => d.key === "policy_violation");
-    assert.equal(pv.type, "boolean");
-    const tu = base.dimensions.find((d) => d.key === "tool_use");
-    assert.equal(tu.type, "ordinal");
-    assert.ok(tu.scale.includes("appropriate"));
-    const res = base.dimensions.find((d) => d.key === "resolution");
-    assert.equal(res.type, "numeric");
+    const scope = base.dimensions.find((d) => d.key === "scope_violation");
+    assert.equal(scope.type, "boolean");
+    const component = base.dimensions.find((d) => d.key === "component");
+    assert.equal(component.type, "ordinal");
+    assert.ok(component.scale.includes("mcp"));
+    const evidence = base.dimensions.find((d) => d.key === "evidence_count");
+    assert.equal(evidence.type, "numeric");
     assert.equal(base.agreement, null);
     const two = m.evals.find((e) => e.runId === "two-judges");
     assert.equal(two.judgeModels.length, 2);
     assert.equal(two.errors, 1);
-    assert.ok(two.agreement.byDim.resolution < 1);
+    assert.ok(two.agreement.byDim.evidence_count < 1);
     assert.ok(two.flags.some((f) => f.includes("judge error")));
     assert.ok(two.flags.some((f) => f.startsWith("stale")));
-    assert.ok(two.flags.some((f) => f.includes("low judge agreement on resolution")));
+    assert.ok(two.flags.some((f) => f.includes("low judge agreement on evidence_count")));
 });
 
 test("sleep view and summary", async () => {
