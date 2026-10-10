@@ -116,8 +116,6 @@ config and docs (`py`, `toml`, `yaml`/`yml`, `md`, `mjs`/`js`, `json`, `html`, `
 `txt`), so docs refer to the stack only through that file.
 
 Current allowlists, each pre-existing and legitimate:
-- `src/order_support/agent.py`: the order-support CLI installs its own provider.
-- `src/order_support/{assert_wrapper,cli}.py`: one-shot entrypoints that may attach `TRACEPARENT`.
 - `src/ci_lab/agl/server.py`, `src/ci_lab/providers/copilot.py` (`obs.no-raw-traceparent-env`): long-lived services strip an inherited `TRACEPARENT` from their child env.
 - `tests/ci_lab/maf/test_no_dotnet.py` (`dotnet.no-powerfx-imports`): asserts `powerfx` is not importable.
 - `lint/rules/vendors.yaml` and `tests/ci_lab/lint/test_vendor_rules.py` (the vendor `banned_text` rule): they must name the banned stack.
@@ -131,8 +129,8 @@ The Copilot CLI discovers `.github/extensions/ci-guardrails/extension.mjs` autom
 - force-push (`-f`, `--force[-with-lease]`, `+ref`) or delete targeting `main`/`master`
 - `git config` that sets `core.hooksPath` to anything other than `.githooks`, or unsets it
 - edits or creates of frozen contracts, including `apply_patch` and shell writes, unless `CI_ALLOW_CONTRACT_EDIT=1`:
-  - files `FROZEN_PATHS`: `src/ci_lab/contracts.py`, `src/ci_lab/rulespec.py`, `src/ci_lab/rules/templates.yaml`, `harness/guards/BUNDLE.lock`, `src/order_support/oracle.py`;
-  - directories `FROZEN_DIRS` (any file below): `lint/rules/**`, `**/harness/guards/**` (any depth, e.g. `src/order_support/harness/guards/**`), `src/ci_lab/rules/**`.
+  - files `FROZEN_PATHS`: `src/ci_lab/contracts.py`, `src/ci_lab/rulespec.py`, `src/ci_lab/rules/templates.yaml`, `harness/harness.yaml`, `src/ci_lab/harness_tree/manifest.yaml`, `src/ci_lab/governance/policies/harness.acs.yaml`, `evals/datasets/harness.yaml`;
+  - directories `FROZEN_DIRS` (any file below): `lint/rules/**`, `**/harness/guards/**`, `src/ci_lab/rules/**`.
 
   New or changed lint rules (including `ci-lab reflect` proposals) and guard bundles are therefore written by a human, or by an agent only in an explicitly approved session with `CI_ALLOW_CONTRACT_EDIT=1`. They are then reviewed through CODEOWNERS.
 
@@ -145,8 +143,8 @@ Deny reasons use the same `Violation`/`Fix`/`See` format as the lint output.
 - the frozen paths above;
 - the runtime guard engine (`src/ci_lab/guards/**`);
 - the governance policies and host (`src/ci_lab/governance/**`, [governance.md](governance.md));
-- the safety oracle (`src/order_support/oracle.py`);
-- the System-1 judge (`src/ci_lab/judge/**`, `evals/assert/judge_replay/**`);
+- the frozen harness manifest, governance policy, dataset, ASSERT suites, and measured rubrics;
+- the System-1 judge (`src/ci_lab/judge/**`);
 - the lint engine and hooks (`src/ci_lab/lint/**`, `.githooks/**`);
 - `.github/workflows/**`, `.github/extensions/**`, `scripts/sleep_publish.py` and the Aspire hash pins.
 
