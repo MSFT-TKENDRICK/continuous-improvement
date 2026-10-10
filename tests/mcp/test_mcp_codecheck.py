@@ -58,6 +58,10 @@ def test_check_code_accepts(code):
     ("getattr(tools, '_rpc')", "literal attribute name"),
     ("g = getattr", "may only be called directly"),
     ("'{0.__class__}'.format(1)", "'format' is not allowed"),
+    ("import collections\ncollections.sys.modules", "'sys' is not allowed"),
+    ("import json\njson.codecs.open('x')", "'codecs' is not allowed"),
+    ("def g():\n    yield x.gi_frame.f_back.f_globals\nx = g()", "'gi_frame' is not allowed"),
+    ("try:\n    1/0\nexcept Exception as e:\n    t = e.with_traceback(None).tb_frame", "'tb_frame'"),
     ("match 1:\n    case object(__class__=c):\n        pass", "match attribute"),
     ("def f(:\n", "syntax error"),
 ])
