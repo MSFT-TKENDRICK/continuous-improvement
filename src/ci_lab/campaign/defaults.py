@@ -10,7 +10,8 @@ from collections.abc import Mapping, Sequence
 from typing import Any
 
 from ci_lab.campaign.records import cases, critical_count, mean_score, tokens
-from ci_lab.contracts import STRATEGIES, TEXT_COMPONENTS, ArmResult, EvalResult
+from ci_lab.contracts import TEXT_COMPONENTS, ArmResult, EvalResult
+from ci_lab.rrsi.params import HARNESS_STRATEGIES
 
 DEFAULT_HYPER: dict[str, Any] = {
     "arms": 2,                # N arms per round
@@ -22,13 +23,13 @@ DEFAULT_HYPER: dict[str, Any] = {
     "budget": None,           # fixed edits per arm b_t; None = RRSI anneals b_max -> b_min (Eq. 4)
     "b_min": None,            # final-round edit budget (None = rrsi_profile value)
     "b_max": None,            # first-round edit budget (None = rrsi_profile value)
-    "rrsi_profile": "local",  # ci_lab.rrsi.params profile supplying the remaining RRSI knobs
+    "rrsi_profile": "harness",  # self-hosted harness RRSI profile (resource-regularized)
     "rrsi": {},               # explicit rrsi.params.Hyperparams field overrides
     "budget_tokens": None,    # campaign token budget (None = unlimited)
     "max_arm_attempts": 2,    # arm workflow failures before the arm is marked failed
     "holdout_looks": 1,       # planned held-out looks L (global, per dataset hash)
     "draft_prs": True,
-    "strategies": list(STRATEGIES),  # registered arms, including opt-in guard/agl (fake: rotation)
+    "strategies": list(HARNESS_STRATEGIES),  # harness-owned arms, including structural AGL
     "arm_budget_tokens": None,  # ArmContext.budget_tokens for optimizer strategies
     "heartbeat_s": 30.0,      # status marker heartbeat while long steps run (<= 60, C36)
     "guard_trials": None,     # paired guard-off/on repetitions (None: >= 3 trials/case if stochastic, B4)
