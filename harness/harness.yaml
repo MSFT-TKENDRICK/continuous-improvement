@@ -1,0 +1,56 @@
+# FROZEN control plane of the self-hosted harness tree (contract v3.1 A1). This file is the
+# authority; harness/harness.yaml must be an identical copy (newlines normalized), and
+# HarnessTree.validate() fails when it is not. A candidate tree can therefore never widen its own
+# writable surface, change optimizer ownership or relax the caps below.
+format: ci_lab.harness.v1
+# Component -> globs relative to harness/. Every file under harness/ (except harness.yaml) must match
+# a component. config, memory and context_mgmt have no file surface in this tree yet (the target
+# agents keep no persistent memory or context-management config), so they map to nothing.
+components:
+  prompt: ["prompts/**/*.md"]
+  agent: ["agents/*.yaml"]
+  skill: ["skills/**"]
+  workflow: ["workflows/*.yaml"]
+  loop: ["loops/*.yaml"]
+  client_tool: ["tools/*.yaml"]
+  mcp: ["mcp/exposure.yaml"]
+  guard: ["guards/**"]
+# Mirrors ci_lab.contracts.COMPONENT_OWNERS (validated).
+owners:
+  prompt: gepa
+  skill: skillopt
+  guard: guard
+  agent: agl
+  loop: agl
+  workflow: agl
+  mcp: agl
+  client_tool: agl
+  config: agl
+  context_mgmt: agl
+  memory: agl
+# Repo-relative globs that are never candidate surface.
+frozen:
+  - harness/harness.yaml
+  - src/**
+  - evals/**
+  - schemas/**
+  - .github/**
+  - third_party/**
+# Agent specs every tree must keep (harness/agents/<name>.yaml).
+required_agents: [analyst, proposer, reflector, failure_analyst, student]
+# Function steps that target workflows (harness/workflows/*.yaml) may invoke; the evaluator binds them.
+workflow_functions: [self_check]
+caps:
+  # Per-agent execution knobs in harness/loops/loops.yaml are clamped to these.
+  agents:
+    max_nudges: 4
+    max_tool_calls: 80
+    max_turns: 40
+  code_mode:
+    max_runs: 16
+  # Per-case hard caps of a harness evaluation (A19): exceeding one scores 0 (budget.exceeded).
+  eval:
+    max_llm_calls: 40
+    max_tool_calls: 120
+    max_tokens: 200000
+    timeout_s: 600
