@@ -37,7 +37,7 @@ opt-in availability report. Offline mode requires loopback endpoints and does no
 Example live pins:
 
 ```powershell
-$env:CI_LAB_TARGET_MODEL = 'openai/gpt-5-mini'
+$env:CI_LAB_TARGET_MODEL = 'gpt-5-mini'
 $env:CI_LAB_JUDGE_MODEL = 's1/llamacpp/qwen3.5-4b'
 $env:CI_S1_LLAMA_URL = 'http://127.0.0.1:8081'
 ci-lab campaign run <cid> --rounds 1 --profile offline

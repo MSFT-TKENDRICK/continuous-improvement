@@ -4,6 +4,9 @@ This repository is a GitHub template for the self-improving harness. A new copy 
 repo-root harness tree, five frozen harness ASSERT suites, measured rubrics, a deterministic fake CI
 tier, scheduled campaign and sleep workflows, and frozen governance and validation assets.
 
+The Python distribution is `ci-lab-harness`, its import package is `ci_lab`, the CLI is `ci-lab`,
+and the only registered domain in the shipped template is `harness`.
+
 ## Quick start
 
 1. Choose **Use this template → Create a new repository**. Leave **Include all branches** off.
@@ -51,6 +54,20 @@ Initialization does not remove or rewrite:
 
 ## Repository settings
 
+Shipped automation:
+
+| Workflow | Trigger | Current behavior |
+|---|---|---|
+| `tests.yml` | pull requests; pushes to `main` | Full non-live pytest suite and Node canvas tests. |
+| `lint.yml` | pull requests; pushes to `main` | Structural repository lint. |
+| `governance.yml` | governance-related pull requests | Governance tests, `governance doctor`, and lint. |
+| `web-chat.yml` | chat/canvas pull requests; pushes to `main` | Rebuilds the pinned CopilotKit bundle and rejects drift. |
+| `template-init.yml` | manual | Standard-library initializer; pushes a branch and attempts a draft PR. |
+| `campaign-scheduled.yml` | Monday 09:41 UTC; manual | Live Copilot campaign, deferred privileged publish. |
+| `sleep-nightly.yml` | daily 07:17 UTC; manual | Usage-gated SkillOpt-Sleep, then privileged publish. |
+| `usage-harvest.yml` | daily 05:41 UTC; manual | Converts the latest span artifact into pending-task changes and a draft PR. |
+| `governance-native.yml` | Tuesday 06:17 UTC; manual | Informational native ACS build/parity test. |
+
 Scheduled workflows are gated by `CI_HARNESS_ENABLED`. The campaign and sleep workflows also read
 the pinned target and judge settings documented below.
 
@@ -89,10 +106,26 @@ uv run ci-lab lint
 uv run ci-lab template doctor
 ```
 
-## Adding a future custom domain
+## Adding a custom domain
 
-Custom domains remain an extension point, not a second built-in example. Implement the
-`ci_lab.contracts.Domain` protocol, register the domain explicitly, provide frozen suites and
-rubrics, define a bounded candidate surface, and update publish allowlists and Code Owner policy in
-a reviewed change. Keep evaluators, governance, and measurements outside the candidate surface.
-The harness target remains the default unless the operator explicitly selects the custom domain.
+There is no configuration-only domain plug-in today. The shipped registry
+`ci_lab.domain.DOMAIN_CHOICES` contains only `harness`, and campaign model preflight also validates
+that name. Adding a domain is therefore a reviewed code change:
+
+1. Implement `ci_lab.contracts.Domain`: `name`, `surface_globs`, `frozen_globs`,
+   `component_globs`, `splits()`, `evaluate()`, and `failures()`.
+2. Add its runner, frozen cases, measured rubrics, and dataset manifest. Measurements must be
+   evaluator-owned, required values must fail closed, and quality/resource scores must remain
+   separate.
+3. Register the name in `ci_lab.domain.DOMAIN_CHOICES`/`get_domain` and extend campaign model
+   preflight for its target and judge pins.
+4. Define a bounded candidate root compatible with `ci_lab.domain.layout.harness_root`; keep
+   evaluators, governance, selection, schemas, and workflow automation outside it.
+5. Add ACS policy/tool adapters, publish-script path allowlists, CODEOWNERS, lint protections, model
+   documentation, template-doctor checks, and fake/offline tests.
+6. Update scheduled workflows only after the new domain works through the CLI. The default remains
+   `harness` unless deliberately changed in the registry and workflow arguments.
+
+Do not copy campaign arm workflows into the candidate tree. `harness/workflows/` is the current
+target-agent workflow surface; arm, round, calibration, and confirmation workflows stay frozen in
+`src/ci_lab/workflows/`.

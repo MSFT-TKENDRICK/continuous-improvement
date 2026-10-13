@@ -1,6 +1,6 @@
 # SkillOpt-Sleep nightly
 
-`ci_lab.sleep` runs SkillOpt-Sleep over two repo-root harness skills. A night produces a
+`ci_lab.sleep` runs SkillOpt-Sleep 0.2.x over two repo-root harness skills. A night produces a
 digest-pinned bundle; a separate privileged job validates the bundle with the standard-library-only
 publisher and opens a draft pull request. Nothing merges automatically.
 
@@ -73,7 +73,8 @@ files. The publisher rebuilds the pull-request body from sanitized fields and ne
 ## Local commands
 
 ```powershell
-uv run ci-lab sleep run --profile fake
+uv run ci-lab sleep dry-run
+uv run ci-lab sleep run --profile fake --out out/sleep-bundle
 uv run pytest tests/ci_lab/sleep tests/ci_lab/template/test_workflows.py
 ```
 
