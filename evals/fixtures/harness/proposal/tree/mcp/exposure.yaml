@@ -1,0 +1,13 @@
+format: ci_lab.mcp.exposure.v1
+servers:
+  harness:
+    mode: code
+    tools:
+      list_components: List frozen component names.
+      read_component: Read one contained harness file.
+      component_metrics: Return evaluator-computed surface metrics.
+      eval_summary: Summarize a bounded evaluation result.
+    code:
+      timeout_s: 10
+      max_output_chars: 4000
+      imports: [json]

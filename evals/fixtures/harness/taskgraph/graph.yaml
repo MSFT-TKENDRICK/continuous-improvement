@@ -1,0 +1,13 @@
+id: harness-maintenance
+goal: Produce small, singular harness maintenance deliverables.
+deliverables:
+  - {id: digest, title: Summarize failure, output: {kind: json, path: out/digest.json}, depends_on: []}
+  - {id: owner, title: Select owner, output: {kind: json, path: out/owner.json}, depends_on: [digest]}
+  - {id: prompt_patch, title: Trim prompt, output: {kind: patch, path: out/prompt.patch}, depends_on: [owner]}
+  - {id: loop_patch, title: Tighten loop, output: {kind: patch, path: out/loop.patch}, depends_on: [owner]}
+  - {id: tool_patch, title: Reduce tools, output: {kind: patch, path: out/tools.patch}, depends_on: [owner]}
+  - {id: workflow_patch, title: Simplify workflow, output: {kind: patch, path: out/workflow.patch}, depends_on: [owner]}
+  - {id: validation, title: State validation, output: {kind: text, path: out/validation.txt}, depends_on: [prompt_patch]}
+  - {id: risk, title: State safety risk, output: {kind: text, path: out/risk.txt}, depends_on: [tool_patch]}
+  - {id: decision, title: Recommend one edit, output: {kind: json, path: out/decision.json}, depends_on: [validation, risk]}
+  - {id: summary, title: Summarize result, output: {kind: text, path: out/summary.md}, depends_on: [decision]}
