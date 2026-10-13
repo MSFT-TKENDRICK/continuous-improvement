@@ -1,0 +1,135 @@
+"""Shared plumbing for arm strategies: optimizer span, edit-budget check, git committer,
+evolve-case resolution and the optimizer cost report (design §11.2, C18, C20)."""
+from __future__ import annotations
+
+import json
+import subprocess
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
+from contextlib import contextmanager
+from pathlib import Path, PurePosixPath
+from typing import Any
+
+from ci_lab import obs
+from ci_lab.contracts import (
+    ATTR_EXPERIMENT,
+    ATTR_PROFILE,
+    ATTR_STRATEGY,
+    ATTR_VARIANT,
+    SPAN_OPTIMIZER,
+    ArmContext,
+    Domain,
+    Edit,
+)
+
+COMMIT_TRAILER = "Co-authored-by: Copilot App <223556219+Copilot@users.noreply.github.com>"
+FALLBACK_IDENTITY = ("ci-lab arm", "ci-lab-arm@localhost")
+OPTIMIZER_DIR = "optimizer"
+GUARD_GLOBS = ("**/harness/guards/**",)
+"""v2.4 §13 (B2): guard rule bundles are writable only by the ``guard`` strategy."""
+GUARD_STRATEGY = "guard"
+_GUARD_PARTS = ("harness", "guards")
+_GUARD_LOCK_NAME = "BUNDLE.lock"
+
+
+def is_guard_path(path: str) -> bool:
+    """True for a file under any ``harness/guards/`` directory (``GUARD_GLOBS``)."""
+    parts = PurePosixPath(str(path).replace("\\", "/")).parts
+    return any(parts[i:i + 2] == _GUARD_PARTS for i in range(len(parts) - 2))
+
+
+def _under(path: str, directory: str) -> bool:
+    parts = PurePosixPath(str(path).replace("\\", "/").removeprefix("./")).parts
+    root = PurePosixPath(str(directory).replace("\\", "/").strip("/")).parts
+    return len(parts) > len(root) and parts[:len(root)] == root
+
+
+def edit_scope_violations(strategy: str, files: Iterable[str], guards_dir: str | None = None) -> list[str]:
+    """Files ``strategy`` may not write (v2.4 §13 B2/N5): text strategies never touch
+    ``harness/guards/**`` (any depth) nor ``guards_dir``; the guard strategy writes only rule files
+    under ``guards_dir`` — the domain's ``<harness root>/guards``
+    (:func:`ci_lab.domain.layout.guards_rel`), any ``harness/guards/`` when not given — never
+    ``BUNDLE.lock``."""
+    out = []
+    for f in dict.fromkeys(files):
+        guard = is_guard_path(f) or (guards_dir is not None and _under(f, guards_dir))
+        if strategy == GUARD_STRATEGY:
+            allowed = _under(f, guards_dir) if guards_dir is not None else guard
+            if not allowed or PurePosixPath(str(f).replace("\\", "/")).name == _GUARD_LOCK_NAME:
+                out.append(f)
+        elif guard:
+            out.append(f)
+    return out
+
+Committer = Callable[[Path, Sequence[str], str], str]
+"""``(worktree, files, message) -> commit sha``."""
+
+
+class EditBudgetExceeded(ValueError):
+    """A strategy produced more Edits than ``ArmDirective.edit_budget``."""
+
+
+@contextmanager
+def optimizer_span(strategy: str, ctx: ArmContext) -> Iterator[Any]:
+    """``ci.optimizer`` span around one strategy's proposal work."""
+    with obs.span(SPAN_OPTIMIZER, {ATTR_STRATEGY: strategy, ATTR_EXPERIMENT: ctx.experiment_id,
+                                   ATTR_VARIANT: ctx.directive.arm,
+                                   ATTR_PROFILE: getattr(ctx.profile, "value", str(ctx.profile)),
+                                   "ci.edit_budget": ctx.directive.edit_budget}) as s:
+        yield s
+
+
+def check_edit_budget(edits: Sequence[Any], ctx: ArmContext) -> list[Edit]:
+    out = list(edits)
+    if bad := [e for e in out if not isinstance(e, Edit)]:
+        raise TypeError(f"strategies must return contracts.Edit, got {type(bad[0]).__name__}")
+    if len(out) > ctx.directive.edit_budget:
+        raise EditBudgetExceeded(f"{len(out)} edits > edit_budget {ctx.directive.edit_budget}")
+    return out
+
+
+def _git(worktree: Path, *args: str) -> str:
+    return subprocess.run(["git", *args], cwd=worktree, check=True, capture_output=True, text=True,
+                          encoding="utf-8").stdout.strip()
+
+
+def git_commit(worktree: Path, files: Sequence[str], message: str) -> str:
+    """Stage exactly ``files`` and commit them; returns the new HEAD sha."""
+    worktree = Path(worktree)
+    ident: list[str] = []
+    try:
+        _git(worktree, "config", "user.email")
+    except subprocess.CalledProcessError:
+        ident = ["-c", f"user.name={FALLBACK_IDENTITY[0]}", "-c", f"user.email={FALLBACK_IDENTITY[1]}"]
+    _git(worktree, "add", "--", *files)
+    _git(worktree, *ident, "commit", "-q", "-m", message, "-m", COMMIT_TRAILER, "--", *files)
+    return _git(worktree, "rev-parse", "HEAD")
+
+
+def evolve_cases_for(ctx: ArmContext, *, explicit: Sequence[str] | None = None, domain: Domain | None = None,
+                     scorer: Any = None) -> list[str]:
+    """Evolve case ids an optimizer may score: explicit > ``ctx.evolve_case_ids`` (set by the
+    campaign) > domain.splits()["evolve"] > scorer.evolve_cases() > case ids of ``ctx.failures``
+    (assumed evolve, C15)."""
+    if explicit:
+        return list(dict.fromkeys(explicit))
+    if ctx.evolve_case_ids:
+        return list(dict.fromkeys(ctx.evolve_case_ids))
+    if domain is not None:
+        return list(domain.splits()["evolve"])
+    if callable(getattr(scorer, "evolve_cases", None)):
+        return list(scorer.evolve_cases())
+    return sorted({f.case_id for f in ctx.failures})
+
+
+def optimizer_dir(ctx: ArmContext) -> Path:
+    return Path(ctx.run_dir) / OPTIMIZER_DIR
+
+
+def write_report(ctx: ArmContext, strategy: str, payload: Mapping[str, Any]) -> Path:
+    """``<run_dir>/optimizer/<arm>-<strategy>.json`` — consumed for ΔC accounting."""
+    d = optimizer_dir(ctx)
+    d.mkdir(parents=True, exist_ok=True)
+    p = d / f"{ctx.directive.arm}-{strategy}.json"
+    p.write_text(json.dumps({"experiment_id": ctx.experiment_id, "arm": ctx.directive.arm,
+                             "strategy": strategy, **payload}, indent=2, default=str), encoding="utf-8")
+    return p
