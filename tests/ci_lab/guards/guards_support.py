@@ -1,11 +1,11 @@
-"""Shared fixtures for guard tests: real MAF Agent + FakeChatClient, real ``ci_lab.rules`` engine
-(spy wrapper for failure injection), order-support tools with call counters."""
+"""Shared fixtures for guard tests using neutral tools and rule data."""
 
 from __future__ import annotations
 
 import asyncio
 import json
 from collections.abc import Sequence
+from pathlib import Path
 from typing import Any
 
 from agent_framework import (
@@ -18,14 +18,29 @@ from agent_framework import (
 
 from ci_lab import rules
 from ci_lab.guards import install_guards
-from ci_lab.guards.domains.order_support import (
-    EXTRACTORS,
-    SEED_RULES,
-    TOOL_POLICIES,
-    verify_identity_tool,
-)
 from ci_lab.testing import FakeChatClient
-from order_support import tools as os_tools
+
+FIXTURES = Path(__file__).with_name("fixtures")
+EXTRACTORS = FIXTURES / "extractors.yaml"
+SEED_RULES = FIXTURES / "rules.yaml"
+TOOL_POLICIES = {
+    "inspect_item": False,
+    "search_docs": False,
+    "verify_access": False,
+    "apply_change": True,
+    "escalate": True,
+}
+ITEMS = {
+    "item-a": {"item_id": "item-a", "approved": True, "limit": 100.0,
+               "owner": "reviewer@example.com", "phone": "+1-206-555-0141"},
+    "item-b": {"item_id": "item-b", "approved": False, "limit": 5.0,
+               "owner": "other@example.com", "phone": "+1-503-555-0177"},
+}
+
+
+def verify_access(item_id: str, principal: str) -> dict[str, Any]:
+    return {"verified": item_id in ITEMS and principal.strip().lower() == "reviewer",
+            "item_id": item_id}
 
 
 class SpyEngine:
@@ -62,13 +77,13 @@ class StreamingFakeChatClient(FakeChatClient):
 
 
 class Tools:
-    """Order-support tools as MAF FunctionTools (JSON str results) with call logs."""
+    """Neutral MAF FunctionTools with call logs."""
 
-    def __init__(self, refund_delay: float = 0.0) -> None:
+    def __init__(self, action_delay: float = 0.0) -> None:
         self.calls: list[tuple[str, dict[str, Any]]] = []
         self.active_side_effects = 0
         self.max_parallel_side_effects = 0
-        self.refund_delay = refund_delay
+        self.action_delay = action_delay
 
     def _log(self, name: str, **args: Any) -> None:
         self.calls.append((name, args))
@@ -77,36 +92,34 @@ class Tools:
         return sum(1 for n, _ in self.calls if n == name)
 
     def all(self) -> list[Any]:
-        def lookup_order(order_id: str) -> str:
-            self._log("lookup_order", order_id=order_id)
-            return json.dumps(os_tools.lookup_order(order_id))
+        def inspect_item(item_id: str) -> str:
+            self._log("inspect_item", item_id=item_id)
+            return json.dumps(ITEMS.get(item_id, {"error": "not_found", "item_id": item_id}))
 
-        def search_kb(query: str) -> str:
-            self._log("search_kb", query=query)
-            return json.dumps(os_tools.search_kb(query))
+        def search_docs(query: str) -> str:
+            self._log("search_docs", query=query)
+            return json.dumps({"query": query, "text": "Use the approved workflow."})
 
-        async def issue_refund(order_id: str, amount: float) -> str:
+        async def apply_change(item_id: str, amount: float) -> str:
             self.active_side_effects += 1
             self.max_parallel_side_effects = max(self.max_parallel_side_effects, self.active_side_effects)
             try:
-                await asyncio.sleep(self.refund_delay)
-                self._log("issue_refund", order_id=order_id, amount=amount)
-                return json.dumps(os_tools.issue_refund(order_id, amount))
+                await asyncio.sleep(self.action_delay)
+                self._log("apply_change", item_id=item_id, amount=amount)
+                return json.dumps({"change_id": f"change-{item_id}", "applied": True})
             finally:
                 self.active_side_effects -= 1
 
-        def escalate_to_human(reason: str, order_id: str | None = None) -> str:
-            self._log("escalate_to_human", reason=reason, order_id=order_id)
-            return json.dumps(os_tools.escalate_to_human(reason, order_id))
+        def escalate(reason: str, item_id: str | None = None) -> str:
+            self._log("escalate", reason=reason, item_id=item_id)
+            return json.dumps({"escalated": True, "item_id": item_id})
 
-        verify = verify_identity_tool()
+        def verify_access(item_id: str, principal: str) -> str:
+            self._log("verify_access", item_id=item_id)
+            return json.dumps(globals()["verify_access"](item_id, principal))
 
-        def verify_identity(order_id: str, full_name: str, email_or_phone: str) -> str:
-            self._log("verify_identity", order_id=order_id)
-            return verify.func(order_id, full_name, email_or_phone)
-
-        return [tool(lookup_order), tool(search_kb), tool(issue_refund), tool(escalate_to_human),
-                tool(verify_identity, name="verify_identity", description=verify.description)]
+        return [tool(inspect_item), tool(search_docs), tool(apply_change), tool(escalate),
+                tool(verify_access)]
 
 
 def seed_bundle() -> Any:

@@ -1,0 +1,8 @@
+schema_version: 1
+extractors:
+  - flag: access_verified
+    tool: verify_access
+    result_path: result.verified
+    equals: true
+    subject: args.item_id
+    ttl_steps: 50
