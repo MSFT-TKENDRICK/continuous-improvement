@@ -7,9 +7,10 @@ passed separately by the evaluator and cannot be overwritten by candidate text.
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any
 
 import yaml
 

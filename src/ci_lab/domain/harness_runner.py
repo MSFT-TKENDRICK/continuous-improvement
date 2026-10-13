@@ -51,12 +51,12 @@ def _preflight(profile: str, tier: str, target_model: str, judge_model: str) -> 
 def _case(path: Path) -> dict[str, Any]:
     data = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(data, dict):
-        raise ValueError("case JSON must be an object")
+        raise TypeError("case JSON must be an object")
     suite = str(data.get("behavior") or "")
     if suite not in RUNNERS or not str(data.get("test_case_id") or "").startswith(suite + "_"):
         raise ValueError(f"unsupported harness case {data.get('test_case_id')!r}/{suite!r}")
     if not isinstance(data.get("expected"), Mapping):
-        raise ValueError("case expected oracle is missing")
+        raise TypeError("case expected oracle is missing")
     return data
 
 
@@ -223,6 +223,7 @@ def _match_case(message: str) -> dict[str, Any]:
 
 async def _chat(message: str) -> str:
     from ci_lab.domain.harness import HarnessDomain
+    from ci_lab.domain.harness_suites import RUNNERS
 
     source = Path(os.environ.get("CI_HARNESS_DIR") or REPO_ROOT / "harness").resolve()
     profile = os.environ.get(PROFILE_ENV, "fake")
@@ -235,11 +236,13 @@ async def _chat(message: str) -> str:
         candidate = root / "candidate"
         shutil.copytree(source, candidate)
         row = domain._copy_case(_match_case(message), root)  # copied evaluator fixture, never the repo
-        result = await run_case(row, harness_dir=candidate, profile=profile, tier=tier,
-                                target_model=target, judge_model=judge)
-        if result["score"] is None:
-            raise RuntimeError(result["violations"][0]["detail"])
-        return str(result.get("excerpt") or "")
+        _preflight(profile, tier, target, judge)
+        meter = RunMeter()
+        with meter:
+            execution = await RUNNERS[str(row["behavior"])](row, candidate, profile, target, meter)
+        if execution.served_model != target:
+            raise RuntimeError(f"served model {execution.served_model!r} != pinned {target!r}")
+        return execution.text
 
 
 def chat(message: str, history: list[dict[str, Any]] | None = None) -> str:
