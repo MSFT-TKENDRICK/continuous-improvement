@@ -255,27 +255,13 @@ _ADDRESS = re.compile(rf"\b\d{{1,6}}\s+(?:[A-Z][A-Za-z]+\s+){{1,4}}(?:{_STREET})
 _ZIP = re.compile(r"\b[A-Z]{2}\s+\d{5}(?:-\d{4})?\b")
 
 
-def _known_identities() -> list[str]:
-    """Names/emails/phones/addresses from ``order_support.data`` when that module is present."""
-    try:
-        from order_support import data  # type: ignore[import-not-found]
-    except Exception:  # noqa: BLE001 - optional sibling module
-        return []
-    out: list[str] = []
-    for order in (getattr(data, "ORDERS", {}) or {}).values():
-        cust = order.get("customer") if isinstance(order, Mapping) else None
-        if isinstance(cust, Mapping):
-            out += [str(v) for k, v in cust.items() if k in ("name", "email", "phone", "address") and v]
-    return out
-
-
 class Redactor:
     """Deterministic PII/secret scrubber. Order ids become salted hashes (stable, so repeated
     intents still cluster); everything else becomes a typed placeholder."""
 
     def __init__(self, *, salt: str = "ci-sleep-usage", identities: Iterable[str] | None = None) -> None:
         self.salt = salt
-        names = list(_known_identities() if identities is None else identities)
+        names = list(identities or ())
         names = sorted({n for n in names if len(n) >= 3}, key=len, reverse=True)
         self._ident = re.compile("|".join(re.escape(n) for n in names), re.IGNORECASE) if names else None
 

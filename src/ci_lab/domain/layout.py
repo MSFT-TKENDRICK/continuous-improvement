@@ -1,9 +1,4 @@
-"""Where a domain's harness lives inside a repo-root arm worktree (design §3).
-
-Campaign slots are full repository checkouts; the evolvable harness is the directory prefix
-shared by the domain's ``surface_globs`` (``src/order_support/harness`` for order-support,
-``harness`` for the test stubs).
-"""
+"""Where a domain's harness lives inside a repo-root arm worktree (design §3)."""
 from __future__ import annotations
 
 import posixpath
@@ -16,7 +11,7 @@ from ci_lab.rulespec import GUARDS_DIR as DEFAULT_GUARDS_DIR
 
 _GLOB_CHARS = re.compile(r"[*?\[]")
 GUARDS_SUBDIR = "guards"
-"""Guard rule bundle directory inside a harness (``order_support.guarding.guards_dir``)."""
+"""Guard rule bundle directory inside a harness."""
 
 
 def harness_root(domain: Domain) -> str:
@@ -37,8 +32,8 @@ def harness_root(domain: Domain) -> str:
 
 def guards_rel(domain: Any = None) -> str:
     """Repo-relative posix dir of the guard rules the domain's agent loads from a repo-root worktree:
-    ``<harness root>/guards`` (``src/order_support/harness/guards`` for order-support), or
-    ``harness/guards`` when ``domain`` is ``None`` or declares no single harness root."""
+    ``<harness root>/guards``, or ``harness/guards`` when ``domain`` is ``None`` or
+    declares no single harness root."""
     if domain is None:
         return DEFAULT_GUARDS_DIR
     try:
@@ -49,12 +44,8 @@ def guards_rel(domain: Any = None) -> str:
 
 
 def repo_guards_dir(repo: Path) -> Path:
-    """Guard rule dir the agent loads in the repo checkout ``repo``: order-support's
-    ``src/order_support/harness/guards`` when present, else ``<repo>/harness/guards``."""
-    from ci_lab.domain.order_support import HARNESS_ROOT
-
-    candidate = Path(repo) / HARNESS_ROOT / GUARDS_SUBDIR
-    return candidate if candidate.is_dir() else Path(repo) / DEFAULT_GUARDS_DIR
+    """Guard rule dir the agent loads in the repo checkout ``repo``."""
+    return Path(repo) / DEFAULT_GUARDS_DIR
 
 
 def guard_extractors(domain: Any = None) -> list[Path]:

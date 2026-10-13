@@ -22,7 +22,6 @@ ALLOWED_SKILLS = (
     "harness/skills/harness-editing/SKILL.md",
     "harness/skills/trace-triage/SKILL.md",
 )
-LEGACY_SKILL_PREFIX = "src/order_support/harness/skills/"
 ALLOWED_PREFIXES = (*ALLOWED_SKILLS, "experiments/sleep/")
 
 
@@ -37,7 +36,7 @@ def _check_path(path: str) -> None:
     parts = path.split("/")
     if (not path or path.startswith("/") or "\\" in path or ":" in path
             or any(p in ("", ".", "..", ".git") for p in parts)
-            or not (path in ALLOWED_SKILLS or path.startswith((LEGACY_SKILL_PREFIX, "experiments/sleep/")))):
+            or not (path in ALLOWED_SKILLS or path.startswith("experiments/sleep/"))):
         raise ValueError(f"refusing to patch path {path!r}")
 
 

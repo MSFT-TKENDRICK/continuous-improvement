@@ -10,8 +10,7 @@
 3. synthesize ≤ ``edit_budget`` rules: deterministic templates first, the
    :class:`~ci_lab.lessons_arm.agent.LessonSynthesizer` only for leftovers;
 4. write ``<harness root>/guards/<lesson_id>.yaml`` — the guards dir the domain's agent loads
-   (``src/order_support/harness/guards`` in a repo-root slot; ``harness/guards`` without a
-   domain, :func:`ci_lab.domain.layout.guards_rel`) and the only path this arm may write (never
+   (:func:`ci_lab.domain.layout.guards_rel`) and the only path this arm may write (never
    ``BUNDLE.lock`` or extractor files; enforced by a resolved-path check and a post-commit diff);
 5. validate by loading the **full** bundle (``ci_lab.rules.load_bundle``), run the replay
    rejection filter (M16), and commit one git commit per :class:`~ci_lab.contracts.Edit`.

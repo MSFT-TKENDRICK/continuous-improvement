@@ -3,8 +3,7 @@
 ========================  ===========================================================
 field                     wiring
 ========================  ===========================================================
-domain                    :class:`ci_lab.domain.order_support.OrderSupportDomain` behind
-                          :class:`HarnessDomain` (slots are repo checkouts; ``evaluate`` gets
+domain                    harness domain behind :class:`HarnessDomain` (slots are repo checkouts; ``evaluate`` gets
                           ``<slot>/<harness root>`` and results carry the git harness tree);
                           every scored case is an AGL rollout in :func:`campaign_journal`
                           (``run_root/agl``, mirrored to agl-server iff ``CI_LAB_AGL_URL``)
@@ -363,8 +362,7 @@ FROZEN_TEST_SETS = "evals/assert/*/test_set.jsonl"
 
 def campaign_leak_corpus(domain: Any, repo_root: Path) -> LeakCorpus | None:
     """The critic's leak corpus for a campaign: ``domain.leak_corpus()`` when the domain has
-    one (``OrderSupportDomain``: frozen ASSERT test sets plus order identifiers), else the
-    frozen ``evals/assert/*/test_set.jsonl`` files under ``repo_root``. ``None`` only when
+    one, else the frozen ``evals/assert/*/test_set.jsonl`` files under ``repo_root``. ``None`` only when
     neither exists; the campaign then logs that its leak screen is off."""
     build = getattr(domain, "leak_corpus", None)
     if callable(build):
@@ -403,15 +401,10 @@ def wired_deps(profile: Profile | str, *, run_root: Path, ledger_dir: Path | Non
     run_root = Path(run_root)
     if domain is None:
         from ci_lab.domain import get_domain
-        from ci_lab.domain.order_support import REPO_ROOT
 
-        repo_root = Path(repo_root) if repo_root is not None else REPO_ROOT
-        if domain_name == "harness":
-            domain = get_domain(domain_name, repo_root=repo_root, work_dir=run_root / "domain",
-                                profile=profile.value)
-        else:
-            domain = get_domain(domain_name, repo_root=repo_root, work_dir=run_root / "domain",
-                                journal=campaign_journal(run_root, offline=offline))
+        repo_root = Path(repo_root) if repo_root is not None else Path(__file__).resolve().parents[3]
+        domain = get_domain(domain_name, repo_root=repo_root, work_dir=run_root / "domain",
+                            profile=profile.value)
     repo_root = Path(repo_root) if repo_root is not None else Path.cwd()
     gitops = GitOps(repo_root, harness_root(domain), wt_root=wt_root, incumbent_ref=incumbent_ref)
     if not isinstance(domain, HarnessDomain):

@@ -2,22 +2,15 @@
 
 Two YAML shapes are validated here:
 
-* the **agent manifest** (``agents/manifest.yaml``)::
-
-    agents:
-      OrderSupport:
-        spec: order_support.yaml          # relative to the manifest, contained
-        runtime: prompt                   # prompt | harness
-        purpose: target                   # contracts.Purpose
-        bindings: [lookup_order]          # binding names this agent may use
-        skills_paths: [skills]            # relative to the manifest, contained
+* the **agent manifest** (``agents/manifest.yaml``) maps names to contained specs,
+  runtimes, purposes, bindings and skill directories.
 
 * a **declarative agent** (MAF ``kind: Prompt``) plus our repo-local ``x-ci``
   extension, which the loader strips and uses to compose ``instructions`` from
   Markdown files that live next to the YAML::
 
     kind: Prompt
-    name: OrderSupport
+    name: Analyst
     description: ...
     instructions: optional inline preamble
     model: {id: gpt-5-mini, provider: GitHubCopilot, options: {reasoningEffort: low}}

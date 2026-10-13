@@ -164,10 +164,7 @@ def _version(explicit: str | None) -> str:
     if explicit:
         return explicit
     try:
-        try:
-            return md.version("ci-lab-harness")
-        except md.PackageNotFoundError:
-            return md.version("order-support-evals")  # L9 removes the legacy distribution fallback.
+        return md.version("ci-lab-harness")
     except md.PackageNotFoundError:  # pragma: no cover
         return "0+unknown"
 

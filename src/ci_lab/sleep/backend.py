@@ -293,7 +293,3 @@ class SleepBackend(Backend):
     def tokens_used(self) -> int:
         with self._lock:
             return self._tokens
-
-
-# Explicit legacy imports remain valid until L9 removes the order-support target.
-OrderSupportSleepBackend = SleepBackend

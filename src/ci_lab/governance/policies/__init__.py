@@ -12,10 +12,10 @@ from ci_lab.governance.acs import AcsRuntime, AgentControl, load_manifest
 from ci_lab.governance.acs.runtime import MODES
 from ci_lab.governance.adapters import DISPATCHER, Annotator
 
-__all__ = ["MODE_ENV", "POLICIES", "governance_mode", "load_policy", "manifest_text", "target_mode"]
+__all__ = ["MODE_ENV", "POLICIES", "governance_mode", "load_policy", "manifest_text"]
 
 MODE_ENV = "CI_GOVERNANCE_MODE"
-POLICIES = ("order_support", "meta_agents", "campaign", "harness")
+POLICIES = ("meta_agents", "campaign", "harness")
 
 
 def governance_mode(env: Mapping[str, str] | None = None) -> str:
@@ -24,15 +24,6 @@ def governance_mode(env: Mapping[str, str] | None = None) -> str:
     if raw not in MODES:
         raise RuntimeError(f"{MODE_ENV}={raw!r} is invalid; expected one of {sorted(MODES)}")
     return raw
-
-
-def target_mode(env: Mapping[str, str] | None = None) -> str:
-    """Mode for the order-support *target* agents: ``CI_GOVERNANCE_MODE`` when set, else
-    ``evaluate_only``. The target is the experiment subject whose enforcement layer is the guard
-    bundle (``CI_GUARDS``, shadow by default; paired guard-off/on trials), so ACS only records
-    unless an operator opts in explicitly."""
-    env = os.environ if env is None else env
-    return governance_mode(env) if env.get(MODE_ENV, "").strip() else "evaluate_only"
 
 
 def manifest_text(name: str) -> str:

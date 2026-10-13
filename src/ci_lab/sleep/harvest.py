@@ -27,11 +27,10 @@ from skillopt_sleep.types import TaskRecord
 TASKS_FORMAT = "skillopt_sleep.tasks.v1"
 # skillopt_sleep.judges ops (0.2.0). Anything else is rejected, not passed.
 KNOWN_OPS = frozenset({"section_present", "regex", "max_chars", "min_chars", "contains", "tool_called"})
-ORDER_SUPPORT_TOOLS = frozenset({"lookup_order", "search_kb", "issue_refund", "escalate_to_human"})
 ALLOWED_DATASET_SPLIT = "evolve"
 DATASET_SPLITS = frozenset({"evolve", "heldout", "ood", "aa"})
-# Internal reference kinds: routes scoring through OrderSupportSleepBackend.judge (oracle +
-# validated ops) instead of upstream replay's direct score_rule_judge shortcut.
+# Internal reference kinds route scoring through the harness sleep backend's oracle and
+# validated ops instead of upstream replay's direct score_rule_judge shortcut.
 INTERNAL_KIND = {"rule": "ci_rule", "rubric": "ci_assert", "none": "ci_assert",
                  "ci_rule": "ci_rule", "ci_assert": "ci_assert"}
 INJECTION_MARKERS = ("injection", "indirect_prompt_injection")
@@ -73,7 +72,7 @@ class HarvestResult:
 # ------------------------------------------------------------------ validation
 
 def validate_judge(judge: Mapping[str, Any] | None, *, task_id: str = "?",
-                   known_tools: frozenset[str] | None = ORDER_SUPPORT_TOOLS) -> None:
+                   known_tools: frozenset[str] | None = None) -> None:
     """Raise :class:`UnknownJudgeOp` / :class:`HarvestError` for anything SkillOpt would misjudge."""
     if not judge:
         return
