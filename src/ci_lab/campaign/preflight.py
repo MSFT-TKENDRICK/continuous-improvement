@@ -5,8 +5,8 @@ spend budget if a model the campaign will use is not available.
 
 * the meta agents (and subagents) from ``ci_lab.meta.specs`` (``CI_META_MODEL`` applied);
 * the lesson synthesizer when the ``guard`` strategy is enabled;
-* the DSPy/GEPA/SkillOpt optimizer LM (``CI_LAB_OPTIMIZER_MODEL``) when ``gepa``/``skillopt``
-  is enabled. It is reached through copilot-serve, so the endpoint's ``/models`` is checked too;
+* the optimizer LM (``CI_LAB_OPTIMIZER_MODEL``) for GEPA/SkillOpt/AGL. AGL uses the Copilot
+  chat-client factory directly; GEPA/SkillOpt also check their copilot-serve endpoint;
 * the order agent's model when ``ORDER_AGENT_PROFILE=copilot`` (``model.id`` of the incumbent
   harness ``agent.yaml``), or ``ORDER_AGENT_MODEL`` at ``OPENAI_API_BASE`` otherwise;
 * the ASSERT tester (``CI_ASSERT_MODEL`` or each suite's ``default_model``) at ``OPENAI_API_BASE``.
@@ -126,17 +126,20 @@ def campaign_model_plan(hyper: Mapping[str, Any], *, env: Mapping[str, str] | No
     env = os.environ if env is None else env
     strategies = _strategies(hyper)
     plan = ModelPlan(copilot=_meta_uses(strategies, meta_harness_dir))
-    if strategies & {"gepa", "skillopt"}:
+    optimizers = strategies & {"agl", "gepa", "skillopt"}
+    served_optimizers = strategies & {"gepa", "skillopt"}
+    if optimizers:
         model = lm.resolve_model(Profile.COPILOT, "optimizer", env=env)
-        users = "optimizer LM (" + "/".join(sorted(strategies & {"gepa", "skillopt"})) + ")"
+        users = "optimizer LM (" + "/".join(sorted(optimizers)) + ")"
         plan.copilot.append(ModelUse(model, users, OPTIMIZER_HINT))
-        if not env.get(lm.AGL_BASE_URL_ENV, "").strip():  # an AGL proxy is not a copilot-serve
+        if served_optimizers and not env.get(lm.AGL_BASE_URL_ENV, "").strip():
             try:
                 base, key = lm.resolve_endpoint(Profile.COPILOT, env)
             except OSError as exc:
                 raise ModelPreflightError(f"optimizer LM endpoint: cannot read the copilot-serve key ({exc}); "
                                           f"{SERVE_HINT}") from exc
-            plan.serve(base, key, ModelUse(model, users, f"{OPTIMIZER_HINT}, or {SERVE_HINT}"))
+            served_users = "optimizer LM (" + "/".join(sorted(served_optimizers)) + ")"
+            plan.serve(base, key, ModelUse(model, served_users, f"{OPTIMIZER_HINT}, or {SERVE_HINT}"))
     offline = _offline_endpoint(env)
     if (env.get("ORDER_AGENT_PROFILE", "").strip().lower() or "offline") == "copilot":
         harness = Path(harness_dir) if harness_dir is not None else REPO_ROOT / HARNESS_ROOT

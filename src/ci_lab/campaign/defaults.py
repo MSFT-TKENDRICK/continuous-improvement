@@ -28,7 +28,7 @@ DEFAULT_HYPER: dict[str, Any] = {
     "max_arm_attempts": 2,    # arm workflow failures before the arm is marked failed
     "holdout_looks": 1,       # planned held-out looks L (global, per dataset hash)
     "draft_prs": True,
-    "strategies": list(STRATEGIES),  # arm strategies; RRSI Thompson-allocates per round (fake: rotation)
+    "strategies": list(STRATEGIES),  # registered arms, including opt-in guard/agl (fake: rotation)
     "arm_budget_tokens": None,  # ArmContext.budget_tokens for optimizer strategies
     "heartbeat_s": 30.0,      # status marker heartbeat while long steps run (<= 60, C36)
     "guard_trials": None,     # paired guard-off/on repetitions (None: >= 3 trials/case if stochastic, B4)

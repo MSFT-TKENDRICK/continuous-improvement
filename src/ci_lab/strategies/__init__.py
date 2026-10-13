@@ -30,6 +30,18 @@ _FACTORIES: dict[str, Callable[..., ArmStrategy]] = {
 EXTERNAL = {"guard": "ci_lab.lessons_arm.strategy"}  # v2.4 §13 (writes harness/guards/*.yaml only)
 
 
+def _agl_factory(*, journal: Any = None, store: Any = None, client: Any = None,
+                 client_factory: Any = None, domain: Any = None, harness_dir: Any = None,
+                 committer: Any = None) -> ArmStrategy:
+    from ci_lab.agl.algorithm import LlmResourceAlgorithm
+
+    return LlmResourceAlgorithm(journal=journal, store=store, client=client, client_factory=client_factory,
+                                domain=domain, harness_dir=harness_dir, committer=committer)
+
+
+_FACTORIES["agl"] = _agl_factory
+
+
 class UnknownStrategy(KeyError):
     pass
 
@@ -93,5 +105,16 @@ def get_strategy(name: str, **deps: Any) -> ArmStrategy:
     return factory(**{k: v for k, v in deps.items() if accepted is None or k in accepted})
 
 
-__all__ = ["EXTERNAL", "AgentStrategy", "EditBudgetExceeded", "GepaStrategy", "STRATEGIES", "SkillOptStrategy",
-           "UnknownStrategy", "available", "get_strategy", "git_commit", "register_strategy"]
+__all__ = [
+    "EXTERNAL",
+    "STRATEGIES",
+    "AgentStrategy",
+    "EditBudgetExceeded",
+    "GepaStrategy",
+    "SkillOptStrategy",
+    "UnknownStrategy",
+    "available",
+    "get_strategy",
+    "git_commit",
+    "register_strategy",
+]

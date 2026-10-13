@@ -34,6 +34,8 @@ EXPECTED_ORDER = {
                  "critique_final", "evaluate", "finalize_arm"],
     "arm_skillopt": ["provision_slot", "propose", "critique_1", "repair_1", "critique_2", "repair_2",
                      "critique_final", "evaluate", "finalize_arm"],
+    "arm_agl": ["provision_slot", "propose", "critique_1", "repair_1", "critique_2", "repair_2",
+                "critique_final", "evaluate", "finalize_arm"],
     "arm_guard": ["provision_slot", "propose", "critique_1", "repair_1", "critique_2", "repair_2",
                   "critique_final", "evaluate", "guard_paired_eval", "finalize_arm"],
     "calibrate": ["aa_runs", "delta", "record"],
@@ -54,7 +56,9 @@ def _walk(node: Any):
 def _assert_expression_free(path: Path) -> None:
     """Independent check of the no-PowerFx contract (prefers M1's checker when present)."""
     try:
-        from ci_lab.maf.workflows import assert_expression_free as m1_check  # type: ignore[import-not-found]
+        from ci_lab.maf.workflows import (
+            assert_expression_free as m1_check,  # type: ignore[import-not-found]
+        )
     except ImportError:
         m1_check = None
     if m1_check is not None:
@@ -93,18 +97,19 @@ def test_round_yaml_analyst_message_is_literal() -> None:
 
 
 @pytest.mark.parametrize("bad", [
-    "kind: Workflow\ntrigger: {kind: OnConversationStart, id: x, actions: "
-    "[{kind: InvokeFunctionTool, id: a, functionName: f, arguments: {x: '=Local.y'}}]}",
-    "kind: Workflow\ntrigger: {kind: OnConversationStart, id: x, actions: "
-    "[{kind: If, id: a, condition: '=true', actions: []}]}",
-    "kind: Workflow\ntrigger: {kind: OnConversationStart, id: x, actions: "
-    "[{kind: Foreach, id: a, items: [1], actions: []}]}",
-    "kind: Workflow\ntrigger: {kind: OnConversationStart, id: x, actions: "
-    "[{kind: InvokeFunctionTool, id: a, functionName: f, arguments: {x: {nested: 1}}}]}",
-    "kind: Workflow\ntrigger: {kind: OnConversationStart, id: x, actions: "
-    "[{kind: InvokeFunctionTool, id: a, functionName: f}, {kind: InvokeFunctionTool, id: a, functionName: g}]}",
-    "kind: Workflow\ntrigger: {kind: OnConversationStart, id: x, actions: "
-    "[{kind: InvokeAzureAgent, id: a, agent: {name: A}, input: {messages: '=System.LastMessage'}}]}",
+    ("kind: Workflow\ntrigger: {kind: OnConversationStart, id: x, actions: "
+     "[{kind: InvokeFunctionTool, id: a, functionName: f, arguments: {x: '=Local.y'}}]}"),
+    ("kind: Workflow\ntrigger: {kind: OnConversationStart, id: x, actions: "
+     "[{kind: If, id: a, condition: '=true', actions: []}]}"),
+    ("kind: Workflow\ntrigger: {kind: OnConversationStart, id: x, actions: "
+     "[{kind: Foreach, id: a, items: [1], actions: []}]}"),
+    ("kind: Workflow\ntrigger: {kind: OnConversationStart, id: x, actions: "
+     "[{kind: InvokeFunctionTool, id: a, functionName: f, arguments: {x: {nested: 1}}}]}"),
+    ("kind: Workflow\ntrigger: {kind: OnConversationStart, id: x, actions: "
+     "[{kind: InvokeFunctionTool, id: a, functionName: f}, "
+     "{kind: InvokeFunctionTool, id: a, functionName: g}]}"),
+    ("kind: Workflow\ntrigger: {kind: OnConversationStart, id: x, actions: "
+     "[{kind: InvokeAzureAgent, id: a, agent: {name: A}, input: {messages: '=System.LastMessage'}}]}"),
 ])
 def test_checker_rejects_expressions_and_control_flow(bad: str) -> None:
     with pytest.raises(ValueError):
@@ -146,7 +151,7 @@ def test_yaml_loads_and_runs_with_workflow_factory(name: str, tmp_path: Path) ->
     for agent in agent_names(path):
         assert agent in called
     assert len([e for e in log if e.startswith("critique")]) == (3 if name.startswith("arm_") else 0)
-    if name in ("arm_gepa", "arm_skillopt"):
+    if name in ("arm_gepa", "arm_skillopt", "arm_agl"):
         assert f"propose:[('strategy', '{name[4:]}')]" in log
 
 
@@ -157,8 +162,10 @@ def test_arm_yamls_cover_every_strategy() -> None:
     assert set(ARM_YAMLS) == set(STRATEGIES)
     assert ARM_YAML == ARM_YAMLS["agent"]
     assert set(agent_names(ARM_YAMLS["agent"])) == {"Proposer"}
-    for strategy in ("gepa", "skillopt", "guard"):
+    for strategy in ("gepa", "skillopt", "guard", "agl"):
         assert not agent_names(ARM_YAMLS[strategy])
+        if strategy == "agl":
+            assert ARM_YAMLS[strategy].parent.name == "workflows"
         doc = assert_expression_free(ARM_YAMLS[strategy])
         propose = next(a for a in doc["trigger"]["actions"] if a["id"] == "propose")
         assert propose == {"kind": "InvokeFunctionTool", "id": "propose", "functionName": "propose",

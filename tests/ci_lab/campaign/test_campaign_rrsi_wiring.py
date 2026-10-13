@@ -81,6 +81,7 @@ def test_hyperparams_maps_campaign_keys() -> None:
     assert isinstance(hp, Hyperparams)
     assert (hp.n_arms, hp.T, hp.k, hp.seed, hp.delta) == (3, 5, 2, 7, 0.1)
     assert hp.strategies == STRATEGIES  # all strategies (incl. guard) by default; floor stays feasible
+    assert "agl" in defaults.DEFAULT_HYPER["strategies"]
     assert len(hp.strategies) <= hp.n_arms * hp.strategy_floor_every
     assert hp.b_max > hp.b_min  # no fixed budget -> RRSI anneals b_max -> b_min
     fixed = rrsi_wiring.hyperparams(merge_hyper({"budget": 2, "rrsi": {"n_bootstrap": 500}}))
@@ -140,7 +141,8 @@ def test_schedule_thompson_allocates_all_strategies_with_floor() -> None:
         inc = history[-1]["score_next"]
     used = {s for r in per_round for s in r}
     assert used == set(STRATEGIES)
-    assert sorted(per_round[0] + per_round[1]) == sorted(STRATEGIES)  # never-run strategies are floored first
+    first_floor = [s for round_strategies in per_round[:3] for s in round_strategies]
+    assert set(first_floor) == set(STRATEGIES)  # never-run strategies are floored first
     hp = rrsi_wiring.hyperparams(merge_hyper({}))
     k = hp.strategy_floor_every
     for i in range(len(per_round) - k + 1):  # every strategy gets >= 1 arm in any K consecutive rounds

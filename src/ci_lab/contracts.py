@@ -193,8 +193,8 @@ COMPONENTS = ("prompt", "skill", "client_tool", "config", "memory", "context_mgm
 # Components text strategies (agent/gepa/skillopt) may target; "guard" (harness/guards/**) is
 # written only by the guard strategy (v2.4 §13, frozen for text optimizers).
 TEXT_COMPONENTS = tuple(c for c in COMPONENTS if c != "guard")
-# Owning optimizer per component. "agl" (Agent Lightning) is a component owner, not an RRSI arm
-# strategy, so it is deliberately absent from STRATEGIES.
+# Owning optimizer per component. AGL owns only structural components; prompt/skill/guard stay
+# exclusively owned by GEPA/SkillOpt/guard.
 COMPONENT_OWNERS: Mapping[str, str] = {
     "prompt": "gepa",
     "skill": "skillopt",
@@ -239,7 +239,7 @@ class CriticVerdict:
 # surface of its arm worktree and commits typed Edits; critique, ASSERT evaluation and
 # RRSI/OES selection are strategy-agnostic and authoritative (an optimizer's internal
 # acceptance gate is diagnostic only).
-STRATEGIES = ("agent", "gepa", "skillopt", "guard")  # guard: v2.4 §13 (writes harness/guards/*.yaml only)
+STRATEGIES = ("agent", "gepa", "skillopt", "guard", "agl")
 
 
 @dataclass(frozen=True)
