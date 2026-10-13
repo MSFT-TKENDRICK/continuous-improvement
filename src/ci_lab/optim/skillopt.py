@@ -27,7 +27,12 @@ from dataclasses import dataclass
 from typing import Any
 
 from ci_lab.contracts import FailureRecord
-from ci_lab.optim.gepa import DspyReflectionLM, OptimizerCost, TextOptimization, metric_cap
+from ci_lab.optim.gepa import (
+    DspyReflectionLM,
+    OptimizerCost,
+    TextOptimization,
+    metric_cap,
+)
 from ci_lab.optim.scoring import (
     BudgetExhausted,
     CaseOutcome,
@@ -49,7 +54,7 @@ class SkillOptConfig:
     pass_threshold: float = 1.0
     gate_metric: str = "mixed"
     max_cases: int | None = None  # None = largest sub-split that fits the budget
-    project: str = "order-support"
+    project: str = "harness"
     seed: int = 0
 
 

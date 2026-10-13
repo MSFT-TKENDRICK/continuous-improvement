@@ -81,6 +81,7 @@ def test_skillopt_records(tmp_path: Path) -> None:
     j = _journal(tmp_path)
     keys = expected_keys(EXP, VAR, ["case-a", "case-b"], 2)
     recs = skillopt_task_records(j, keys, split="evolve")
+    assert {r["project"] for r in recs} == {"harness"}
     by_id = {r["id"]: r for r in recs}
     a, b = by_id["agl:case-a"], by_id["agl:case-b"]
     assert a["intent"] == "Refund order 7" and a["outcome"] == "success" and a["split"] == "train"

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 import json
 import sys
 from pathlib import Path
@@ -108,6 +109,7 @@ def test_run_optimizer_gepa_wires_hardener(tmp_path: Path, graph: tuple[Path, Pa
 
 
 def test_voters_for_and_pools(tmp_path: Path, graph: tuple[Path, Path]) -> None:
+    assert inspect.signature(make_voters_for).parameters["domain_name"].default == "harness"
     vault = RubricVault(tmp_path / "vault")
     d = SimpleNamespace(rubric_commitment=vault.commitments()[0])
     on = make_voters_for(vault, run_dir=tmp_path, profile="offline", s1_model="s1/llamacpp/x")(d)

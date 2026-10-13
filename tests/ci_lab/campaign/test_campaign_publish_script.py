@@ -18,7 +18,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[3]
 SCRIPT = ROOT / "scripts" / "campaign_publish.py"
 CID = "camp1"
-HARNESS = "src/order_support/harness/prompt.md"
+HARNESS = "harness/prompts/analyst.md"
 LEDGER = f"experiments/campaigns/{CID}"
 TRUSTED_LAYER = {"eid": f"{CID}-r01", "arm": "v1", "branch": f"exp/{CID}-r01/v1", "head": "c" * 40, "pr": 11}
 
@@ -149,6 +149,14 @@ def test_refuses_arm_edits_outside_the_harness_surface(repo: Path, tmp_path: Pat
     assert not (repo / LEDGER / "rounds").exists()  # nothing imported after a refusal
 
 
+def test_refuses_the_frozen_harness_manifest(repo: Path, tmp_path: Path,
+                                             capsys: pytest.CaptureFixture[str]) -> None:
+    bad = arm(repo, "frozen", "harness/harness.yaml")
+    code, _, err = run(repo, requests(tmp_path, req(f"{CID}-r02", "v1", {"v1": bad})),
+                       artifact(tmp_path), capsys)
+    assert code == 1 and "edits outside" in err and "harness.yaml" in err
+
+
 def _commit(repo: Path, rel: str, text: str, msg: str) -> str:
     write(repo, rel, text)
     git(repo, "add", "-A")
@@ -189,7 +197,7 @@ def test_refuses_merge_commits_and_criss_cross_bases(repo: Path, tmp_path: Path,
     git(repo, "checkout", "-q", "-b", "m1", "main")
     _commit(repo, HARNESS, "m1\n", "m1")
     git(repo, "checkout", "-q", "-b", "m2", "main")
-    m2 = _commit(repo, "src/order_support/harness/other.md", "m2\n", "m2")
+    m2 = _commit(repo, "harness/prompts/reflector.md", "m2\n", "m2")
     git(repo, "checkout", "-q", "m1")
     git(repo, "merge", "-q", "--no-ff", "--no-edit", m2)
     merged = git(repo, "rev-parse", "HEAD")

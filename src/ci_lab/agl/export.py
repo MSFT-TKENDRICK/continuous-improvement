@@ -180,7 +180,7 @@ def _text(v: Any, limit: int) -> str:
 
 
 def skillopt_task_records(journal: Any, keys: Iterable[RolloutKey], *, split: str,
-                          project: str = "order-support", score_name: str | None = None,
+                          project: str = "harness", score_name: str | None = None,
                           pass_threshold: float = 0.5, skillopt_split: str = "train") -> list[dict[str, Any]]:
     """Group rollouts by case into SkillOpt-Sleep ``TaskRecord``-compatible dicts.
 

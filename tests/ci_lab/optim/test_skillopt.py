@@ -17,6 +17,10 @@ KW = {"c1": "refund", "c2": "tracking", "c3": "escalate", "c4": "polite", "c5": 
 GOOD_RULE = "Always: " + ", ".join(KW.values()) + "."
 
 
+def test_skillopt_defaults_to_harness_project():
+    assert SkillOptConfig().project == "harness"
+
+
 class SkillScorer:
     def __init__(self, key=SKILL):
         self.key, self.requests = key, []

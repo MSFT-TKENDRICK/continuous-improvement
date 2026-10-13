@@ -42,7 +42,7 @@ def pools_from_env(env: dict[str, str] | None = None) -> Any:
 
 
 def make_voters_for(vault: Any, *, run_dir: Path, profile: str, s1_model: str | None,
-                    domain_name: str = "order_support") -> Any:
+                    domain_name: str = "harness") -> Any:
     """Deterministic oracles always; s1 / llm / assert voters only for deliverables whose rubric uses them."""
     from ci_lab.bus.voters.local import DeterministicCheckVoter, MetricVoter
     from ci_lab.bus.voters.remote import AgentVoter, AssertVoter, S1RubricVoter
@@ -187,7 +187,7 @@ def cmd_run(a: argparse.Namespace) -> int:
 
         hardener = Hardener(vault, run_dir / "artifacts", optimizers=make_optimizers(a.optimizer, a.profile))
     voters_for = make_voters_for(vault, run_dir=run_dir, profile=a.profile, s1_model=a.s1_model,
-                                 domain_name=getattr(a, "domain", "order_support"))
+                                 domain_name=getattr(a, "domain", "harness"))
     if not a.no_telemetry:  # spans + ci.bus.append events -> <run-dir>/telemetry/spans-*.jsonl
         from ci_lab import telemetry
 

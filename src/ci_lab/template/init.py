@@ -53,6 +53,10 @@ _REMOTE_RE = re.compile(r"[:/]([A-Za-z0-9-]+)/([A-Za-z0-9._-]+?)(?:\.git)?/*$")
 
 SLEEP_STATE_REL = "experiments/sleep/state.json"
 SLEEP_TASKS_REL = "experiments/sleep/tasks.jsonl"
+HARNESS_SLEEP_TASKS_RELS = (
+    "experiments/sleep/harness-editing.jsonl",
+    "experiments/sleep/trace-triage.jsonl",
+)
 LOOKS_REL = "experiments/holdout-looks.jsonl"
 REGISTRY_REL = "lessons/registry.yaml"
 # Template history: (path, reason). Directories are removed with everything below them.
@@ -255,12 +259,13 @@ def build_plan(root: Path, opts: Options) -> Plan:
                                    content=EMPTY_REGISTRY))
 
     if opts.reset_state:
-        tasks = _read(root, SLEEP_TASKS_REL)
-        if tasks is not None:
-            header = _tasks_header(tasks)
-            if _norm(tasks) != header:
-                plan.actions.append(Action("write", SLEEP_TASKS_REL, "example agent's reviewed sleep tasks -> "
-                                           "header only", content=header))
+        for rel in HARNESS_SLEEP_TASKS_RELS:
+            tasks = _read(root, rel)
+            if tasks is not None:
+                header = _tasks_header(tasks)
+                if _norm(tasks) != header:
+                    plan.actions.append(Action("write", rel, "harness target's reviewed sleep tasks -> "
+                                               "header only", content=header))
         if _inside(root, LOOKS_REL).is_file():
             plan.actions.append(Action("delete", LOOKS_REL, "held-out look ledger (budget is per dataset hash)",
                                        files=1))

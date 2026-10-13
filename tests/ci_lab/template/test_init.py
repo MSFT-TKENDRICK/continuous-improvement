@@ -59,8 +59,13 @@ def _fake_repo(root: Path) -> Path:
     (sleep / "state.json").write_text(json.dumps({**tinit.DEFAULT_SLEEP_STATE, "night": 7, "accepted_total": 3}),
                                       encoding="utf-8")
     (sleep / "tasks.jsonl").write_text(
-        json.dumps({"format": tinit.TASKS_FORMAT, "project": "harness", "reviewed": True}) + "\n"
-        + json.dumps({"id": "t1", "reviewed": True}) + "\n", encoding="utf-8")
+        json.dumps({"format": tinit.TASKS_FORMAT, "project": "order-support", "reviewed": True}) + "\n"
+        + json.dumps({"id": "legacy", "reviewed": True}) + "\n", encoding="utf-8")
+    for rel in tinit.HARNESS_SLEEP_TASKS_RELS:
+        path = root / rel
+        path.write_text(
+            json.dumps({"format": tinit.TASKS_FORMAT, "project": "harness", "reviewed": True}) + "\n"
+            + json.dumps({"id": "t1", "reviewed": True}) + "\n", encoding="utf-8")
     (root / "experiments" / "holdout-looks.jsonl").write_text('{"dataset": "abc"}\n', encoding="utf-8")
     (root / "lessons").mkdir()
     (root / "lessons" / "registry.yaml").write_text("schema_version: 1\nlessons:\n  - id: L1\n", encoding="utf-8")
@@ -119,7 +124,8 @@ def test_apply_resets_history_and_keeps_example(repo: Path) -> None:
     assert json.loads((repo / "experiments" / "sleep" / "state.json").read_text()) == tinit.DEFAULT_SLEEP_STATE
     assert (repo / "lessons" / "registry.yaml").read_text() == tinit.EMPTY_REGISTRY
     # kept by default: reviewed example tasks, the held-out look ledger, suites and frozen test sets
-    assert "t1" in (repo / "experiments" / "sleep" / "tasks.jsonl").read_text()
+    assert all("t1" in (repo / rel).read_text() for rel in tinit.HARNESS_SLEEP_TASKS_RELS)
+    assert "legacy" in (repo / tinit.SLEEP_TASKS_REL).read_text()
     assert (repo / "experiments" / "holdout-looks.jsonl").is_file()
     assert (repo / "evals" / "assert" / "s" / "test_set.jsonl").is_file()
 
@@ -191,8 +197,10 @@ def test_reset_state_also_empties_example_state(repo: Path) -> None:
     plan = tinit.build_plan(repo, _opts(reset_state=True))
     assert any("held-out looks" in n for n in plan.notes)
     tinit.apply_plan(repo, plan)
-    lines = (repo / "experiments" / "sleep" / "tasks.jsonl").read_text().splitlines()
-    assert len(lines) == 1 and json.loads(lines[0])["project"] == "harness"
+    for rel in tinit.HARNESS_SLEEP_TASKS_RELS:
+        lines = (repo / rel).read_text().splitlines()
+        assert len(lines) == 1 and json.loads(lines[0])["project"] == "harness"
+    assert "legacy" in (repo / tinit.SLEEP_TASKS_REL).read_text()
     assert not (repo / "experiments" / "holdout-looks.jsonl").exists()
     assert (repo / "evals" / "assert" / "s" / "test_set.jsonl").is_file()
     assert read_marker(repo)["reset_state"] is True
