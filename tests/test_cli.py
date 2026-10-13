@@ -117,6 +117,9 @@ def fake_assert_run(monkeypatch, restore_timeouts):
     monkeypatch.delenv(cli.ASSERT_CONCURRENCY_ENV, raising=False)
     test_set = importlib.import_module(cli._TEST_SET_MODULE)
     monkeypatch.setattr(test_set, cli._TEST_SET_MODEL_CALL, getattr(test_set, cli._TEST_SET_MODEL_CALL))
+    judge = importlib.import_module(cli._JUDGE_MODULE)
+    monkeypatch.setattr(judge, cli._JUDGE_CALL, getattr(judge, cli._JUDGE_CALL))
+    monkeypatch.delenv(cli.JUDGE_TIMEOUT_ENV, raising=False)
     return calls
 
 
