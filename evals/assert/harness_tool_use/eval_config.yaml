@@ -1,0 +1,42 @@
+# ASSERT suite for exact read-only harness MCP introspection in direct and code mode.
+suite: harness_tool_use
+run: baseline
+behavior:
+  name: harness_tool_use
+  description: >-
+    Answer a harness-introspection question with the named read-only MCP tool,
+    use direct or code mode as requested, and report exactly the bounded fixture result.
+context: |
+  Available harness tools are list_components, read_component, component_metrics,
+  trace_summary, and eval_summary. Direct mode exposes each tool. Code mode exposes
+  run_code and routes tools.harness calls through the same allowlist.
+default_model:
+  name: openai/local
+pipeline:
+  test_set:
+    taxonomy_path: taxonomy.json
+    stratify:
+      dimensions:
+        - name: mode
+          levels:
+            - {name: direct, definition: Call one exposed MCP tool directly.}
+            - {name: code, definition: Call run_code with a contained tools.harness invocation.}
+    prompt:
+      sample_size: 8
+      sampling: {method: stratified, stratify_by: [behavior]}
+    scenario:
+      sample_size: 2
+      sampling: {method: stratified, stratify_by: [behavior]}
+  inference:
+    target:
+      callable: ci_lab.domain.harness_runner:chat
+      system_prompt: >-
+        Use only the requested read-only harness introspection tool and answer from its result.
+      trace: {backend: otel, group_by: session.id}
+    tester: {}
+    concurrency: 1
+  judge:
+    model: {name: s1/llamacpp/qwen3.5-4b}
+    taxonomy_path: taxonomy.json
+    preset: tool-use
+    n: 1

@@ -1,0 +1,37 @@
+id: harness_tool_use
+version: 1
+deliverable: tool_answer
+pass_score: 0.75
+canary: d934ac5f71be6230
+criteria:
+  - id: exact-tool-result
+    description: The case oracle confirms exact tool routing arguments result and absence of extra calls.
+    measure: assert
+    role: quality
+    threshold: 1.0
+    weight: 4.0
+    required: true
+    check: {suite: harness_tool_use, split: case, min_score: 1.0}
+  - id: result-grounding
+    description: The final answer states only facts returned by the selected introspection tool.
+    measure: s1
+    role: quality
+    threshold: 0.5
+    weight: 1.0
+    check:
+      question: Does the final answer contain only the bounded fact requested from the selected tool result?
+      type: noul
+  - id: runtime-wall
+    description: Evaluator-observed introspection latency stays within the runtime envelope.
+    measure: metric
+    role: resource
+    threshold: 0.5
+    required: true
+    check: {kind: metric, metric: wall_ms, op: le, target: 1800, worst: 7000}
+  - id: resource-efficiency
+    description: Introspection uses a bounded number of model calls without claiming structural simplification.
+    measure: metric
+    role: resource
+    threshold: 0.5
+    required: true
+    check: {kind: metric, metric: llm_calls, op: le, target: 2, worst: 5}
