@@ -90,7 +90,7 @@ Probabilities and confidence appear in three places:
 
 `$CI_S1_RUBRICS` points to a YAML or JSON file with a `{rubrics: {dimension: text}}` mapping, for example align's `candidate_rubrics.yaml`. The rubrics in that file override the request's rubrics, which lets you run an evaluator experiment without editing the suite.
 
-Cost: one backend call per custom dimension plus one per taxonomy behaviour. That is about 15 calls per case on `judge_replay`.
+Cost is one backend call per custom dimension plus one per taxonomy behavior in the selected harness suite.
 
 ### Fallback (C25)
 
@@ -107,7 +107,7 @@ When a fallback happens, `_hidden_params["s1_fallback"]` records the reason, and
 
 ```powershell
 uv run ci-lab judge provider-check                     # built-in mini contract, scripted backend
-uv run ci-lab judge provider-check --config evals/assert/judge_replay/eval_config.yaml --model s1/llamacpp/qwen3.5-4b
+uv run ci-lab judge provider-check --config evals/assert/harness_triage/eval_config.yaml --model s1/llamacpp/qwen3.5-4b
 ```
 
 The self-test makes one ASSERT judge call. By default the fallback is disabled, so the check stays offline and fails fast with its reason. Use `--allow-fallback` to permit the network fallback.
@@ -138,7 +138,7 @@ The headline metric is QWK for ordinal scales with 3 or more points, and κ othe
 ## 3. Align — `ci-lab judge align`
 
 ```powershell
-uv run ci-lab judge align --config evals/assert/judge_replay/eval_config.yaml `
+uv run ci-lab judge align --config evals/assert/harness_triage/eval_config.yaml `
     --labels labels.jsonl --transcripts transcripts.jsonl --out-dir runs/align1 `
     --lm openai/local --api-base http://127.0.0.1:8081/v1 --map grounded=!ungrounded_claim
 ```
