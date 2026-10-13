@@ -256,9 +256,10 @@ def test_s1_local_url(monkeypatch):
 # ------------------------------------------------------------------ across real processes
 
 _HOLDER = textwrap.dedent("""
-    import json, sys, time
+    import json, os, sys, time
     from ci_lab.judge import admission
     out, n, hold_s = sys.argv[1], int(sys.argv[2]), float(sys.argv[3])
+    out = f"{out}.{os.getpid()}"
     for _ in range(n):
         with admission.hold("__URL__") as lease:
             t0 = time.time()
@@ -277,7 +278,11 @@ def test_capacity_holds_across_processes(tmp_path, capacity):
              for _ in range(4)]
     for p in procs:
         assert p.wait(timeout=120) == 0
-    rows = [json.loads(x) for x in out.read_text().splitlines()]
+    rows = [
+        json.loads(line)
+        for path in tmp_path.glob(f"{out.name}.*")
+        for line in path.read_text().splitlines()
+    ]
     assert len(rows) == 8
     assert _max_overlap([(r["start"], r["end"]) for r in rows]) <= capacity
     assert {r["slot"] for r in rows} <= set(range(capacity))
