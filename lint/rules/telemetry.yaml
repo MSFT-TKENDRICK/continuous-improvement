@@ -13,8 +13,6 @@ rules:
     include: ["src/**/*.py"]
     exclude:
       - "src/ci_lab/telemetry/**"
-      # Pre-harness L1 agent installs a bare provider for standalone runs; M3 routes it via telemetry.setup.
-      - "src/order_support/agent.py"
     message: Global OTel provider installed outside ci_lab.telemetry (two providers split traces / 'override not allowed').
     fix: Call ci_lab.telemetry.setup() at the CLI entry and attach processors via telemetry.span_processors().
     see: design §12.4 C28, §12.5 D4
@@ -34,8 +32,6 @@ rules:
     exclude:
       # one-shot child entrypoints only (they run exactly one unit of work, then exit)
       - "src/ci_lab/domain/harness_assert_wrapper.py"
-      - "src/order_support/assert_wrapper.py"
-      - "src/order_support/cli.py"
     message: TRACEPARENT attached from the environment outside an allowlisted one-shot entrypoint (mis-parents later requests in long-lived services).
     fix: In services wrap each request in obs.use_carrier(obs.carrier()-headers); one-shot children must be added to this rule's allowlist in review.
     see: design §12.5 D2

@@ -82,17 +82,17 @@ def test_syntax_error_files_are_skipped():
 
 
 def test_banned_import_forms():
-    r = rule("banned_import", modules=["order_support.oracle", "assert_ai", "ci_lab.judge"])
+    r = rule("banned_import", modules=["ci_lab.domain.harness_scoring", "assert_ai", "ci_lab.judge"])
     code = """\
         import assert_ai.core
-        from order_support import oracle
-        from order_support.oracle import rules
+        from ci_lab.domain import harness_scoring
+        from ci_lab.domain.harness_scoring import grade_case
         from ..judge import s1
         import importlib
         importlib.import_module("ci_lab.judge.x")
         __import__("assert_ai")
         import assert_aix
-        from order_support import tools
+        from ci_lab.domain import layout
         """
     got = hits(r, "src/ci_lab/guards/mw.py", code)
     assert [line for line, _ in got] == [1, 2, 3, 4, 6, 7]
