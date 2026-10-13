@@ -249,7 +249,8 @@ class LlmResourceAlgorithm:
             journal_credits(journal, record.key, relevant or credits)
 
     async def _proposal(self, client: Any, component: str, files: Sequence[str],
-                        tree: HarnessTree, credits: Sequence[Credit]) -> StructuralProposal:
+                        tree: HarnessTree, credits: Sequence[Credit],
+                        feedback: str | None = None) -> StructuralProposal:
         snapshots: dict[str, str] = {}
         prefix = self._harness_rel() + "/"
         for path in files:
@@ -262,7 +263,14 @@ class LlmResourceAlgorithm:
         instruction = ("Propose exactly one small structural harness edit. "
                        + ("Prefer deletion or tightening that reduces calls, steps, tools, or agents. " if cost else "")
                        + "Do not edit prompts, skills, guards, source, evals, governance, or the manifest. "
-                       "Return only strict JSON.\n")
+                       + "Preserve existing identifiers and cross-file references; never add references to "
+                         "agents, tools, or workflows that are not present in the supplied file. "
+                       + ("For client_tool edits, keep every existing agent name and do not add tool names; "
+                          "only remove exposed tools or replace null descriptions with strings. "
+                          if component == "client_tool" else "")
+                       + (f"A prior proposal failed frozen validation: {feedback[:500]}. Correct that failure. "
+                          if feedback else "")
+                       + "Return only strict JSON.\n")
         prompt = instruction + json.dumps(payload, sort_keys=True, separators=(",", ":"))
         if len(prompt) > MAX_PROMPT_CHARS:
             raise StructuralProposalError("selected component snapshot is too large")
@@ -318,8 +326,23 @@ class LlmResourceAlgorithm:
             credits = await assign_credit(digests, client=client, components=editable)
             self._journal(records, credits)
             component = next((c.component for c in credits if c.component in editable), editable[0])
-            proposal = await self._proposal(client, component, available[component], tree, credits)
-            edit = self._apply(ctx, rel, tree, proposal)
+            feedback: str | None = None
+            for attempt in range(2):
+                proposal = await self._proposal(
+                    client,
+                    component,
+                    available[component],
+                    tree,
+                    credits,
+                    feedback,
+                )
+                try:
+                    edit = self._apply(ctx, rel, tree, proposal)
+                    break
+                except StructuralProposalError as exc:
+                    if attempt:
+                        raise
+                    feedback = str(exc)
             obs.annotate({"ci.edits": 1, "rrsi.component": component})
             write_report(ctx, self.name, {
                 "cost": {}, "component": component,

@@ -16,6 +16,7 @@ from ci_lab.agl.algorithm import (
 from ci_lab.agl.journal import FileRolloutJournal
 from ci_lab.contracts import ArmContext, ArmDirective, Edit, Profile, RolloutKey
 from ci_lab.harness_tree import HarnessTree
+from ci_lab.strategies.base import optimizer_commit_message
 from ci_lab.testing import FakeChatClient
 
 REPO = Path(__file__).resolve().parents[3]
@@ -88,12 +89,12 @@ def test_agl_commits_one_contained_structural_edit(
     edits = asyncio.run(algorithm.propose(context(worktree, tmp_path, ("loop",))))
     assert edits == [Edit("loop", "tighten proposer nudges", (path,), "abc123")]
     assert "proposer: {max_nudges: 1" in (worktree / path).read_text(encoding="utf-8")
-    expected_message = "\n".join((
-        "v1: agl tighten proposer nudges",
-        "",
-        "RRSI-Component: loop",
-        "RRSI-Hypothesis: tighten proposer nudges",
-    ))
+    expected_message = optimizer_commit_message(
+        "v1",
+        "agl",
+        "loop",
+        "tighten proposer nudges",
+    )
     assert committed == [(worktree, (path,), expected_message)]
     assert HarnessTree(worktree / "harness").validate() == []
     assert "Prefer deletion or tightening" in "\n".join(m.text for m in client.requests[1][0])
@@ -102,6 +103,39 @@ def test_agl_commits_one_contained_structural_edit(
     credit_events = [e for e in algorithm.source.events(RolloutKey("camp-r00", "base", "case-cost"))
                      if e["event_type"] == "ci.credit"]
     assert len(credit_events) == 1
+
+
+def test_agl_retries_once_with_tree_validation_feedback(
+        worktree: Path, tmp_path: Path) -> None:
+    path = "harness/tools/tools.yaml"
+    original = (worktree / path).read_text(encoding="utf-8")
+    invalid = original.replace("analyst:", "reviewer:", 1)
+    valid = original.replace(
+        "analyst: {read_brief: null",
+        'analyst: {read_brief: "Read the current brief"',
+        1,
+    )
+    client = FakeChatClient([
+        credit_reply("client_tool"),
+        edit_reply(path, invalid, "client_tool"),
+        edit_reply(path, valid, "client_tool"),
+    ])
+    algorithm = LlmResourceAlgorithm(
+        journal=journal(tmp_path),
+        client=client,
+        committer=lambda *_: "sha",
+    )
+
+    edits = asyncio.run(
+        algorithm.propose(context(worktree, tmp_path, ("client_tool",)))
+    )
+
+    assert edits[0].component == "client_tool"
+    assert "Read the current brief" in (worktree / path).read_text(encoding="utf-8")
+    assert len(client.requests) == 3
+    retry_prompt = "\n".join(message.text for message in client.requests[2][0])
+    assert "prior proposal failed frozen validation" in retry_prompt
+    assert "no agents/reviewer.yaml" in retry_prompt
 
 
 def test_agl_uses_copilot_optimizer_factory(worktree: Path, tmp_path: Path) -> None:
