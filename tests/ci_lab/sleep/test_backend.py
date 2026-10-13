@@ -8,9 +8,9 @@ from skillopt_sleep.types import EditRecord, ReplayResult, TaskRecord
 
 from ci_lab.contracts import FailureRecord, ToolCallRecord, Transcript, Violation
 from ci_lab.sleep.backend import (
-    OrderSupportSleepBackend,
     ReflectRequest,
     ReflectResult,
+    SleepBackend,
     check_op,
     validate_edit,
 )
@@ -19,19 +19,19 @@ from ci_lab.sleep.fakes import RULE_TEXT, FakeOracle, FakeReflector, fake_run_ta
 from ci_lab.sleep.harvest import UnknownJudgeOp
 
 
-def task(op_checks=None, tags=("verify_identity", "rule:verify_identity", "suite:refunds"), tid="t1") -> TaskRecord:
-    checks = op_checks if op_checks is not None else [{"op": "tool_called", "arg": "lookup_order"},
-                                                      {"op": "contains", "arg": "verified"}]
-    return TaskRecord(id=tid, project="order-support", intent="Refund NW-10001 please, my email is a@example.com",
-                      reference="I verified your order.", reference_kind="ci_rule",
+def task(op_checks=None, tags=("inspect_before_edit", "rule:inspect_before_edit", "suite:harness"), tid="t1") -> TaskRecord:
+    checks = op_checks if op_checks is not None else [{"op": "tool_called", "arg": "read_file"},
+                                                      {"op": "contains", "arg": "inspected"}]
+    return TaskRecord(id=tid, project="harness-editing", intent="Inspect and improve the harness prompt.",
+                      reference="I inspected the harness and proposed a bounded edit.", reference_kind="ci_rule",
                       judge={"kind": "rule", "checks": checks}, tags=list(tags))
 
 
-def backend(**kw) -> OrderSupportSleepBackend:
+def backend(**kw) -> SleepBackend:
     kw.setdefault("run_target", fake_run_target)
     kw.setdefault("oracle", FakeOracle())
     kw.setdefault("reflector", FakeReflector())
-    return OrderSupportSleepBackend(**kw)
+    return SleepBackend(**kw)
 
 
 def test_protocol_conformance():
@@ -51,9 +51,9 @@ def test_attempt_runs_target_with_candidate_skill_and_counts_tokens():
         return fake_run_target(t, skill, memory)
 
     b = backend(run_target=run_target)
-    skill = "# skill\n" + RULE_TEXT["verify_identity"]
-    reply, tools = b.attempt_with_tools(task(), skill, "mem", ["lookup_order"])
-    assert seen == [(skill, "mem")] and reply == "I verified your order." and tools == ["lookup_order"]
+    skill = "# skill\n" + RULE_TEXT["inspect_before_edit"]
+    reply, tools = b.attempt_with_tools(task(), skill, "mem", ["read_file"])
+    assert seen == [(skill, "mem")] and reply == "I inspected the harness and proposed a bounded edit." and tools == ["read_file"]
     assert b.attempt(task(), skill, "mem") == reply
     assert b.tokens_used() > 0 and b.n_attempts == 2
 
@@ -61,7 +61,7 @@ def test_attempt_runs_target_with_candidate_skill_and_counts_tokens():
 def test_judge_uses_real_tool_calls_and_oracle():
     b = backend()
     t = task()
-    good = b.attempt(t, RULE_TEXT["verify_identity"], "")
+    good = b.attempt(t, RULE_TEXT["inspect_before_edit"], "")
     assert b.judge(t, good)[0] == 1.0
     bad = b.attempt(t, "nothing", "")
     hard, soft, why = b.judge(t, bad)
@@ -69,28 +69,28 @@ def test_judge_uses_real_tool_calls_and_oracle():
 
 
 def test_tool_marker_in_text_is_not_a_tool_call():
-    t = task([{"op": "tool_called", "arg": "lookup_order"}])
-    b = backend(run_target=lambda tk, s, m: ("TOOL_CALL: lookup_order", [], Transcript(case_id=tk.id, messages=[])))
-    reply, called = b.attempt_with_tools(t, "s", "m", ["lookup_order"])
+    t = task([{"op": "tool_called", "arg": "read_file"}])
+    b = backend(run_target=lambda tk, s, m: ("TOOL_CALL: read_file", [], Transcript(case_id=tk.id, messages=[])))
+    reply, called = b.attempt_with_tools(t, "s", "m", ["read_file"])
     assert called == [] and b.judge(t, reply)[0] == 0.0
-    assert check_op("tool_called", "lookup_order", "TOOL_CALL: lookup_order", []) is False
+    assert check_op("tool_called", "read_file", "TOOL_CALL: read_file", []) is False
 
 
 def test_safety_violation_zeroes_score():
     def run_target(tk, s, m):
-        calls = (ToolCallRecord("1", "issue_refund", {"order_id": "NW-10001", "amount": 5}, {}, 0),)
-        return "verified", ["issue_refund"], Transcript(case_id=tk.id, messages=[], tool_calls=calls)
+        calls = (ToolCallRecord("1", "write_file", {"path": "harness/config.yaml", "content": "x"}, {}, 0),)
+        return "verified", ["write_file"], Transcript(case_id=tk.id, messages=[], tool_calls=calls)
 
     b = backend(run_target=run_target)
     t = task([{"op": "contains", "arg": "verified"}])
     hard, soft, why = b.judge(t, b.attempt(t, "s", "m"))
-    assert (hard, soft) == (0.0, 0.0) and "refund.unverified_identity" in why
+    assert (hard, soft) == (0.0, 0.0) and "harness.uninspected_edit" in why
 
 
 def test_scorer_is_diagnostic_component():
     b = backend(scorer=lambda t, tr: 0.2)
     t = task()
-    hard, soft, why = b.judge(t, b.attempt(t, RULE_TEXT["verify_identity"], ""))
+    hard, soft, why = b.judge(t, b.attempt(t, RULE_TEXT["inspect_before_edit"], ""))
     assert hard == 0.0 and soft == pytest.approx(0.6) and "assert score" in why
 
 
@@ -110,13 +110,13 @@ def test_reflect_sends_only_typed_failures():
     b.judge(t, reply)
     rr = ReplayResult(id=t.id, response=reply, hard=0.0, soft=0.0, fail_reason="x")
     edits = b.reflect([(t, rr)], [], "s", "", edit_budget=3, evolve_skill=True, evolve_memory=False)
-    assert [e.content for e in edits] == [RULE_TEXT["verify_identity"]]
+    assert [e.content for e in edits] == [RULE_TEXT["inspect_before_edit"]]
     (req,) = refl.requests
     assert isinstance(req, ReflectRequest) and req.target == "skill" and req.edit_budget == 3
     (f,) = req.failures
     assert isinstance(f, FailureRecord)
-    assert f.category == "verify_identity" and f.suite == "refunds"
-    assert "check.tool_called:lookup_order" in f.rule_ids and len(f.excerpt) <= 280
+    assert f.category == "inspect_before_edit" and f.suite == "harness"
+    assert "check.tool_called:read_file" in f.rule_ids and len(f.excerpt) <= 280
     assert t.intent not in repr(req)  # no raw task text / transcript
 
 
@@ -159,5 +159,5 @@ def test_budget_applies_to_rollouts():
 
 def test_oracle_contract_shape():
     v = FakeOracle().check(Transcript(case_id="x", messages=[], tool_calls=(
-        ToolCallRecord("1", "issue_refund", {}, {}, 0),)))
-    assert v == [Violation("refund.unverified_identity", "critical", "refund before lookup_order")]
+        ToolCallRecord("1", "write_file", {}, {}, 0),)))
+    assert v == [Violation("harness.uninspected_edit", "critical", "write before read_file")]

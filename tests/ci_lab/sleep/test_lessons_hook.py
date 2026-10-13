@@ -32,7 +32,7 @@ from ci_lab.sleep.registry import HARNESS_EDITING
 from ci_lab.sleep.runner import sequential_runner
 
 OS = "harness-editing"
-CASES = {f"c{i}": "verify_identity" for i in range(6)}
+CASES = {f"c{i}": "inspect_before_edit" for i in range(6)}
 
 
 def cfg_for(repo: Path, tmp_path: Path, **kw) -> SleepConfig:
@@ -93,7 +93,7 @@ def test_hook_receives_typed_rollouts(sleep_repo, tmp_path):
     (req,) = seen
     assert req.target == OS and req.date == "20260921" and req.night_id == res.night_id
     assert req.rollouts and all(isinstance(r, RolloutView) for r in req.rollouts)
-    assert {r.suite for r in req.rollouts} <= {"refunds", "sleep"}
+    assert {r.suite for r in req.rollouts} <= {"harness-proposal", "sleep"}
     _, experiment, _, patch = read_bundle(cfg.out_dir)
     assert experiment["config"]["lessons_hook"] is True
     assert experiment["targets"][OS]["lessons"] == {"trajectories_night": len(req.rollouts)}
@@ -102,13 +102,13 @@ def test_hook_receives_typed_rollouts(sleep_repo, tmp_path):
 
 def test_hook_failure_is_soft(sleep_repo, tmp_path):
     def boom(req):
-        raise RuntimeError("secret detail NW-10001")
+        raise RuntimeError("secret detail CASE-10001")
 
     cfg, res = _night(sleep_repo, tmp_path, "20260921", boom)
     assert res.status == "accepted", res.error
     _, experiment, _, patch = read_bundle(cfg.out_dir)
     assert experiment["targets"][OS]["lessons"] == {"error": "RuntimeError"}
-    assert "NW-10001" not in json.dumps(experiment) and LESSONS_REL not in patch
+    assert "CASE-10001" not in json.dumps(experiment) and LESSONS_REL not in patch
 
 
 def test_real_hook_mines_candidates_across_nights_into_bundle(sleep_repo, tmp_path):
@@ -133,13 +133,13 @@ def test_real_hook_mines_candidates_across_nights_into_bundle(sleep_repo, tmp_pa
     assert cand["status"] == "candidate" and cand["human_confirmed"] is False
     assert cand["fingerprint"]["pin"] == "sleep-fake"
     assert all(tok != "_" for g in cand["fingerprint"]["tool_ngrams"] for tok in g)
-    # B8: only typed slots; no task text, order ids, tool args or member ids
-    for leak in ("NW-1000", "Please help", "verified your order", "members", "excerpt", "args"):
+    # B8: only typed slots; no task text, resource ids, tool args or member ids
+    for leak in ("CASE-1000", "Please help", "verified your resource", "members", "excerpt", "args"):
         assert leak not in added, leak
 
 
 def test_trajectories_keep_rubric_ids_without_args():
-    ro = RolloutView(case_id="t01", suite="refunds", transcript=None, violations=(),  # type: ignore[arg-type]
+    ro = RolloutView(case_id="t01", suite="harness", transcript=None, violations=(),  # type: ignore[arg-type]
                      rule_ids=("check.contains:verified", "rule:x"), passed=False)
     req = LessonsRequest(target=OS, night_id="sleep-20260921-1", date="20260921", profile="fake",
                          rollouts=(ro, ro))
@@ -152,17 +152,17 @@ def test_trajectories_keep_rubric_ids_without_args():
 def test_sanitize_candidate_drops_untyped_values():
     line = {"cluster": {"id": "c-1", "route": "R2", "status": "candidate", "members": ["a", "b", "c"],
                         "families": ["f1"], "slices": ["s1", "s2"],
-                        "fingerprint": {"pin": "p", "oracle_rules": ["refund.limit"], "rubric_ids": [],
-                                        "tool_ngrams": [["^", "lookup_order", "has space"]],
+                        "fingerprint": {"pin": "p", "oracle_rules": ["edit.limit"], "rubric_ids": [],
+                                        "tool_ngrams": [["^", "read_file", "has space"]],
                                         "error_class": "free text here", "excerpt": "PII"}},
             "features": {"amount_gt": True, "n": 3, "who": "Jane Doe <j@x.com>", "bad key!": 1,
-                         "tools": ["lookup_order"], "mixed": ["ok", "not ok"]},
+                         "tools": ["read_file"], "mixed": ["ok", "not ok"]},
             "trusted": True, "holdout_members": ["x"]}
     out = sanitize_candidate(line)
     assert out["support"] == 3 and out["families"] == 1 and out["slices"] == 2 and out["holdout"] == 1
-    assert out["fingerprint"]["tool_ngrams"] == [["^", "lookup_order", "_"]]
+    assert out["fingerprint"]["tool_ngrams"] == [["^", "read_file", "_"]]
     assert out["fingerprint"]["error_class"] is None
-    assert out["features"] == {"amount_gt": True, "n": 3, "tools": ["lookup_order"]}
+    assert out["features"] == {"amount_gt": True, "n": 3, "tools": ["read_file"]}
     assert "PII" not in json.dumps(out) and "Jane" not in json.dumps(out)
 
 

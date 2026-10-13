@@ -23,7 +23,7 @@ from ci_lab.sleep.registry import HARNESS_EDITING
 from ci_lab.sleep.runner import sequential_runner
 
 SHA = "a" * 40
-CASES = {f"c{i}": "verify_identity" for i in range(6)}
+CASES = {f"c{i}": "inspect_before_edit" for i in range(6)}
 ENVELOPE = "experiments/sleep/envelopes/sleep-20260921-1.json"
 
 
@@ -57,7 +57,7 @@ def _envelope(cfg: SleepConfig, h, repo: Path, tmp_path: Path) -> dict:
 def _no_candidate_deps(**kw) -> SleepDeps:
     # the target already follows the rule, so SkillOpt finds nothing to fix and proposes no candidate
     return _deps(reflector=FakeReflector(extra=[]),
-                 run_target=lambda t, s, m: fake_run_target(t, s + RULE_TEXT["verify_identity"], m), **kw)
+                 run_target=lambda t, s, m: fake_run_target(t, s + RULE_TEXT["inspect_before_edit"], m), **kw)
 
 
 def test_no_candidate_night_records_valid_control_retained_envelope(sleep_repo, tmp_path, h):

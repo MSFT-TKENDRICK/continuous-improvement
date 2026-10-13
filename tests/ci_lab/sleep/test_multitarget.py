@@ -34,7 +34,7 @@ from ci_lab.sleep.registry import (
 from ci_lab.sleep.runner import sequential_runner
 
 SHA = "b" * 40
-CASES = {f"c{i}": "verify_identity" for i in range(6)}
+CASES = {f"c{i}": "inspect_before_edit" for i in range(6)}
 SECOND = TRACE_TRIAGE
 
 

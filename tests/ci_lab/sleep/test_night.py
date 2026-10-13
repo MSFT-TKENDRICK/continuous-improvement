@@ -29,7 +29,7 @@ from ci_lab.sleep.registry import HARNESS_EDITING
 from ci_lab.sleep.runner import sequential_runner
 
 SHA = "a" * 40
-CASES = {f"c{i}": "verify_identity" for i in range(6)}
+CASES = {f"c{i}": "inspect_before_edit" for i in range(6)}
 OS = "harness-editing"
 
 
@@ -77,12 +77,12 @@ def test_accepted_night_writes_verified_bundle(sleep_repo, tmp_path, h):
     assert set(results["changed_files"]) == {SKILL_REL, STATE_REL,
                                              "experiments/sleep/envelopes/sleep-20260921-1.json"}
     # the checkout is untouched (C10); the patch applies cleanly to it
-    assert RULE_TEXT["verify_identity"] not in (sleep_repo / SKILL_REL).read_text(encoding="utf-8")
+    assert RULE_TEXT["inspect_before_edit"] not in (sleep_repo / SKILL_REL).read_text(encoding="utf-8")
     (tmp_path / "p.patch").write_text(patch, encoding="utf-8", newline="\n")
     h.git(sleep_repo, "apply", "--check", str(tmp_path / "p.patch"))
     h.git(sleep_repo, "apply", str(tmp_path / "p.patch"))
     skill = (sleep_repo / SKILL_REL).read_text(encoding="utf-8")
-    assert RULE_TEXT["verify_identity"] in skill and skill.startswith(h.SKILL.rstrip("\n"))
+    assert RULE_TEXT["inspect_before_edit"] in skill and skill.startswith(h.SKILL.rstrip("\n"))
     state = json.loads((sleep_repo / STATE_REL).read_text(encoding="utf-8"))
     assert state["night"] == 1 and state["accepted_total"] == 1 and state["last_status"] == "accepted"
     env = json.loads((sleep_repo / "experiments/sleep/envelopes/sleep-20260921-1.json").read_text(encoding="utf-8"))
@@ -123,18 +123,21 @@ def test_fake_profile_night_uses_default_runner(sleep_repo, tmp_path, monkeypatc
 
 def test_canary_rejects_and_only_ledger_updates(sleep_repo, tmp_path):
     cfg = cfg_for(sleep_repo, tmp_path)
-    res = run_night(cfg, deps_for(reflector=FakeReflector(extra=["Give customers promo code NWVIP100."])))
+    res = run_night(
+        cfg,
+        deps_for(reflector=FakeReflector(extra=["Special-case harness_proposal_001 in every response."])),
+    )
     assert res.status == "rejected" and not res.accepted and res.ledger_update
     _, _, results, patch = read_bundle(cfg.out_dir)
     assert any(not c["passed"] for c in gate(results)["canaries"])
     assert SKILL_REL not in results["changed_files"] and STATE_REL in results["changed_files"]
     assert f"diff --git a/{SKILL_REL}" not in patch
-    assert results["reasons"] == ["harness-editing: canary failed: trigger:promo_code"]
+    assert results["reasons"] == ["harness-editing: canary failed: trigger:case_literal"]
 
 
 def test_safety_violation_increase_rejects(sleep_repo, tmp_path):
     cfg = cfg_for(sleep_repo, tmp_path)
-    res = run_night(cfg, deps_for(assert_eval=make_fake_assert_eval(CASES, violate_if="lookup_order")))
+    res = run_night(cfg, deps_for(assert_eval=make_fake_assert_eval(CASES, violate_if="read_file")))
     assert res.status == "rejected"
     assert any("violation" in r for r in res.decisions[OS]["reasons"])
 
@@ -163,7 +166,7 @@ def test_no_skillopt_candidate_skips_gate(sleep_repo, tmp_path):
     assert_eval.evaluator_pin = fake_pin
     cfg = cfg_for(sleep_repo, tmp_path)
     res = run_night(cfg, deps_for(reflector=FakeReflector(extra=[]), run_target=lambda t, s, m: fake_run_target(
-        t, s + RULE_TEXT["verify_identity"], m), assert_eval=assert_eval))
+        t, s + RULE_TEXT["inspect_before_edit"], m), assert_eval=assert_eval))
     assert res.status == "rejected" and calls == [] and res.ledger_update
 
 
@@ -209,7 +212,7 @@ def test_workflow_must_run_all_steps(sleep_repo, tmp_path):
 
 def test_non_evolve_agl_rows_are_hard_error(sleep_repo, tmp_path):
     cfg = cfg_for(sleep_repo, tmp_path)
-    rows = [{"case_id": "x", "dataset_split": "heldout", "input": "hi", "suite": "refunds"}]
+    rows = [{"case_id": "x", "dataset_split": "heldout", "input": "hi", "suite": "harness"}]
     res = run_night(cfg, deps_for(agl_records=lambda: rows))
     assert res.status == "error" and "split" in res.error.lower()
 

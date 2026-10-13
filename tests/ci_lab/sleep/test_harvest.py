@@ -22,12 +22,12 @@ REPO = Path(__file__).resolve().parents[3]
 
 
 def agl_row(i: int, split: str = "evolve", **task) -> dict:
-    body = {"id": f"case-{i}", "project": "order-support", "intent": f"Where is my order NW-1000{i}?",
-            "reference_kind": "rule", "judge": {"kind": "rule", "checks": [{"op": "tool_called", "arg": "lookup_order"}]},
-            "tags": ["shipping_status"], "context_excerpt": "TOOL RESULT: {secret stuff}",
-            "tool_calls": [{"name": "lookup_order", "result": {"email": "x@example.com"}}]}
+    body = {"id": f"case-{i}", "project": "harness-editing", "intent": f"Inspect fixture CASE-{1000 + i}.",
+            "reference_kind": "rule", "judge": {"kind": "rule", "checks": [{"op": "tool_called", "arg": "read_file"}]},
+            "tags": ["inspect_before_edit"], "context_excerpt": "TOOL RESULT: {secret stuff}",
+            "tool_calls": [{"name": "read_file", "result": {"token": "secret"}}]}
     body.update(task)
-    return {"dataset_split": split, "suite": "shipping", "task": body}
+    return {"dataset_split": split, "suite": "harness", "task": body}
 
 
 def test_seed_tasks_file_is_valid():
@@ -70,7 +70,6 @@ def test_unknown_op_rejected_at_harvest(tmp_path, h, op):
     {"kind": "rule", "checks": []},
     {"kind": "rule", "checks": [{"op": "regex", "arg": "("}]},
     {"kind": "rule", "checks": [{"op": "max_chars", "arg": "10"}]},
-    {"kind": "rule", "checks": [{"op": "tool_called", "arg": "delete_database"}]},
     {"kind": "rule", "checks": [{"op": "contains", "arg": "  "}]},
 ])
 def test_bad_judges_rejected(judge):
@@ -78,12 +77,18 @@ def test_bad_judges_rejected(judge):
         validate_judge(judge)
 
 
+def test_unknown_tool_rejected_when_tool_contract_is_supplied():
+    judge = {"kind": "rule", "checks": [{"op": "tool_called", "arg": "delete_database"}]}
+    with pytest.raises(HarvestError, match="unknown tool"):
+        validate_judge(judge, known_tools=frozenset({"read_file", "write_file"}))
+
+
 def test_agl_evolve_rows_are_harvested_and_stripped():
     tasks, excluded = from_agl_exports([agl_row(1), agl_row(2)])
     assert excluded == 0 and len(tasks) == 2
     t = tasks[0]
     assert t.id.startswith("agl-case-1-") and t.context_excerpt == "" and t.attempted_solution == ""
-    assert "suite:shipping" in t.tags and t.reference_kind == "ci_rule"
+    assert "suite:harness" in t.tags and t.reference_kind == "ci_rule"
     assert "secret" not in json.dumps(t.to_dict() if hasattr(t, "to_dict") else t.__dict__)
 
 
@@ -113,8 +118,8 @@ def test_injection_suites_excluded():
 
 
 def test_dedupe_and_reviewed_win(tmp_path, h):
-    rev = h.task_row(0, intent="Where is my order NW-10001?", reference_kind="rule",
-                     judge={"kind": "rule", "checks": [{"op": "tool_called", "arg": "lookup_order"}]})
+    rev = h.task_row(0, intent="Inspect fixture CASE-1001.", reference_kind="rule",
+                     judge={"kind": "rule", "checks": [{"op": "tool_called", "arg": "read_file"}]})
     p = h.write_tasks(tmp_path / "t.jsonl", [rev, h.task_row(1)])
     rows = [agl_row(1), agl_row(1), agl_row(3)]
     res = harvest(p, rows)
