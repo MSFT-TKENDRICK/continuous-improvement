@@ -1,0 +1,124 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/MSFT-TKENDRICK/continuous-improvement/schemas/oes/ext-com.microsoft.ci.sleep.schema.json",
+  "title": "OES extension com.microsoft.ci.sleep",
+  "description": "SkillOpt-Sleep nightly consolidation record carried in extensions[\"com.microsoft.ci.sleep\"] of an OES 0.1.0 envelope (experiment sleep-<yyyymmdd>).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "night", "skilloptVersion", "tasks", "gate", "budget", "candidateDigest", "adoptionPr", "evaluatorPin"],
+  "properties": {
+    "version": { "const": "0.1.0" },
+    "night": { "type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$", "description": "UTC date of the night (YYYY-MM-DD)." },
+    "nightIndex": { "type": "integer", "minimum": 1, "description": "Night counter from experiments/sleep/state.json." },
+    "skilloptVersion": { "type": "string", "minLength": 1 },
+    "skillPath": { "type": "string", "minLength": 1 },
+    "incumbentDigest": { "$ref": "#/$defs/digest" },
+    "candidateDigest": { "anyOf": [{ "$ref": "#/$defs/digest" }, { "type": "null" }] },
+    "tasks": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["total", "byOrigin", "bySplit"],
+      "properties": {
+        "total": { "type": "integer", "minimum": 0 },
+        "byOrigin": { "type": "object", "additionalProperties": { "type": "integer", "minimum": 0 } },
+        "bySplit": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "evolve": { "type": "integer", "minimum": 0 },
+            "heldout": { "type": "integer", "minimum": 0 },
+            "ood": { "type": "integer", "minimum": 0 }
+          }
+        }
+      }
+    },
+    "gate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["skillopt", "assert"],
+      "properties": {
+        "skillopt": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["passed"],
+          "properties": {
+            "passed": { "type": "boolean" },
+            "mode": { "type": "string" },
+            "score": { "type": ["number", "null"] },
+            "baselineScore": { "type": ["number", "null"] },
+            "reasons": { "type": "array", "items": { "type": "string" } }
+          }
+        },
+        "assert": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["passed"],
+          "properties": {
+            "passed": { "type": "boolean" },
+            "deltaS": { "type": ["number", "null"] },
+            "delta": { "type": "number", "minimum": 0 },
+            "ciLowerBound": { "type": ["number", "null"] },
+            "safetyViolations": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "baseline": { "type": "integer", "minimum": 0 },
+                "candidate": { "type": ["integer", "null"], "minimum": 0 }
+              }
+            },
+            "reasons": { "type": "array", "items": { "type": "string" } }
+          }
+        }
+      }
+    },
+    "budget": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["used"],
+      "properties": {
+        "used": { "$ref": "#/$defs/budgetCounts" },
+        "limits": { "$ref": "#/$defs/budgetCounts" }
+      }
+    },
+    "adoptionPr": {
+      "anyOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["branch"],
+          "properties": {
+            "branch": { "type": "string", "pattern": "^exp/sleep-[0-9]{8}-[0-9]{1,4}/cand$" },
+            "number": { "type": "integer", "minimum": 1 },
+            "url": { "type": "string", "format": "uri" }
+          }
+        }
+      ]
+    },
+    "evaluatorPin": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["evaluatorTree", "judgeModel", "judgeProvider", "servedJudgeModels"],
+      "properties": {
+        "evaluatorTree": { "type": "string", "pattern": "^[0-9a-f]{7,64}$" },
+        "judgeModel": { "type": "string", "minLength": 1 },
+        "judgeProvider": { "type": "string", "minLength": 1 },
+        "servedJudgeModels": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true }
+      }
+    }
+  },
+  "$defs": {
+    "digest": { "type": "string", "pattern": "^[a-z0-9]+:[0-9a-f]{16,128}$" },
+    "budgetCounts": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "tasks": { "type": "integer", "minimum": 0 },
+        "rollouts": { "type": "integer", "minimum": 0 },
+        "tokens": { "type": "integer", "minimum": 0 },
+        "aiu": { "type": "number", "minimum": 0 },
+        "wallClockSeconds": { "type": "number", "minimum": 0 }
+      }
+    }
+  }
+}
