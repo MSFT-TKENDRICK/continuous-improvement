@@ -1,0 +1,18 @@
+# FROZEN MCP control plane (A6). Candidates cannot edit this file; they choose exposure in
+# harness/mcp/exposure.yaml, which is validated against everything declared here.
+format: ci_lab.mcp.v1
+servers:
+  harness:
+    # argv only (never a shell string). Placeholders: {python} = sys.executable, {<root>} = a declared root.
+    command: ["{python}", "-m", "ci_lab.mcp.harness_server", "--root", "{harness_root}", "--runs-root", "{runs_root}"]
+    # Repo-relative defaults; McpHub(roots=...) overrides them (e.g. a candidate tree in a temp dir).
+    roots:
+      harness_root: harness
+      runs_root: artifacts
+    # Only these variables are forwarded (plus the MCP SDK's minimal safe default set).
+    env_allow: [PYTHONPATH]
+    tools_allow: [list_components, read_component, component_metrics, trace_summary, eval_summary]
+code_mode:
+  timeout_s_max: 60
+  max_output_chars_max: 20000
+  allowed_imports: [json, math, re, statistics, collections, itertools, functools, textwrap, fnmatch, datetime]

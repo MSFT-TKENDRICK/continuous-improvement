@@ -1,0 +1,17 @@
+# EVOLVABLE MCP exposure (component `mcp`, owner `agl`). It may only narrow the frozen registry in
+# src/ci_lab/mcp/servers.yaml: pick tools from tools_allow (null keeps the server's description),
+# choose mode direct|code, and set code-mode limits within the frozen caps.
+format: ci_lab.mcp.exposure.v1
+servers:
+  harness:
+    mode: code
+    tools:
+      list_components: null
+      read_component: null
+      component_metrics: null
+      trace_summary: null
+      eval_summary: null
+code_mode:
+  timeout_s: 20
+  max_output_chars: 8000
+  imports: [json, math, re, statistics, collections, itertools]
