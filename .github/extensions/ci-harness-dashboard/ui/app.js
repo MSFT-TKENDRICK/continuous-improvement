@@ -1065,3 +1065,164 @@ function chatErrorPanel(message) {
     );
 }
 
+function renderChat() {
+    const host = document.getElementById("chat-host");
+    let status = host.querySelector(".chat-status");
+    if (!status) {
+        status = h("p", { class: "muted small chat-status", role: "status", "aria-live": "polite" });
+        host.prepend(status);
+    }
+    status.textContent = chatStatusLine();
+    const st = got("chatStatus")?.value?.chat?.state;
+    clearTimeout(chat.poll);
+    if ((st === "starting" || st === "crashed" || st === "stopped") && state.ui.view === "chat") chat.poll = setTimeout(() => scheduleLoad(0), 2000);
+    if (chat.error) {
+        if (!host.querySelector(".chat-error")) host.replaceChildren(status, chatErrorPanel(chat.error));
+        return;
+    }
+    if (chat.mounted) return;
+    if (got("chatStatus")?.value?.chat?.state === "disabled") {
+        host.replaceChildren(status, empty("Experiment chat is disabled.", "Unset CI_CHAT_DISABLED and reopen the canvas to enable it."));
+        return;
+    }
+    const container = h("div", { class: "chat-root" });
+    host.replaceChildren(status, container);
+    if (!document.querySelector("link[data-chat-css]")) document.head.append(h("link", { rel: "stylesheet", href: "/chat/chat.css", data: { chatCss: "1" } }));
+    if (!chat.warm) {
+        // Start the backend while the bundle downloads, so the first message does not wait on `uv`.
+        chat.warm = true;
+        post("/api/chat/start")
+            .catch(() => {})
+            .finally(() => scheduleLoad(0));
+    }
+    chat.mounted = import("/chat/chat.js")
+        .then((m) =>
+            m.mount(container, {
+                token: TOKEN,
+                endpoint: "/agui",
+                onShowCampaign: (cid) => navigate({ view: "experiment", campaignId: cid, experimentId: null }),
+                onError: () => scheduleLoad(0),
+            }),
+        )
+        .catch((e) => {
+            chat.error = `The chat bundle failed to load (${e?.message ?? e}).`;
+            chat.mounted = null;
+            renderChat();
+        });
+}
+
+function viewChat() {
+    return null;
+}
+
+// ------------------------------------------------------------------ shell
+const RENDER = { overview: viewOverview, live: viewLive, experiment: viewExperiment, traces: viewTraces, evals: viewEvals, sleep: viewSleep, bus: viewBus, chat: viewChat, aspire: viewAspire };
+
+function renderTabs() {
+    const nav = document.getElementById("tabs");
+    nav.replaceChildren(
+        ...VIEWS.map(([id, label]) =>
+            h(
+                "button",
+                {
+                    type: "button",
+                    class: `tab ${state.ui.view === id ? "active" : ""}`.trim(),
+                    "aria-current": state.ui.view === id ? "page" : undefined,
+                    on: {
+                        click: () => {
+                            if (state.ui.view === id) {
+                                if (id === "experiment" && state.ui.experimentId) navigate({ experimentId: null });
+                                else if (id === "traces" && state.ui.traceId) navigate({ traceId: null });
+                                return;
+                            }
+                            navigate({ view: id });
+                            scheduleLoad(0);
+                        },
+                    },
+                },
+                label,
+            ),
+        ),
+    );
+}
+
+let lastLoadedKey = null;
+function render() {
+    renderTabs();
+    const key = JSON.stringify([state.ui.view, state.ui.experimentId, state.ui.traceId]);
+    if (key !== lastLoadedKey) {
+        lastLoadedKey = key;
+        scheduleLoad(0);
+    }
+    const main = document.getElementById("main");
+    const chatView = state.ui.view === "chat";
+    main.hidden = chatView;
+    document.getElementById("chat-host").hidden = !chatView;
+    if (chatView) {
+        main.replaceChildren();
+        renderChat();
+        return;
+    }
+    const scroll = main.scrollTop;
+    let content;
+    try {
+        content = RENDER[state.ui.view]?.() ?? empty("Unknown view.");
+    } catch (e) {
+        content = errorBox(e.message);
+    }
+    main.replaceChildren(...[content].flat(Infinity).filter(Boolean));
+    main.scrollTop = scroll;
+}
+
+function setConn(text, kind) {
+    const el = document.getElementById("conn");
+    el.textContent = text;
+    el.className = `conn ${kind}`;
+}
+
+function connect() {
+    const es = new EventSource("/events");
+    es.addEventListener("hello", (e) => {
+        const msg = JSON.parse(e.data);
+        setConn("live", "ok");
+        applyUi(msg.ui, true);
+        state.version = msg.version;
+        scheduleLoad(0);
+    });
+    es.addEventListener("changed", (e) => {
+        const msg = JSON.parse(e.data);
+        if (msg.version !== state.version) {
+            state.version = msg.version;
+            scheduleLoad(200);
+        }
+    });
+    es.addEventListener("ui", (e) => applyUi(JSON.parse(e.data), false));
+    es.addEventListener("ping", () => setConn("live", "ok"));
+    es.onerror = () => setConn("reconnecting…", "warn");
+}
+
+function applyUi(ui, force) {
+    if (!ui || (!force && typeof ui.seq === "number" && ui.seq <= state.ui.seq)) return;
+    state.ui = { ...state.ui, ...ui };
+    if (ui.traceId) state.openSpans.clear();
+    render();
+    document.getElementById("main").focus({ preventScroll: true });
+}
+
+setInterval(() => {
+    for (const el of document.querySelectorAll(".age[data-epoch]")) el.textContent = fmtAge(serverNow() - Number(el.dataset.epoch));
+}, 1000);
+
+document.getElementById("refresh").addEventListener("click", async () => {
+    setConn("refreshing…", "info");
+    try {
+        await post("/api/refresh");
+        setConn("live", "ok");
+        scheduleLoad(0);
+    } catch (e) {
+        setConn(e.message, "bad");
+    }
+});
+
+render();
+connect();
