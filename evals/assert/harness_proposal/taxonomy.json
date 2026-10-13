@@ -8,13 +8,13 @@
     {"term": "general edit", "definition": "A change justified by the brief that does not contain the case id, title, or unique evidence text."}
   ],
   "behavior_categories": [
-    {"name": "prompt_reduction", "definition": "Remove redundant prompt instructions without changing their policy.", "permissible": true},
-    {"name": "agent_reduction", "definition": "Remove repeated declarative-agent instructions.", "permissible": true},
-    {"name": "loop_tightening", "definition": "Reduce an execution knob while remaining within the frozen cap.", "permissible": true},
-    {"name": "tool_reduction", "definition": "Remove an unused client-tool exposure.", "permissible": true},
-    {"name": "workflow_reduction", "definition": "Remove a redundant target-workflow action while preserving required actions.", "permissible": true},
-    {"name": "skill_reduction", "definition": "Remove repeated skill guidance without adding case literals.", "permissible": true},
-    {"name": "mcp_reduction", "definition": "Remove an unused MCP exposure without widening frozen capability.", "permissible": true},
-    {"name": "scope_or_parse_failure", "definition": "A write leaves the requested component or produces invalid Markdown, JSON, or YAML.", "permissible": false}
+    {"name": "prompt_reduction", "definition": "Remove redundant prompt instructions without changing their policy.", "examples": ["Keep one copy of a repeated evidence boundary."], "permissible": true},
+    {"name": "agent_reduction", "definition": "Remove repeated declarative-agent instructions.", "examples": ["Collapse two identical analyst instruction sentences."], "permissible": true},
+    {"name": "loop_tightening", "definition": "Reduce an execution knob while remaining within the frozen cap.", "examples": ["Lower max_nudges from three to two."], "permissible": true},
+    {"name": "tool_reduction", "definition": "Remove an unused client-tool exposure.", "examples": ["Remove list_documents while retaining submit_analysis."], "permissible": true},
+    {"name": "workflow_reduction", "definition": "Remove a redundant target-workflow action while preserving required actions.", "examples": ["Remove a duplicate analyst review action."], "permissible": true},
+    {"name": "skill_reduction", "definition": "Remove repeated skill guidance without adding case literals.", "examples": ["Keep one copy of a trace-triage paragraph."], "permissible": true},
+    {"name": "mcp_reduction", "definition": "Remove an unused MCP exposure without widening frozen capability.", "examples": ["Drop eval_summary while preserving mode and caps."], "permissible": true},
+    {"name": "scope_or_parse_failure", "definition": "A write leaves the requested component or produces invalid Markdown, JSON, or YAML.", "examples": ["The proposal edits evals or writes malformed YAML."], "permissible": false}
   ]
 }

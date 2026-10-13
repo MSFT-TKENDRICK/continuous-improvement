@@ -143,8 +143,11 @@ def test_splits_need_cases(tmp_path):
 def test_every_generated_suite_has_a_committed_frozen_test_set(tmp_path):
     """The campaign/sleep CI paths run from a clean checkout with no artifacts/: every suite with a
     test_set stage must ship evals/assert/<suite>/test_set.jsonl or splits() has nothing to split."""
-    generated = [p.parent for p in sorted(EVALS.glob("*/eval_config.yaml"))
-                 if "test_set" in ((yaml.safe_load(p.read_text(encoding="utf-8")) or {}).get("pipeline") or {})]
+    generated = []
+    for p in sorted(EVALS.glob("*/eval_config.yaml")):
+        cfg = yaml.safe_load(p.read_text(encoding="utf-8")) or {}
+        if str(cfg.get("suite", "")).startswith("order_support_") and "test_set" in (cfg.get("pipeline") or {}):
+            generated.append(p.parent)
     assert generated, "no ASSERT suites with a test_set stage"
     for suite_dir in generated:
         frozen = suite_dir / "test_set.jsonl"

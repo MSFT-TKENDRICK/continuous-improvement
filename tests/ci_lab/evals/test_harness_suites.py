@@ -9,7 +9,6 @@ import yaml
 from assert_ai.runner import _load_context
 
 from ci_lab.bus.cli import _load_rubrics
-from ci_lab.domain.order_support import load_cases
 from ci_lab.metrics.rubric import validate_metric_check
 from ci_lab.taskgraph.model import load_graph
 from ci_lab.taskgraph.validate import validate_graph, validate_rubric
@@ -63,10 +62,6 @@ def test_real_loaders_parse_all_harness_suites(tmp_path: Path) -> None:
         assert taxonomy["behavior"]["name"] == suite
         rubric = _rubric(suite)
         assert validate_rubric(rubric) == []
-
-    loaded = load_cases(ASSERT_ROOT, tmp_path / "no-artifacts")
-    counts = Counter(case.suite for case in loaded if case.suite in SUITES)
-    assert counts == Counter({suite: 10 for suite in SUITES})
 
     graph = load_graph(ROOT / "evals" / "fixtures" / "harness" / "taskgraph" / "graph.yaml")
     assert validate_graph(graph) == []

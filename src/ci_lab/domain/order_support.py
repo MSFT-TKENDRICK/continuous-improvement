@@ -150,7 +150,8 @@ def _suite_configs(evals_dir: Path) -> list[tuple[str, Path, dict[str, Any]]]:
     for cfg_path in sorted(evals_dir.glob("*/eval_config.yaml")):
         cfg = yaml.safe_load(cfg_path.read_text(encoding="utf-8")) or {}
         suite = str(cfg.get("suite") or cfg_path.parent.name)
-        if suite in EXCLUDED_SUITES or "test_set" not in (cfg.get("pipeline") or {}):
+        if (not suite.startswith("order_support_") or suite in EXCLUDED_SUITES
+                or "test_set" not in (cfg.get("pipeline") or {})):
             continue
         out.append((suite, cfg_path, cfg))
     return out
