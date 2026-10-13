@@ -102,7 +102,8 @@ async def _consume(
             skills_paths=[str(path) for path in spec.skills_paths] or None,
             governance={"agent_name": spec.name, "model": target_model},
         )
-        response = await agent.run(case_prompt)
+        session = agent.create_session() if hasattr(agent, "create_session") else None
+        response = await agent.run(case_prompt, session=session)
         served = (getattr(client, "last_served_model", None)
                   or getattr(response, "model", None) or target_model)
         return str(getattr(response, "text", "") or ""), str(served), calls

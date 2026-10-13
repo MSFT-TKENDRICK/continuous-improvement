@@ -256,6 +256,35 @@ def test_assert_wrapper_binds_real_case_api(monkeypatch: pytest.MonkeyPatch) -> 
         wrapper.sys.executable, "-m", "ci_lab.domain.harness_assert_wrapper"]
 
 
+def test_live_suite_run_supplies_agent_session(
+    candidate: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from ci_lab.domain import harness_suites as suites
+    from ci_lab.governance import maf as governance_maf
+    from ci_lab.metrics import RunMeter
+
+    marker = object()
+
+    class Agent:
+        def create_session(self) -> object:
+            return marker
+
+        async def run(self, message: str, *, session: object) -> Any:
+            assert message and session is marker
+            return SimpleNamespace(text="triaged", model="gpt-5-mini")
+
+    monkeypatch.setattr(suites, "make_chat_client", lambda **_: object())
+    monkeypatch.setattr(governance_maf, "governed_harness_agent", lambda *_, **__: Agent())
+    text, model, calls = asyncio.run(suites._consume(
+        {"seed": {"title": "Failure", "description": "Inspect the trace."}},
+        harness_dir=candidate,
+        profile="copilot",
+        target_model="gpt-5-mini",
+        meter=RunMeter(),
+    ))
+    assert (text, model, calls) == ("triaged", "gpt-5-mini", [])
+
+
 def test_campaign_fake_domain_choice_is_registered(tmp_path: Path) -> None:
     from ci_lab.campaign.cli import load_deps
 
