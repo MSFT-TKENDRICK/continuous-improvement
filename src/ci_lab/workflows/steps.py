@@ -635,3 +635,372 @@ async def run_incumbent(rctx: RoundContext) -> None:
 
 # ------------------------------------------------------------------ round.yaml
 
+def round_tools(ctx: RoundContext) -> dict[str, Callable[..., Awaitable[Any]]]:
+    env = ctx.env
+    deps = env.deps
+    hyper = env.hyper
+
+    def begin_round() -> dict[str, Any]:
+        marker = ctx.dir / "begin.json"
+        if (data := _done(marker)) is not None:
+            return {"eid": data["eid"], "arms": [d["arm"] for d in data["directives"]]}
+        frontier = env.frontier()
+        history = deps.ledger.read_jsonl(env.rel("history.jsonl"))
+        directives = [normalize_directive(d) for d in deps.schedule(
+            ctx.round_no, env.round_hyper(ctx.round_no, history, incumbent_commit=frontier["incumbent_commit"]),
+            history)]
+        names = [d.get("arm") for d in directives]
+        if not names or len(set(names)) != len(names) or INCUMBENT in names or \
+                not all(isinstance(n, str) and ARM_RE.match(n) for n in names):
+            raise ValueError(f"bad schedule arm names {names!r}")
+        last_inc = _done(env.campaign_dir / "last_incumbent_eval.json")
+        failures = [asdict(f) for f in deps.domain.failures(records.eval_from_dict(last_inc))] if last_inc else []
+        data = {"eid": ctx.eid, "round": ctx.round_no, "base_commit": frontier["incumbent_commit"],
+                "base_tree": frontier["incumbent_tree"], "directives": directives, "failures": failures,
+                "history": history}
+        records.write_json(marker, data)
+        ctx.progress.write(arms={d["arm"]: {"strategy": d["strategy"], "state": "pending", "phase": None}
+                                 for d in directives}
+                           | {INCUMBENT: {"strategy": INCUMBENT_STRATEGY, "state": "pending", "phase": None}})
+        return {"eid": ctx.eid, "arms": names}
+
+    async def run_arms() -> dict[str, Any]:
+        marker = ctx.dir / "arms.json"
+        if (data := _done(marker)) is not None:
+            return data
+        arms = [d["arm"] for d in ctx.begin()["directives"]]
+        order_path = ctx.dir / "run_order.json"
+        order = _done(order_path)
+        if order is None:
+            order = [*arms, INCUMBENT]
+            random.Random(f"{hyper['seed']}|{ctx.eid}").shuffle(order)  # C8 interleaving
+            records.write_json(order_path, order)
+        sem = asyncio.Semaphore(max(1, int(hyper["max_parallel_arms"])))
+
+        async def one(name: str) -> None:
+            async with sem:
+                if (ctx.dir / name / "arm.done").exists():
+                    return
+                await (run_incumbent(ctx) if name == INCUMBENT else run_arm(ctx, name))
+
+        outcomes = await asyncio.gather(*(one(n) for n in order), return_exceptions=True)
+        errors = [o for o in outcomes if isinstance(o, BaseException)]
+        if errors:
+            raise RuntimeError(f"{len(errors)} arm(s) failed; rerun resumes them") from errors[0]
+        statuses = {}
+        for name in order:
+            result = ctx.arm_result(name)
+            if result is None:
+                raise RuntimeError(f"{ctx.eid}/{name}: missing arm.done")
+            statuses[name] = result.status
+        await challenger_lane.run_lane(ctx)  # out of band: bus entries + evaluator proposal only
+        data = {"order": order, "status": statuses}
+        records.write_json(marker, data)
+        return data
+
+    def select() -> dict[str, Any]:
+        marker = ctx.dir / "selection.json"
+        if (data := _done(marker)) is not None:
+            return {"decision": data["decision"], "winner": data["winner"]}
+        incumbent = ctx.arm_result(INCUMBENT)
+        if incumbent is None or incumbent.eval is None:
+            raise RuntimeError("incumbent not evaluated")
+        begin = ctx.begin()
+        arms = {d["arm"]: ctx.arm_result(d["arm"]) for d in begin["directives"]}
+        sel_hyper = env.round_hyper(ctx.round_no, begin.get("history") or (),
+                                    incumbent_commit=begin["base_commit"])
+        verdict = dict(deps.select(incumbent.eval, arms, env.delta(), sel_hyper))
+        winner = verdict.get("winner")
+        if verdict.get("decision") not in ("ship", "do_not_ship", "rerun"):
+            raise ValueError(f"bad decision {verdict.get('decision')!r}")
+        if (verdict["decision"] == "ship") != (winner is not None) or \
+                (winner is not None and (winner not in arms or arms[winner].status != "evaluated")):
+            raise ValueError(f"inconsistent selection {verdict!r}")
+        records.write_json(marker, verdict)
+        obs.annotate({ATTR_DECISION: verdict["decision"]})
+        return {"decision": verdict["decision"], "winner": winner}
+
+    def record() -> dict[str, Any]:
+        marker = ctx.dir / "record.done"
+        if (data := _done(marker)) is not None:
+            return data
+        begin = ctx.begin()
+        sel = _done(ctx.dir / "selection.json")
+        if sel is None:
+            raise RuntimeError("record before select")
+        incumbent = ctx.arm_result(INCUMBENT)
+        arms = {d["arm"]: ctx.arm_result(d["arm"]) for d in begin["directives"]}
+        winner = sel.get("winner") if sel["decision"] == "ship" else None
+        trace = {t.get("arm"): t for t in sel.get("trace") or ()}
+        attrib = {r.get("arm"): r for r in sel.get("attribution") or ()}
+        arm_rows = []
+        for d in begin["directives"]:
+            a = arms[d["arm"]]
+            t, at = trace.get(a.arm) or {}, attrib.get(a.arm) or {}
+            reasons = t.get("reasons") or ([t["reason"]] if t.get("reason") else [])
+            arm_rows.append({"arm": a.arm, "component": d.get("component"), "status": a.status,
+                             "head": a.head_commit, "tree": a.harness_tree,
+                             "score": records.mean_score(a.eval) if a.eval else None,
+                             "hypotheses": [e.hypothesis for e in a.edits],
+                             "critic": asdict(a.critic) if a.critic else None, "accepted": a.arm == winner,
+                             "strategy": a.strategy or d.get("strategy", "agent"),
+                             "edits": [asdict(e) for e in a.edits],
+                             "evaluated": a.status == "evaluated" and a.eval is not None,
+                             "cost": at.get("cost", t.get("cost")), "delta_s": at.get("delta_s", t.get("delta_s")),
+                             "delta_c": at.get("delta_c", t.get("delta_c")),
+                             "novelty": int(at.get("novelty", t.get("novelty")) or 0),
+                             "admissible": bool(t.get("admissible")), "reasons": list(reasons)})
+        tokens = records.tokens(incumbent.eval) + sum(records.tokens(a.eval) for a in arms.values())
+        inc_score = sel.get("incumbent_score")
+        inc_score = records.mean_score(incumbent.eval) if inc_score is None else inc_score
+        score_next = sel.get("score_next")
+        if score_next is None:
+            won = next((r for r in arm_rows if r["arm"] == winner), None)
+            score_next = won["score"] if won and won["score"] is not None else inc_score
+        rec = {"eid": ctx.eid, "campaignId": env.cid, "round": ctx.round_no, "base_commit": begin["base_commit"],
+               "base_tree": begin["base_tree"], "delta": env.delta(), "decision": sel["decision"],
+               "winner": winner, "selection": sel, "arms": arm_rows, "tokens": tokens,
+               "incumbent_score": records.mean_score(incumbent.eval)}
+        ext = {**((guard_envelope_extension(ctx, winner) or {}) if winner else {}), **bus_adapter.bus_extension(ctx)}
+        # lazy: AGT audit chain import; x-ci-governance = audit head + decision counts
+        from ci_lab.governance.audit import envelope_extension
+
+        if gov_ext := envelope_extension():
+            ext = {**ext, **gov_ext}
+        if ext:
+            rec["extensions"] = ext
+        evals = {"incumbent": records.arm_to_dict(incumbent),
+                 "arms": {k: records.arm_to_dict(v) for k, v in arms.items()}}
+        envelope_rec = {**rec, "evals": evals, "directives": begin["directives"],
+                        "incumbent_commit": begin["base_commit"], "split_hashes": env.split_hashes()}
+        rounds = f"rounds/{ctx.eid}"
+        deps.ledger.write_json(env.rel(rounds, "envelope.json"), deps.build_envelope("round", envelope_rec))
+        if (record_decisions := getattr(deps.ledger, "record_decisions", None)) is not None:
+            record_decisions(env.cid, ctx.eid, sel)  # ci_lab.ledger.decisions (verdict check + record span)
+        else:
+            deps.ledger.write_json(env.rel(rounds, "decisions.json"), sel)
+        deps.ledger.write_json(env.rel(rounds, "evals.json"), evals)
+        s_star = sel.get("s_star")
+        deps.ledger.append_jsonl(env.rel("history.jsonl"), {
+            "eid": ctx.eid, "round": ctx.round_no, "decision": sel["decision"], "winner": winner,
+            "tokens": tokens, "incumbent_score": inc_score, "score_next": score_next,
+            **({"s_star": s_star} if s_star is not None else {}),
+            "arms": [{k: r[k] for k in HISTORY_ARM_FIELDS} for r in arm_rows]}, key="eid")
+        paths = [env.rel(rounds, n) for n in ("envelope.json", "decisions.json", "evals.json")]
+        paths.append(env.rel("history.jsonl"))
+        if winner:
+            w = arms[winner]
+            new = {"incumbent_commit": w.head_commit, "incumbent_tree": w.harness_tree,
+                   "score": records.mean_score(w.eval) if w.eval else None, "round": ctx.round_no, "eid": ctx.eid}
+            current = env.frontier()
+            if current.get("incumbent_commit") != w.head_commit:
+                if current.get("incumbent_commit") != begin["base_commit"] or \
+                        not deps.ledger.cas_json(env.rel("frontier.json"), current, new):
+                    raise RuntimeError(f"frontier CAS conflict for {ctx.eid}")
+            paths.append(env.rel("frontier.json"))
+        env.commit_ledger(ctx.eid, f"Record {ctx.eid}: {sel['decision']}", paths)
+        data = {"decision": sel["decision"], "winner": winner}
+        records.write_json(marker, data)
+        return data
+
+    def publish() -> dict[str, Any]:
+        marker = ctx.dir / "publish.done"
+        if (data := _done(marker)) is not None:
+            return {k: data[k] for k in ("winner", "layers")}
+        begin = ctx.begin()
+        rec = _done(ctx.dir / "record.done")
+        if rec is None:
+            raise RuntimeError("publish before record")
+        heads = {}
+        for d in begin["directives"]:
+            a = ctx.arm_result(d["arm"])
+            if a and a.head_commit and a.head_commit != begin["base_commit"]:
+                heads[a.arm] = a.head_commit
+        winner = rec["winner"]
+        stack = deps.ledger.read_json(env.rel("stack.json")) or {"layers": [], "stack_number": None}
+        envelope = env.rel("rounds", ctx.eid, "envelope.json")
+        title = f"RRSI {ctx.eid}: accept {winner}" if winner else f"RRSI {ctx.eid}"
+        edits = ctx.arm_result(winner).edits if winner else []
+        body = (f"Accepted arm `{winner}` of experiment `{ctx.eid}` (campaign `{env.cid}`).\n\n"
+                f"OES envelope: `experiments/{envelope}`\n\n" +
+                "\n".join(f"- {e.component}: {e.hypothesis}" for e in edits))
+        result = deps.publisher.publish_round(eid=ctx.eid, winner=winner, heads=heads, stack=stack,
+                                              title=title, body=body)
+        if result.get("stack") != stack:
+            deps.ledger.write_json(env.rel("stack.json"), result["stack"])
+            env.commit_ledger(f"{ctx.eid}-stack", f"Record stack after {ctx.eid}", [env.rel("stack.json")])
+        data = {"winner": winner, "layers": len(result["stack"]["layers"]), "result": result}
+        records.write_json(marker, data)
+        return {"winner": winner, "layers": data["layers"]}
+
+    tracker = ctx.tracker
+    return {name: step(name, fn, tracker) for name, fn in {
+        "begin_round": begin_round, "run_arms": run_arms, "select": select, "record": record,
+        "publish": publish}.items()}
+
+
+# ------------------------------------------------------------------ calibrate.yaml
+
+@dataclass
+class CalibrationContext:
+    env: CampaignEnv
+
+    @functools.cached_property
+    def progress(self) -> Progress:
+        return self.env.progress(self.eid, "campaign")
+
+    @property
+    def tracker(self) -> Tracker:
+        return Tracker(self.progress, self.env.span_attrs(self.eid))
+
+    @property
+    def eid(self) -> str:
+        return f"{self.env.cid}-cal"
+
+    @property
+    def dir(self) -> Path:
+        return self.env.run_root / self.eid
+
+    @property
+    def ckpt(self) -> Path:
+        return self.dir / "ckpt"
+
+
+def calibrate_tools(ctx: CalibrationContext) -> dict[str, Callable[..., Awaitable[Any]]]:
+    env = ctx.env
+    deps = env.deps
+    hyper = env.hyper
+    repeats = int(hyper["aa_repeats"])
+
+    async def aa_runs(split: str = "evolve") -> dict[str, Any]:
+        frontier = env.frontier()
+        slot = ctx.dir / "slot.json"
+        if (data := _done(slot)) is None:
+            worktree = deps.provision_slot(ctx.eid, "h0", frontier["incumbent_commit"])
+            data = {"worktree": str(worktree), "base_commit": frontier["incumbent_commit"]}
+            records.write_json(slot, data)
+        worktree = Path(data["worktree"])
+        sem = asyncio.Semaphore(max(1, int(hyper["max_parallel_arms"])))
+
+        async def one(i: int) -> None:
+            path = ctx.dir / f"aa_{i}.json"
+            if path.exists():
+                return
+            async with sem:
+                result = await deps.domain.evaluate(worktree, split, int(hyper["k"]),
+                                                    experiment_id=ctx.eid, variant=f"aa{i}")
+            records.write_json(path, records.eval_to_dict(result))
+
+        await asyncio.gather(*(one(i) for i in range(repeats)))
+        env.remember_incumbent(frontier["incumbent_tree"],
+                               records.eval_from_dict(_done(ctx.dir / "aa_0.json")))
+        return {"repeats": repeats}
+
+    def delta() -> dict[str, Any]:
+        marker = ctx.dir / "delta.json"
+        if (data := _done(marker)) is not None:
+            return data
+        results = [records.eval_from_dict(_done(ctx.dir / f"aa_{i}.json")) for i in range(repeats)]
+        value = float(deps.calibrate_delta(results, hyper))
+        data = {"delta": value, "means": [records.mean_score(r) for r in results],
+                "tokens": sum(records.tokens(r) for r in results)}
+        records.write_json(marker, data)
+        return data
+
+    def record() -> dict[str, Any]:
+        marker = ctx.dir / "record.done"
+        if (data := _done(marker)) is not None:
+            return data
+        cal = _done(ctx.dir / "delta.json")
+        existing = deps.ledger.read_json(env.rel("calibration.json"))
+        if existing is not None and existing["delta"] != cal["delta"]:
+            raise RuntimeError("delta is immutable once calibrated")
+        rec = {"eid": ctx.eid, "campaignId": env.cid, "decision": None, **cal,
+               "repeats": repeats, "pin": _done(ctx.dir / "aa_0.json")["pin"]}
+        envelope_rec = {**rec, "runs": [_done(ctx.dir / f"aa_{i}.json") for i in range(repeats)],
+                        "harness_commit": _done(ctx.dir / "slot.json")["base_commit"],
+                        "split_hashes": env.split_hashes()}
+        deps.ledger.write_json(env.rel("calibration", "envelope.json"),
+                               deps.build_envelope("calibration", envelope_rec))
+        deps.ledger.write_json(env.rel("calibration.json"), rec)
+        env.commit_ledger(ctx.eid, f"Calibrate {env.cid}: delta={cal['delta']:.4f}",
+                          [env.rel("calibration.json"), env.rel("calibration", "envelope.json")])
+        data = {"delta": cal["delta"]}
+        records.write_json(marker, data)
+        return data
+
+    tracker = ctx.tracker
+    return {name: step(name, fn, tracker) for name, fn in {
+        "aa_runs": aa_runs, "delta": delta, "record": record}.items()}
+
+
+# ------------------------------------------------------------------ confirm.yaml
+
+class HoldoutExhausted(RuntimeError):
+    pass
+
+
+@dataclass
+class ConfirmContext:
+    env: CampaignEnv
+
+    @functools.cached_property
+    def progress(self) -> Progress:
+        return self.env.progress(self.eid, "campaign")
+
+    @property
+    def tracker(self) -> Tracker:
+        return Tracker(self.progress, self.env.span_attrs(self.eid))
+
+    @property
+    def eid(self) -> str:
+        return f"{self.env.cid}-confirm"
+
+    @property
+    def dir(self) -> Path:
+        return self.env.run_root / self.eid
+
+    @property
+    def ckpt(self) -> Path:
+        return self.dir / "ckpt"
+
+
+LOOKS = "holdout-looks.jsonl"  # global, ledger root (C15)
+
+
+def dataset_hash(case_ids: Any) -> str:
+    """``sha256:<hex>`` of the sorted case ids (OES ``datasetHash`` form; also a valid look-ledger key)."""
+    return "sha256:" + hashlib.sha256("\n".join(sorted(str(c) for c in case_ids)).encode()).hexdigest()
+
+
+def reserve_holdout_look(env: CampaignEnv, eid: str, split: str) -> dict[str, Any]:
+    """C15: reserve one look at ``split`` in the global ledger ``holdout-looks.jsonl`` for experiment
+    ``eid`` (idempotent per experiment, so a resumed step does not consume a second look); returns
+    ``{"dataset_hash", "look_no"}``. Ledgers with ``record_look`` (FileLedger) go through
+    :mod:`ci_lab.ledger.looks`."""
+    deps = env.deps
+    digest = dataset_hash(deps.domain.splits()[split])
+    planned = int(env.hyper["holdout_looks"])
+    if (record_look := getattr(deps.ledger, "record_look", None)) is not None:
+        try:
+            look_no = int(record_look(digest, experiment_id=eid, planned=planned, campaign_id=env.cid,
+                                      split=split)["look_no"])
+        except LookBudgetExceeded as exc:
+            raise HoldoutExhausted(str(exc)) from exc
+    else:
+        key = f"{eid}|{digest}"
+        bare = normalize_hash(digest)
+        looks = [r for r in deps.ledger.read_jsonl(LOOKS)
+                 if isinstance(r.get("dataset_hash"), str) and normalize_hash(r["dataset_hash"]) == bare]
+        mine = next((i for i, r in enumerate(looks) if is_same_look(r, digest, eid, env.cid)), None)
+        if mine is None:
+            if len(looks) >= planned:
+                raise HoldoutExhausted(f"held-out {digest[:19]} already looked at {len(looks)} time(s)")
+            deps.ledger.append_jsonl(LOOKS, {"key": key, "campaign": env.cid, "dataset_hash": digest,
+                                             "split": split, "eid": eid}, key="key")
+            mine = len(looks)
+        look_no = mine + 1
+    env.commit_ledger(f"{eid}-look", f"Reserve held-out look for {eid}", [LOOKS])
+    return {"dataset_hash": digest, "look_no": look_no}
+
+
