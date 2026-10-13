@@ -90,6 +90,7 @@ Built by `ci_lab.lessons_arm.envelope.guard_extension` (key `oes.GUARD_EXT` ==
 | `missing_trial_rate`, `judge_error_rate` | data_quality | `judge_error_rate` only when `judge_errors` counts are passed. |
 | `evaluator_pin` | invariant | 1 if the variant's pin equals the baseline's, else 0. |
 | `suite_score.<suite>` | diagnostic | Per-suite mean. |
+| `surface_complexity`, `simplicity_score` | diagnostic | Rounds only, when the incumbent and the arm carry `EvalResult.surface["complexity"]` (`ci_lab.metrics.simplicity`). `simplicity_score` is measured against the incumbent surface (0.5 = unchanged). Never part of the primary. |
 
 ### Quality checks
 
