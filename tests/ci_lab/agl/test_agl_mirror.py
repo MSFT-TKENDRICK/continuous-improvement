@@ -5,7 +5,12 @@ from pathlib import Path
 
 from ci_lab.agl.client import AglClient
 from ci_lab.agl.journal import FileRolloutJournal
-from ci_lab.agl.mirror import MODEL_REQUEST_FIELDS, MirroringJournal, model_request_data, model_request_recorder
+from ci_lab.agl.mirror import (
+    MODEL_REQUEST_FIELDS,
+    MirroringJournal,
+    model_request_data,
+    model_request_recorder,
+)
 from ci_lab.agl.scope import RolloutScope
 from ci_lab.contracts import RolloutKey, op_id
 
@@ -18,7 +23,7 @@ def _mirror(tmp_path: Path, fake) -> MirroringJournal:  # type: ignore[no-untype
 
 
 def _run(j: MirroringJournal, key: RolloutKey = KEY) -> None:
-    j.start(key, {"intent": "refund"})
+    j.start(key, {"intent": "change"})
     j.event(key, "reward", {"value": 1.0}, event_id="e1")
     j.event(key, "reward", {"value": 1.0}, event_id="e1")  # duplicate: not re-posted
     j.event(key, "ci.score", {"name": "s", "value": 0.5}, event_id="e2")
@@ -31,7 +36,7 @@ def test_mirrors_journal_first(tmp_path: Path, fake_agl) -> None:  # type: ignor
     assert fake_agl.state(KEY.rollout_id) == "succeeded"
     assert [e.data["ci_event_id"] for e in fake_agl.all_events(KEY.rollout_id)] == ["e1", "e2"]
     r = fake_agl.rollouts[KEY.rollout_id]
-    assert r.input == {"intent": "refund", "data_id": "case-1"} and r.is_train is False
+    assert r.input == {"intent": "change", "data_id": "case-1"} and r.is_train is False
     assert r.metadata.model_dump()["variant"] == "base"  # type: ignore[union-attr]
     assert not j.dirty and not j.offline
     assert [e["event_id"] for e in j.events(KEY)] == ["e1", "e2"]  # journal has no ci_event_id stamp

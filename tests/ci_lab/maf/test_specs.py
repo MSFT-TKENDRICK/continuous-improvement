@@ -35,11 +35,11 @@ def _data(agent_text: str) -> dict:
 # ---------------------------------------------------------------- valid specs
 
 def test_valid_spec_loads(agent_yaml: Path) -> None:
-    loaded = _load(agent_yaml, allowed_bindings={"lookup_order"})
+    loaded = _load(agent_yaml, allowed_bindings={"read_file"})
     spec = loaded.spec
-    assert spec.name == "OrderSupport"
+    assert spec.name == "CiStudent"
     assert spec.model.provider == "GitHubCopilot"
-    assert spec.binding_names() == {"lookup_order"}
+    assert spec.binding_names() == {"read_file"}
     assert loaded.path == agent_yaml.resolve()
     assert len(loaded.source_sha256) == 64
     assert spec.digest() == _load(agent_yaml).spec.digest()
@@ -54,8 +54,8 @@ def test_declarative_dict_drops_model_identity(agent_yaml: Path) -> None:
 
 def test_dict_form_bindings_normalised(tmp_path: Path, agent_text: str) -> None:
     data = _data(agent_text)
-    data["tools"][0]["bindings"] = {"lookup_order": "x"}
-    assert _parse(data, tmp_path).spec.tools[0].bindings[0].name == "lookup_order"
+    data["tools"][0]["bindings"] = {"read_file": "x"}
+    assert _parse(data, tmp_path).spec.tools[0].bindings[0].name == "read_file"
 
 
 def test_explicitly_allowed_provider(tmp_path: Path, agent_text: str) -> None:
@@ -86,7 +86,7 @@ def test_rejections(tmp_path: Path, agent_text: str, mutate, match: str) -> None
     data = _data(agent_text)
     mutate(data)
     with pytest.raises(SpecError, match=match):
-        _parse(data, tmp_path, allowed_bindings={"lookup_order"})
+        _parse(data, tmp_path, allowed_bindings={"read_file"})
 
 
 @pytest.mark.parametrize("mutate", [
@@ -140,16 +140,16 @@ def test_spec_file_errors(write, tmp_path: Path) -> None:
 
 def test_frozen_schema_allows_description_changes(tmp_path: Path, agent_text: str) -> None:
     frozen = _parse(_data(agent_text), tmp_path).spec.tool_schemas()
-    assert frozen["lookup_order"]["properties"]["order_id"]["type"] == "string"
+    assert frozen["read_file"]["properties"]["resource_id"]["type"] == "string"
     evolved = _data(agent_text)
     evolved["tools"][0]["description"] = "A much better description."
-    evolved["tools"][0]["parameters"]["properties"]["order_id"]["description"] = "Better param doc."
+    evolved["tools"][0]["parameters"]["properties"]["resource_id"]["description"] = "Better param doc."
     _parse(evolved, tmp_path, frozen_tool_schemas=frozen)
 
 
 @pytest.mark.parametrize("mutate, match", [
-    (lambda p: p["properties"]["order_id"].__setitem__("kind", "integer"), "differs"),
-    (lambda p: p["properties"]["order_id"].__setitem__("required", False), "differs"),
+    (lambda p: p["properties"]["resource_id"].__setitem__("kind", "integer"), "differs"),
+    (lambda p: p["properties"]["resource_id"].__setitem__("required", False), "differs"),
     (lambda p: p["properties"].__setitem__("extra", {"kind": "string"}), "differs"),
     (lambda p: p["properties"].__setitem__("description", {"kind": "string"}), "differs"),
 ])
@@ -164,7 +164,7 @@ def test_frozen_schema_rejects_parameter_changes(tmp_path: Path, agent_text: str
 def test_frozen_schema_rejects_tool_set_change(tmp_path: Path, agent_text: str) -> None:
     frozen = _parse(_data(agent_text), tmp_path).spec.tool_schemas()
     data = _data(agent_text)
-    data["tools"][0]["name"] = "lookup_order_v2"
+    data["tools"][0]["name"] = "read_file_v2"
     with pytest.raises(SpecError, match="tool set changed"):
         _parse(data, tmp_path, frozen_tool_schemas=frozen)
     data = _data(agent_text)
@@ -182,15 +182,15 @@ def test_strip_doc_keys_keeps_property_names() -> None:
 
 def test_xci_composes_instructions_in_order(write, agent_text: str) -> None:
     write("agents/prompts/system.md", "# System\nBe precise.\n")
-    write("agents/skills/refunds.md", "Refunds need a receipt.\n")
+    write("agents/skills/changes.md", "Changes need a receipt.\n")
     data = _data(agent_text)
-    data["x-ci"] = {"instructions_files": ["prompts/system.md", "skills/refunds.md"], "append_text": "Sign off."}
+    data["x-ci"] = {"instructions_files": ["prompts/system.md", "skills/changes.md"], "append_text": "Sign off."}
     path = write("agents/spec.yaml", yaml.safe_dump(data))
     loaded = _load(path, extra_instructions="Run 42.")
     assert loaded.spec.instructions == (
-        "You are the order support agent.\n\n# System\nBe precise.\n\nRefunds need a receipt.\n\nSign off.\n\nRun 42."
+        "You are the harness student agent.\n\n# System\nBe precise.\n\nChanges need a receipt.\n\nSign off.\n\nRun 42."
     )
-    assert [p.name for p in loaded.instruction_files] == ["system.md", "refunds.md"]
+    assert [p.name for p in loaded.instruction_files] == ["system.md", "changes.md"]
     assert "x-ci" not in loaded.spec.declarative_dict()
 
 
@@ -263,11 +263,11 @@ def test_resolve_contained_ok(tmp_path: Path) -> None:
 
 MANIFEST = """\
 agents:
-  OrderSupport:
-    spec: agents/order_support.yaml
+  CiStudent:
+    spec: agents/harness_agent.yaml
     runtime: harness
     purpose: target
-    bindings: [lookup_order]
+    bindings: [read_file]
     skills_paths: [skills]
 """
 
@@ -275,28 +275,28 @@ agents:
 def test_manifest_loads(write, agent_yaml: Path, tmp_path: Path) -> None:
     (tmp_path / "skills").mkdir()
     m = load_manifest(write("manifest.yaml", MANIFEST))
-    e = m.entries["OrderSupport"]
+    e = m.entries["CiStudent"]
     assert e.spec_path == agent_yaml.resolve()
     assert e.entry.runtime == "harness" and e.entry.purpose == "target"
     assert e.skills_paths == ((tmp_path / "skills").resolve(),)
 
 
 def test_manifest_runtime_defaults_to_prompt(write, agent_yaml: Path) -> None:
-    m = load_manifest(write("manifest.yaml", "agents:\n  OrderSupport: {spec: agents/order_support.yaml, purpose: judge}\n"))
-    assert m.entries["OrderSupport"].entry.runtime == "prompt"
+    m = load_manifest(write("manifest.yaml", "agents:\n  CiStudent: {spec: agents/harness_agent.yaml, purpose: judge}\n"))
+    assert m.entries["CiStudent"].entry.runtime == "prompt"
 
 
 @pytest.mark.parametrize("text, match", [
     ("agents: {}\n", "invalid manifest"),
-    ("agents:\n  A: {spec: agents/order_support.yaml, purpose: villain}\n", "invalid manifest"),
-    ("agents:\n  A: {spec: agents/order_support.yaml, purpose: target, runtime: shell}\n", "invalid manifest"),
-    ("agents:\n  A: {spec: agents/order_support.yaml, purpose: target, extra: 1}\n", "invalid manifest"),
-    ("agents:\n  'bad name': {spec: agents/order_support.yaml, purpose: target}\n", "invalid manifest"),
+    ("agents:\n  A: {spec: agents/harness_agent.yaml, purpose: villain}\n", "invalid manifest"),
+    ("agents:\n  A: {spec: agents/harness_agent.yaml, purpose: target, runtime: shell}\n", "invalid manifest"),
+    ("agents:\n  A: {spec: agents/harness_agent.yaml, purpose: target, extra: 1}\n", "invalid manifest"),
+    ("agents:\n  'bad name': {spec: agents/harness_agent.yaml, purpose: target}\n", "invalid manifest"),
     ("agents:\n  A: {spec: ../outside.yaml, purpose: target}\n", "escapes"),
     ("agents:\n  A: {spec: agents/missing.yaml, purpose: target}\n", "not found"),
     ("agents:\n  A: {spec: agents, purpose: target}\n", "not a file"),
-    ("agents:\n  A: {spec: agents/order_support.yaml, purpose: target, skills_paths: [../x]}\n", "escapes"),
-    ("agents:\n  A: {spec: agents/order_support.yaml, purpose: target, skills_paths: [manifest.yaml]}\n",
+    ("agents:\n  A: {spec: agents/harness_agent.yaml, purpose: target, skills_paths: [../x]}\n", "escapes"),
+    ("agents:\n  A: {spec: agents/harness_agent.yaml, purpose: target, skills_paths: [manifest.yaml]}\n",
      "not a directory"),
     ("agents:\n  A: {spec: '=Env.SPEC', purpose: target}\n", "'=' expressions"),
 ])
