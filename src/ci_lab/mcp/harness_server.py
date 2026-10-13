@@ -125,7 +125,8 @@ def _summarize_scores(scores: list[Any]) -> dict[str, Any]:
 
 def build_server(root: str | Path, runs_root: str | Path) -> FastMCP:
     root, runs_root = Path(root).resolve(), Path(runs_root).resolve()
-    mcp = FastMCP("harness", instructions="Read-only introspection of the evolvable harness tree and run artifacts.")
+    mcp = FastMCP("harness", instructions="Read-only introspection of the evolvable harness tree and run artifacts.",
+                  log_level="WARNING")
 
     @mcp.tool()
     def list_components() -> dict[str, Any]:
