@@ -1,0 +1,82 @@
+# Trusted remediation catalog (design §13.6 B3). FROZEN CODE-OWNED DATA: rules reference these
+# ids + typed slots; runtime message/fix text never comes from traces. Text is imperative and
+# actionable and contains no data; slot values are tool/argument/flag names supplied by reviewed rules.
+schema_version: 1
+templates:
+  # ---- preconditions (R2)
+  - id: precondition.missing
+    slots: [tool, precondition]
+    message: "{tool} was called before {precondition} succeeded."
+    fix: "Call {precondition} first and wait for a successful result, then retry {tool}."
+  - id: precondition.same_subject
+    slots: [tool, precondition, subject]
+    message: "{tool} requires a successful {precondition} for the same {subject}."
+    fix: "Call {precondition} for this exact {subject}, confirm it succeeded, then retry {tool} with the same {subject}."
+  - id: precondition.condition_unmet
+    slots: [tool, precondition, condition]
+    message: "{tool} requires a successful {precondition} showing {condition}."
+    fix: "Call {precondition} and check that {condition} holds; if it does not, do not call {tool} and explain the policy to the customer."
+  - id: precondition.prior_call
+    slots: [tool, prior_tool, subject]
+    message: "{tool} requires a prior successful {prior_tool} for the same {subject}."
+    fix: "Call {prior_tool} for this {subject} first, then retry {tool}."
+  - id: precondition.state_flag
+    slots: [tool, flag, subject, via_tool]
+    message: "{tool} requires {flag} for this {subject}."
+    fix: "Establish {flag} with {via_tool} for this {subject} before calling {tool}."
+  - id: sequence.required
+    slots: [tool, before]
+    message: "{tool} must come after {before} in this conversation."
+    fix: "Call {before} first, then call {tool}."
+  - id: verify.before_lookup
+    slots: [tool, source]
+    message: "{tool} was called after {source} already returned the customer's personal details."
+    fix: "Ask the customer to state their own verification details and pass exactly what they provide to {tool}; never reuse details from {source} output."
+  # ---- arguments (R1/R2)
+  - id: arg.out_of_range
+    slots: [tool, arg]
+    message: "{tool} argument {arg} is outside the allowed range."
+    fix: "Change {arg} to a value inside the allowed range, or ask the customer to clarify, then retry {tool}."
+  - id: arg.not_allowed
+    slots: [tool, arg]
+    message: "The value of {arg} is not allowed for {tool}."
+    fix: "Choose an allowed value for {arg}; if none applies, explain the limitation to the customer instead of calling {tool}."
+  - id: arg.constraint
+    slots: [tool, arg, constraint]
+    message: "{tool} argument {arg} is not allowed ({constraint})."
+    fix: "Correct {arg} so it satisfies {constraint}, then retry {tool}."
+  - id: arg.exceeds_prior
+    slots: [tool, arg, source]
+    message: "{tool} argument {arg} exceeds the value returned by {source}."
+    fix: "Set {arg} to at most the value returned by {source}; if more is needed, escalate to a human agent instead."
+  - id: amount.not_exceed_prior
+    slots: [tool, arg, prior_tool, prior_field]
+    message: "{tool} {arg} exceeds {prior_field} returned by {prior_tool}."
+    fix: "Use a {arg} no greater than {prior_field} from {prior_tool}, then retry {tool}."
+  - id: count.exceeded
+    slots: [tool]
+    message: "{tool} was called more times than allowed in this conversation."
+    fix: "Stop calling {tool}; summarize what has been done so far or escalate to a human agent."
+  # ---- responses (R3)
+  - id: pii.redacted
+    slots: []
+    message: "Personal data was removed because the customer's identity is not verified."
+    fix: "Do not share personal data until identity verification succeeds; ask the customer to verify their identity first."
+  - id: response.redact_pattern
+    slots: [pattern_class, flag]
+    message: "Response contained {pattern_class} before {flag}."
+    fix: "Do not include {pattern_class} until {flag} is established."
+  - id: response.blocked
+    slots: []
+    message: "The response was withheld because it violates a response policy."
+    fix: "Rewrite the response without the disallowed content, then send it again."
+  # ---- trajectory metrics (R4)
+  - id: trajectory.violation
+    slots: [check]
+    message: "Trajectory check {check} failed."
+    fix: "Follow the required order of steps for {check} in future conversations."
+  # ---- terminal (B4): after MAX_GUARD_BLOCKS_PER_TURN blocks in one turn
+  - id: guard.terminal
+    slots: []
+    message: "Too many actions were blocked in this turn, so the request cannot be completed automatically."
+    fix: "Stop calling tools for this turn, apologize to the customer, and offer to escalate the request to a human agent."
