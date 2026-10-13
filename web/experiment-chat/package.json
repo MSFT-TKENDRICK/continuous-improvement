@@ -1,0 +1,24 @@
+{
+  "name": "ci-harness-experiment-chat",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Experiment chat bundle for the ci-harness-dashboard canvas (built into .github/extensions/ci-harness-dashboard/ui/chat/).",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs",
+    "csp-check": "node scripts/csp-check.mjs"
+  },
+  "dependencies": {
+    "@ag-ui/client": "1.0.1",
+    "@copilotkit/react-core": "1.76.0",
+    "react": "19.2.0",
+    "react-dom": "19.2.0",
+    "react-markdown": "8.0.7",
+    "remark-gfm": "3.0.1",
+    "zod": "3.25.76"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2"
+  }
+}
