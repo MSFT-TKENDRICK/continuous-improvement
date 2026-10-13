@@ -12,7 +12,7 @@ import json
 import sys
 
 COMMAND_MODULES = ("oes", "providers", "campaign", "sleep", "telemetry", "judge", "rules", "lessons",
-                   "lessons_arm", "lint", "template", "chat", "bus", "governance")
+                   "lessons_arm", "lint", "template", "chat", "bus", "governance", "harness_tree")
 VERSIONED = ("agent-framework-core", "agent-framework-declarative", "agent-framework-github-copilot",
              "github-copilot-sdk", "agentlightning", "skillopt", "assert-ai")
 
