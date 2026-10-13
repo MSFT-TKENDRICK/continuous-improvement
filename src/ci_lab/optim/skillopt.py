@@ -129,11 +129,12 @@ def _task_records(train: Sequence[str], val: Sequence[str], failures: dict[str, 
 
 async def optimize_skill(skill: tuple[str, str], scorer: EvolveScorer, evolve_cases: Sequence[str], *,
                          reflection_lm: Any, memory: tuple[str, str] | None = None, edit_budget: int = 1,
-                         budget_tokens: int | None = None, config: SkillOptConfig = SkillOptConfig(),
+                         budget_tokens: int | None = None, config: SkillOptConfig | None = None,
                          incumbent_failures: Iterable[FailureRecord] = ()) -> TextOptimization:
     """One gated SkillOpt consolidation epoch over ``skill`` (and optional ``memory``),
     each given as ``(target_id, text)``. ``edit_budget`` bounds SkillOpt's edit records
     per document."""
+    config = config or SkillOptConfig()
     skill_id, skill_text = skill
     memory_id, memory_text = memory if memory else (None, "")
     seed = {skill_id: skill_text, **({memory_id: memory_text} if memory_id else {})}
