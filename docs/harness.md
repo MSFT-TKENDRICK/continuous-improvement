@@ -5,14 +5,15 @@ The repo started as a set of ASSERT safety and quality evals for the order-suppo
 agent and workflow runs on the Microsoft Agent Framework (MAF, Python, declarative YAML,
 checkpointed), using models reached through the GitHub Copilot SDK with ambient auth.
 
-Each change to the agent's editable surface (prompts, skills, the judge rubric) is an **experiment**:
+Each change to the harness's editable prompts, skills, or structural components is an **experiment**:
 - an OES envelope;
 - an `exp/<eid>/<arm>` branch, built in its own worktree slot;
 - scored by ASSERT evals plus the System-1 judge.
 
 Experiments are driven either by an RRSI campaign, whose accepted arms become stacked draft PRs, or
 by the nightly SkillOpt-Sleep GitHub Action, which opens one draft PR. Rollouts flow through the Agent
-Lightning data plane into DSPy/GEPA and SkillOpt optimizers.
+Lightning journal/store. DSPy/GEPA owns prompts, SkillOpt owns skills, and the LLM-only AGL
+strategy owns structural components.
 
 Lessons mined from traces and dev transcripts are encoded **as structure** rather than prose. They
 become frozen rules and guards that the model cannot bypass, plus lint checks that fail CI. Every
@@ -57,14 +58,17 @@ flowchart TB
 
   subgraph Optim["Optimizers"]
     STRAT["Arm strategies (ci_lab.strategies)"]
-    GEPA["DSPy / GEPA + SkillOpt<br/>(ci_lab.optim)"]
+    GEPA["DSPy / GEPA: prompts<br/>SkillOpt: skills"]
+    AGLALG["AGL LLM resource algorithm:<br/>structural components"]
     STRAT --> GEPA
+    STRAT --> AGLALG
   end
   META --> STRAT
 
   AGL[("Agent Lightning data plane<br/>(ci_lab.agl, journal-first)")]
   AGENT -->|rollouts| AGL
   AGL --> GEPA
+  AGL --> AGLALG
 
   subgraph Sleep["SkillOpt-Sleep nightly (ci_lab.sleep)"]
     NIGHT["sleep-nightly.yml:<br/>gate, evaluate, publish"]
@@ -143,10 +147,10 @@ changes selection or history; see [adversary.md](adversary.md#in-campaigns).
 | [rrsi.md](rrsi.md) | `ci_lab.rrsi` | RRSI Algorithms 1 and 2 with the v2 safeguards (pure) |
 | [campaign.md](campaign.md) | `ci_lab.campaign` | RRSI campaigns as checkpointed MAF workflows, arms, stacked draft PRs |
 | [meta-agents.md](meta-agents.md) | `ci_lab.meta` | Analyst, proposer, critic and reflector agents, plus the arm filesystem and commit tools |
-| [strategies.md](strategies.md) | `ci_lab.strategies` | Arm strategies (`agent`, `gepa`, `skillopt`, `guard`) |
+| [strategies.md](strategies.md) | `ci_lab.strategies` | Arm strategies (`agent`, `gepa`, `skillopt`, `guard`, `agl`) |
 | [optim.md](optim.md) | `ci_lab.optim` | DSPy LM, GEPA and SkillOpt over harness text (lazy imports) |
 | [ledger-gitops-cache.md](ledger-gitops-cache.md) | `ci_lab.ledger`, `gitops`, `cache` | Durable experiment state, worktree slot pool, shared uv caches |
-| [agl.md](agl.md) | `ci_lab.agl` | Agent Lightning 1.0.2 data plane: journal-first rollout recording |
+| [agl.md](agl.md) | `ci_lab.agl` | Agent Lightning 1.0.2 journal/store plus LLM-only structural optimizer |
 | [sleep.md](sleep.md) | `ci_lab.sleep` | SkillOpt-Sleep nightly: gate, evaluate and publish a draft PR; opt-in lessons hook |
 | [lessons.md](lessons.md) | `ci_lab.lessons` | Mining traces into lessons and routing them to enforcement rungs |
 | [lessons-arm.md](lessons-arm.md) | `ci_lab.lessons_arm` | Lessons become guard rules through a paired guard-off/on experiment arm |
@@ -217,9 +221,9 @@ changes selection or history; see [adversary.md](adversary.md#in-campaigns).
   Everything else in a Copilot session is ignored.
 - **The `Domain.evaluate` case filter is deferred.** Evaluation always runs the full case set for a
   domain.
-- **The Agent Lightning training path needs a GPU.** The data plane (journal and REST mirror) runs
-  anywhere. Agent Lightning 1.0 has no APO or `Trainer`, and its PPO training on the
-  collected rollouts does not run on CPU-only machines.
+- **AGL is deliberately not an RL trainer.** This implementation uses Agent Lightning 1.0.2 only
+  for its journal/store/proxy substrate and an LLM-only structural algorithm. It never imports
+  `verl`, needs no GPU, never optimizes prompts (DSPy/GEPA), and never optimizes skills (SkillOpt).
 - **Subagent state is in memory.** MAF background-agent tasks live in the parent's session and do
   not survive a process restart ([meta-agents.md](meta-agents.md#subagents)).
 - **Sleep nights don't resume.** The nightly job always starts a night fresh
