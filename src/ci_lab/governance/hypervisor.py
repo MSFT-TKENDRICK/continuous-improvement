@@ -33,16 +33,15 @@ DEFAULT_KILL_FILE = Path("artifacts/governance/KILL")
 HARNESS_DID = "did:mesh:ci-harness"
 
 READ_ONLY_ACTIONS = frozenset({
-    "lookup_order", "verify_identity", "search_kb", "read_file", "list_files", "git_status",
-    "git_diff", "git_log", "fetch_trace", "judge", "eval",
+    "read_file", "list_files", "search_text", "git_status", "git_diff", "git_log",
+    "fetch_trace", "judge", "eval",
 })
 REVERSIBLE_ACTIONS = frozenset({
-    "escalate_to_human", "write_file", "edit_file", "run_tests", "git_commit", "create_branch",
+    "write_file", "edit_file", "run_tests", "git_commit", "create_branch",
     "draft_pr", "write_artifact",
 })
 IRREVERSIBLE_ACTIONS = frozenset({
-    "issue_refund", "publish_pr", "push", "git_push", "merge_pr", "delete_branch", "send_email",
-    "publish_lesson",
+    "publish_pr", "push", "git_push", "merge_pr", "delete_branch", "send_email", "publish_lesson",
 })
 
 

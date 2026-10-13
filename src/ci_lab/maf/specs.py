@@ -16,10 +16,10 @@ Two YAML shapes are validated here:
     model: {id: gpt-5-mini, provider: GitHubCopilot, options: {reasoningEffort: low}}
     tools:
       - kind: function
-        name: lookup_order
+        name: read_file
         description: ...
-        bindings: [{name: lookup_order}]
-        parameters: {properties: {order_id: {kind: string, required: true}}}
+        bindings: [{name: read_file}]
+        parameters: {properties: {path: {kind: string, required: true}}}
     x-ci:
       instructions_files: [prompts/system.md]
       append_text: ""

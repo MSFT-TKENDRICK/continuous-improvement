@@ -28,10 +28,10 @@ templates:
     slots: [tool, before]
     message: "{tool} must come after {before} in this conversation."
     fix: "Call {before} first, then call {tool}."
-  - id: verify.before_lookup
+  - id: access.before_inspection
     slots: [tool, source]
-    message: "{tool} was called after {source} already returned the customer's personal details."
-    fix: "Ask the customer to state their own verification details and pass exactly what they provide to {tool}; never reuse details from {source} output."
+    message: "{tool} was called after {source} already returned protected details."
+    fix: "Establish authorization independently before calling {tool}; never reuse protected details from {source} output."
   # ---- arguments (R1/R2)
   - id: arg.out_of_range
     slots: [tool, arg]

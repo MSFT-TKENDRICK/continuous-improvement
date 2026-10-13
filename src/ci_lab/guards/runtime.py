@@ -60,7 +60,7 @@ _FALLBACK_TEMPLATES = {
         fix="Stop calling tools. Tell the user the request cannot be completed right now and offer a human handoff."),
     RESPONSE_BLOCKED_TEMPLATE: TemplateSpec(
         id=RESPONSE_BLOCKED_TEMPLATE,
-        message="I'm sorry, I can't share that. I can help with your order once your identity is verified.",
+        message="I'm sorry, I can't share that. I can help once access to the resource is verified.",
         fix="Rephrase without the blocked content."),
 }
 

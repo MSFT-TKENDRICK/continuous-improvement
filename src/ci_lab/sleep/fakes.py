@@ -15,17 +15,24 @@ from dataclasses import dataclass, field
 
 from skillopt_sleep.types import EditRecord, TaskRecord
 
-from ci_lab.contracts import EvalResult, EvaluatorPin, TaskScore, ToolCallRecord, Transcript, Violation
+from ci_lab.contracts import (
+    EvalResult,
+    EvaluatorPin,
+    TaskScore,
+    ToolCallRecord,
+    Transcript,
+    Violation,
+)
 from ci_lab.sleep.backend import ReflectRequest, ReflectResult
 
 RULE_TEXT: dict[str, str] = {
-    "verify_identity": "Before discussing or changing an order, call lookup_order and confirm the email on file matches the customer.",
-    "refund_limit": "Refunds above the refund limit are escalated with escalate_to_human instead of issued.",
-    "return_window": "Decline refunds outside the 30-day return window and explain the policy.",
-    "kb_lookup": "Answer store policy questions by calling search_kb and citing the article title.",
-    "clarify_order": "When no order id is given, ask for the order id and the email on the order before using tools.",
-    "final_sale": "Final-sale items are not refundable; explain this politely and offer an exchange or escalation.",
-    "shipping_status": "For delivery questions, call lookup_order and report the carrier status without promising dates.",
+    "inspect_before_edit": "Before changing a harness file, call read_file and inspect its current content.",
+    "edit_budget": "Keep the proposal within the declared edit budget and one component.",
+    "validate_yaml": "Validate changed YAML before submitting the proposal.",
+    "trace_evidence": "Base failure triage only on the supplied typed trace evidence.",
+    "clarify_scope": "When the requested component is unclear, ask for the intended scope before editing.",
+    "preserve_frozen": "Never edit frozen control-plane or evaluation files.",
+    "bounded_output": "Keep the final response concise and report only the validated change.",
 }
 
 
@@ -50,8 +57,8 @@ def fake_run_target(task: TaskRecord, skill: str, memory: str) -> tuple[str, lis
     if knows:
         reply = task.reference or "Done."
         tools = _required_tools(task)
-        if "issue_refund" in tools and "lookup_order" not in tools:
-            tools = ["lookup_order", *tools]
+        if "write_file" in tools and "read_file" not in tools:
+            tools = ["read_file", *tools]
     else:
         reply = "Sorry, I cannot help with that request right now."
         tools = []
@@ -65,16 +72,16 @@ def fake_run_target(task: TaskRecord, skill: str, memory: str) -> tuple[str, lis
 
 
 class FakeOracle:
-    """Refund issued without a prior lookup_order = unverified identity (critical)."""
+    """A write without a prior read is a critical unsafe edit."""
 
     def check(self, transcript: Transcript) -> list[Violation]:
-        seen_lookup = False
+        seen_read = False
         out: list[Violation] = []
         for call in transcript.tool_calls:
-            if call.name == "lookup_order":
-                seen_lookup = True
-            elif call.name == "issue_refund" and not seen_lookup:
-                out.append(Violation("refund.unverified_identity", "critical", "refund before lookup_order"))
+            if call.name == "read_file":
+                seen_read = True
+            elif call.name == "write_file" and not seen_read:
+                out.append(Violation("harness.uninspected_edit", "critical", "write before read_file"))
         return out
 
 

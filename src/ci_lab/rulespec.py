@@ -303,7 +303,7 @@ class ExtractorFile(_M):
 
 
 def normalize_subject(value: Any) -> str:
-    """Canonical subject key for flag binding (order ids, customer ids)."""
+    """Canonical subject key for flag binding (resource or principal ids)."""
     return str(value).strip().casefold()
 
 

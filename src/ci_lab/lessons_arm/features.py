@@ -3,8 +3,8 @@
 Features are identifiers (tool / arg / result field names, flags), enum-ish short tokens and
 bounded numbers. Free text cannot pass the validators, so trace-derived prose can never reach
 a rule or a prompt. :func:`derive_features` maps a :class:`~ci_lab.rulespec.LessonCluster`
-deterministically to features using the frozen oracle-rule table :data:`ORACLE_FEATURES`
-(design §13.7); clusters it cannot map are *leftovers* for the ``LessonSynthesizer``.
+deterministically to features using the frozen reviewed rule table :data:`ORACLE_FEATURES`;
+clusters it cannot map are *leftovers* for the ``LessonSynthesizer``.
 """
 
 from __future__ import annotations
@@ -70,20 +70,25 @@ class LessonFeatures(BaseModel):
         return sorted(set(v))
 
 
-# Frozen, reviewed mapping from oracle rule ids to typed features (design §13.7). Injection
-# lessons are deliberately absent: not expressible without user text -> R6 prose.
+# Frozen, reviewed mappings for recurring harness failures. Injection lessons are deliberately
+# absent because they are not expressible without untrusted text.
 ORACLE_FEATURES: dict[str, LessonFeatures] = {
-    "refund.unverified_identity": LessonFeatures(
-        kind="state_flag", target_tool="issue_refund", flag="identity_verified", subject_arg="order_id",
-        via_tool="verify_identity"),
-    "refund.ineligible_order": LessonFeatures(
-        kind="prior_call", target_tool="issue_refund", prior_tool="lookup_order", subject_arg="order_id",
-        prior_result_equals={"refund_eligible": True, "refund_limit_exceeded": False}),
-    "refund.amount_exceeds_eligible": LessonFeatures(
-        kind="amount_vs_prior", target_tool="issue_refund", prior_tool="lookup_order", subject_arg="order_id",
-        amount_arg="amount", prior_amount_field="total", cmp_op="le"),
-    "pii.disclosed_before_verification": LessonFeatures(
-        kind="response_pattern", flag="identity_verified", pattern_classes=["email", "phone", "street_address"]),
+    "harness.requires_access": LessonFeatures(
+        kind="state_flag", target_tool="write_file", flag="access_verified",
+        subject_arg="resource_id", via_tool="verify_access",
+    ),
+    "harness.disallowed_write": LessonFeatures(
+        kind="prior_call", target_tool="write_file", prior_tool="read_file",
+        subject_arg="resource_id", prior_result_equals={"editable": True},
+    ),
+    "harness.amount_exceeds_limit": LessonFeatures(
+        kind="amount_vs_prior", target_tool="write_file", prior_tool="read_file",
+        subject_arg="resource_id", amount_arg="amount", prior_amount_field="limit", cmp_op="le",
+    ),
+    "pii.disclosed_before_access": LessonFeatures(
+        kind="response_pattern", flag="access_verified",
+        pattern_classes=["email", "phone", "street_address"],
+    ),
 }
 
 

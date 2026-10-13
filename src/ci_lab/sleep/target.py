@@ -20,6 +20,7 @@ from skillopt_sleep.types import TaskRecord
 
 from ci_lab.contracts import ToolCallRecord, Transcript
 
+
 def _hash(skill: str, memory: str, skill_rel: Path, memory_rel: Path | None) -> str:
     material = f"{skill_rel.as_posix()}\x00{memory_rel}\x00{skill}\x00{memory}"
     return hashlib.sha256(material.encode()).hexdigest()[:16]
@@ -118,6 +119,7 @@ def make_harness_run_target(client_factory: Callable[[], Any], *, harness_root: 
             client,
             name=spec.name,
             description=spec.description,
+            policy="harness",
             agent_instructions=spec.instructions,
             tools=[bind(name) for name in spec.tools],
             loop_max_iterations=spec.max_turns or 8,
@@ -125,7 +127,8 @@ def make_harness_run_target(client_factory: Callable[[], Any], *, harness_root: 
             governance={"agent_name": spec.name, "model": spec.model},
         )
         message = task.intent if not task.context_excerpt else f"{task.context_excerpt}\n\n{task.intent}"
-        response = asyncio.run(agent.run(message))
+        session = agent.create_session() if hasattr(agent, "create_session") else None
+        response = asyncio.run(agent.run(message, session=session))
         reply = str(getattr(response, "text", "") or "")
         if not reply and submitted:
             reply = json.dumps(submitted[-1], sort_keys=True)
