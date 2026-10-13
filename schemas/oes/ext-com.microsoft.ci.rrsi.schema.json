@@ -122,7 +122,8 @@
     }
   ],
   "$defs": {
-    "component": { "enum": ["prompt", "skill", "client_tool", "config", "memory", "context_mgmt", "guard"] },
+    "component": { "enum": ["prompt", "skill", "client_tool", "config", "memory", "context_mgmt", "guard",
+                            "agent", "loop", "workflow", "mcp"] },
     "gitObject": { "type": "string", "pattern": "^[0-9a-f]{7,64}$" },
     "digest": { "type": "string", "pattern": "^[a-z0-9]+:[0-9a-f]{16,128}$" },
     "evaluatorPin": {

@@ -36,14 +36,22 @@ def edit_from_dict(d: dict[str, Any]) -> Edit:
 def task_score_to_dict(s: TaskScore) -> dict[str, Any]:
     return {"case_id": s.case_id, "trial": s.trial, "suite": s.suite, "score": s.score,
             "violations": [violation_to_dict(v) for v in s.violations], "tokens_in": s.tokens_in,
-            "tokens_out": s.tokens_out, "served_model": s.served_model}
+            "tokens_out": s.tokens_out, "served_model": s.served_model, "wall_ms": s.wall_ms,
+            "llm_calls": s.llm_calls, "tool_calls": s.tool_calls, "subscores": dict(s.subscores)}
 
 
 def task_score_from_dict(d: dict[str, Any]) -> TaskScore:
     return TaskScore(case_id=d["case_id"], trial=int(d.get("trial", 0)), suite=d.get("suite", ""),
                      score=d.get("score"), violations=tuple(violation_from_dict(v) for v in d.get("violations", ())),
                      tokens_in=int(d.get("tokens_in", 0)), tokens_out=int(d.get("tokens_out", 0)),
-                     served_model=d.get("served_model"))
+                     served_model=d.get("served_model"), wall_ms=float(d.get("wall_ms") or 0.0),
+                     llm_calls=int(d.get("llm_calls") or 0), tool_calls=int(d.get("tool_calls") or 0),
+                     subscores=subscores_from(d.get("subscores")))
+
+
+def subscores_from(raw: Any) -> dict[str, float]:
+    """``{name: float}`` of a decoded subscores mapping (absent in pre-subscore records)."""
+    return {str(k): float(v) for k, v in (raw or {}).items() if v is not None}
 
 
 def pin_to_dict(p: EvaluatorPin) -> dict[str, Any]:
@@ -58,12 +66,13 @@ def pin_from_dict(d: dict[str, Any]) -> EvaluatorPin:
 
 def eval_to_dict(r: EvalResult) -> dict[str, Any]:
     return {"harness_tree": r.harness_tree, "split": r.split, "pin": pin_to_dict(r.pin),
-            "scores": [task_score_to_dict(s) for s in r.scores]}
+            "scores": [task_score_to_dict(s) for s in r.scores], "surface": dict(r.surface)}
 
 
 def eval_from_dict(d: dict[str, Any]) -> EvalResult:
     return EvalResult(harness_tree=d["harness_tree"], split=d["split"], pin=pin_from_dict(d["pin"]),
-                      scores=[task_score_from_dict(s) for s in d.get("scores", ())])
+                      scores=[task_score_from_dict(s) for s in d.get("scores", ())],
+                      surface=subscores_from(d.get("surface")))
 
 
 def arm_to_dict(a: ArmResult) -> dict[str, Any]:
