@@ -40,7 +40,13 @@ from ci_lab.contracts import (
     ChatClientFactory,
     Edit,
 )
-from ci_lab.rulespec import GUARD_BUNDLE_LOCK, GUARDS_DIR, LESSON_REGISTRY, LessonCluster, RuleSpec
+from ci_lab.rulespec import (
+    GUARD_BUNDLE_LOCK,
+    GUARDS_DIR,
+    LESSON_REGISTRY,
+    LessonCluster,
+    RuleSpec,
+)
 
 from .bundle import BundleError, dump_rule_file, load_rules, rule_files, subset_bundle
 from .features import Candidate, LessonFeatures, is_injection, read_candidates

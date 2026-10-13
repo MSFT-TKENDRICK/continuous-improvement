@@ -10,7 +10,12 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from ci_lab.rulespec import GUARDS_DIR, LESSON_REGISTRY, PROMOTE_FP_UCB, PROMOTE_MIN_OPPORTUNITIES
+from ci_lab.rulespec import (
+    GUARDS_DIR,
+    LESSON_REGISTRY,
+    PROMOTE_FP_UCB,
+    PROMOTE_MIN_OPPORTUNITIES,
+)
 
 
 def register(subparsers: Any) -> None:
