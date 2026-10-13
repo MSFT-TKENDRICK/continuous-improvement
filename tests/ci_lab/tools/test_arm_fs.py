@@ -28,8 +28,8 @@ def test_normalize_rejects_attacks(bad: str) -> None:
 
 
 def test_normalize_accepts_and_posixifies() -> None:
-    assert normalize_rel("src\\order_support\\harness\\prompts\\system.md") == \
-        "src/order_support/harness/prompts/system.md"
+    assert normalize_rel("src\\harness_agent\\harness\\prompts\\system.md") == \
+        "src/harness_agent/harness/prompts/system.md"
 
 
 def test_glob_semantics() -> None:
@@ -41,8 +41,8 @@ def test_glob_semantics() -> None:
 
 
 def test_components_memory_wins_over_skill(layout) -> None:
-    assert components_for(f"{layout.harness}/skills/refunds/memory.md", layout.component_globs) == {"memory"}
-    assert components_for(f"{layout.harness}/skills/refunds/SKILL.md", layout.component_globs) == {"skill"}
+    assert components_for(f"{layout.harness}/skills/changes/memory.md", layout.component_globs) == {"memory"}
+    assert components_for(f"{layout.harness}/skills/changes/SKILL.md", layout.component_globs) == {"skill"}
     assert components_for(f"{layout.harness}/agent.yaml", layout.component_globs) == {"config", "context_mgmt"}
 
 
@@ -58,7 +58,7 @@ def test_list_read_write_happy_path(repo, layout) -> None:
     assert not any(p.startswith("evals/") for p in listing)
     assert t["list_files"]("**/*.yaml").splitlines() == [f"{layout.harness}/agent.yaml",
                                                          f"{layout.harness}/tool_specs.yaml"]
-    assert "verify identity" in t["read_file"](f"{layout.harness}/prompts/system.md")
+    assert "inspect the target" in t["read_file"](f"{layout.harness}/prompts/system.md")
     out = t["write_file"](f"{layout.harness}/prompts/new/extra.md", "hello")
     assert out.startswith("wrote 5 bytes")
     assert (repo[0] / layout.harness / "prompts/new/extra.md").read_text() == "hello"
@@ -66,11 +66,11 @@ def test_list_read_write_happy_path(repo, layout) -> None:
 
 
 @pytest.mark.parametrize("path", [
-    "../outside.md", "src/order_support/harness/../../../outside.md", "/tmp/x.md", "C:\\x.md",
-    ".git/config", "src/order_support/harness/.git/x.md", "src/order_support/harness/helper.py",
-    "src/order_support/harness/run.ps1", "evals/assert/x/eval_config.yaml", "README.md",
-    "src/order_support/agent.py", "src/order_support/harness/prompts/x.md:ads",
-    "src/order_support/HARNESS/prompts/system.md", "src/order_support/harness/prompts/system.exe",
+    "../outside.md", "harness/../../../outside.md", "/tmp/x.md", "C:\\x.md",
+    ".git/config", "harness/.git/x.md", "harness/helper.py",
+    "harness/run.ps1", "evals/assert/x/eval_config.yaml", "README.md",
+    "src/harness_agent/agent.py", "harness/prompts/x.md:ads",
+    "src/harness_agent/HARNESS/prompts/system.md", "harness/prompts/system.exe",
 ])
 def test_write_attacks_rejected(repo, layout, path: str) -> None:
     t = _tools(repo, layout)
@@ -105,9 +105,9 @@ def test_sealed_rubric_vault_is_denied(repo, layout, rel: str) -> None:
 
 
 def test_case_alias_of_existing_dir_rejected(repo, layout) -> None:
-    fs = ArmFS(repo[0], ("src/order_support/harness/**", "src/order_support/Harness/**"))
+    fs = ArmFS(repo[0], ("harness/**", "Harness/**"))
     with pytest.raises(PathRejected, match="case alias"):
-        fs.write("src/order_support/Harness/prompts/system.md", "x")
+        fs.write("Harness/prompts/system.md", "x")
 
 
 def test_size_caps(repo, layout) -> None:
@@ -119,7 +119,7 @@ def test_size_caps(repo, layout) -> None:
 def test_writable_globs_narrow_writes_not_reads(repo, layout) -> None:
     t = _tools(repo, layout, writable_globs=layout.component_globs["prompt"])
     assert t["write_file"](f"{layout.harness}/agent.yaml", "x: 1\n").startswith("ERROR")
-    assert "OrderSupport" in t["read_file"](f"{layout.harness}/agent.yaml")
+    assert "HarnessAgent" in t["read_file"](f"{layout.harness}/agent.yaml")
     assert t["write_file"](f"{layout.harness}/prompts/system.md", "ok\n").startswith("wrote")
 
 

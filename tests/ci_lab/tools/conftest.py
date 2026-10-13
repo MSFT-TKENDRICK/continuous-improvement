@@ -7,7 +7,7 @@ from types import SimpleNamespace
 
 import pytest
 
-HARNESS = "src/order_support/harness"
+HARNESS = "harness"
 LAYOUT = SimpleNamespace(
     harness=HARNESS,
     surface=(f"{HARNESS}/**",),
@@ -21,11 +21,11 @@ LAYOUT = SimpleNamespace(
     },
     frozen=("**/*.py", "evals/**", "tests/**"),
     files={
-        f"{HARNESS}/prompts/system.md": "You are a helpful order support agent.\nAlways verify identity first.\n",
-        f"{HARNESS}/skills/refunds/SKILL.md": "# Refunds\nCheck the order status before refunding.\n",
-        f"{HARNESS}/skills/refunds/memory.md": "- nothing yet\n",
-        f"{HARNESS}/tool_specs.yaml": "lookup_order:\n  description: Look up an order by id.\n",
-        f"{HARNESS}/agent.yaml": "name: OrderSupport\nmodel:\n  id: gpt-5\ninstructions_file: prompts/system.md\n",
+        f"{HARNESS}/prompts/system.md": "You are a helpful harness agent.\nAlways inspect the target first.\n",
+        f"{HARNESS}/skills/changes/SKILL.md": "# Changes\nReview repository state before changing files.\n",
+        f"{HARNESS}/skills/changes/memory.md": "- nothing yet\n",
+        f"{HARNESS}/tool_specs.yaml": "read_file:\n  description: Read a harness file by path.\n",
+        f"{HARNESS}/agent.yaml": "name: HarnessAgent\nmodel:\n  id: gpt-5\ninstructions_file: prompts/system.md\n",
         f"{HARNESS}/helper.py": "print('code is frozen')\n",
         "evals/assert/x/eval_config.yaml": "suite: x\n",
     },

@@ -34,7 +34,7 @@ def _fakes() -> Any:  # reuse the scheduler test's fakes (tests are not a packag
 
 F = _fakes()
 GOOD = F.GOOD
-EXPLOIT = "# Report\nOrder ORD-1.\n"
+EXPLOIT = "# Report\nResource RES-1.\n"
 
 GRAPHS: dict[str, tuple[dict[str, tuple[str, ...]], dict[str, list[str]]]] = {
     "chain": ({"a": (), "b": ("a",), "c": ("b",)}, {"a": ["draft", GOOD], "b": [GOOD], "c": [GOOD]}),
@@ -139,7 +139,7 @@ def test_resume_after_crash_comes_from_the_bus(tmp_path: Path) -> None:
     assert len(AgentBus(tmp_path / "bus").state(ids.task_topic("r1", "b")).intents_without_outcome()) == 1
     stale = set((tmp_path / "ckpt").glob("*.json"))
     assert stale  # the crashed workflow left checkpoints; they are discarded, never resumed
-    second = F.FakeStudent({t: ["# Report\nOrders ORD-7 and ORD-8.\n"] for t in "abc"})
+    second = F.FakeStudent({t: ["# Report\nResources RES-7 and RES-8.\n"] for t in "abc"})
     res = asyncio.run(run_graph_maf(graph, bus=AgentBus(tmp_path / "bus"), student_factory=second, **kw))
     assert [t for t, _, _ in second.calls] == ["c"]  # a committed, b's in-flight proposal reused
     assert {t: (r.status, r.attempts) for t, r in res.tasks.items()} == {

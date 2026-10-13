@@ -22,10 +22,10 @@ def make_rubric(deliverable: str = "summary", version: int = 1, **kw: Any) -> Ru
     criteria = (
         Criterion("c-format", "Report starts with a level one heading", "deterministic",
                   {"kind": "regex", "pattern": "^# Report", "independent": True}, 1.0, required=True),
-        Criterion("c-suite", "Order support suite passes on dev", "assert",
-                  {"suite": "order-support", "split": "dev", "min_score": 0.8}, 0.8, weight=2.0),
-        Criterion("c-cites", "Report cites order identifiers from the log", "s1",
-                  {"question": "Does the report cite at least two distinct order identifiers taken from the log?",
+        Criterion("c-suite", "Harness agent suite passes on dev", "assert",
+                  {"suite": "harness-agent", "split": "dev", "min_score": 0.8}, 0.8, weight=2.0),
+        Criterion("c-cites", "Report cites resource identifiers from the log", "s1",
+                  {"question": "Does the report cite at least two distinct resource identifiers taken from the log?",
                    "type": "noul", "options": []}, 0.6),
     )
     base: dict[str, Any] = {"id": f"{deliverable}-rubric", "version": version, "deliverable": deliverable,
@@ -42,11 +42,11 @@ def make_graph(commitments: dict[str, str] | None = None) -> TaskGraph:
                            (ContextRef("file", "data/log.txt"),), deps, c.get(tid, "0" * 64),
                            Budget(max_attempts=2, timeout_s=120, weight={"llm": 1, "s1": 2}))
 
-    return TaskGraph("demo", "Summarise the order log", (
-        d("summary", (), "Summarise the order log into out/summary.md as Markdown.", "out/summary.md"),
+    return TaskGraph("demo", "Summarise the resource log", (
+        d("summary", (), "Summarise the resource log into out/summary.md as Markdown.", "out/summary.md"),
         d("triage", ("summary",), "Triage each escalation into out/triage.json.", "out/triage.json"),
-        d("reply", ("triage",), "Draft one customer reply into out/reply.md.", "out/reply.md"),
-        d("audit", ("summary",), "List open refunds into out/audit.md.", "out/audit.md"),
+        d("reply", ("triage",), "Draft one reviewer reply into out/reply.md.", "out/reply.md"),
+        d("audit", ("summary",), "List open changes into out/audit.md.", "out/audit.md"),
     ))
 
 

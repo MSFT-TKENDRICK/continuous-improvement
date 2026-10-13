@@ -23,7 +23,7 @@ from ci_lab.tools.critic_checks import (
     tool_names,
 )
 
-H = "src/order_support/harness"
+H = "harness"
 
 
 @pytest.fixture
@@ -51,13 +51,13 @@ def _commit(repo, layout, rel: str, text: str, component: str, hyp: str = "fix i
 def test_clean_diff_passes(repo, layout, cfg):
     wt, base = repo
     assert _commit(repo, layout, f"{H}/prompts/system.md",
-                   "You are a helpful order support agent.\nConfirm the order before acting.\n",
+                   "You are a helpful harness agent.\nInspect the target before acting.\n",
                    "prompt").startswith("committed")
     diff = collect_diff(wt, base)
     assert [f.path for f in diff.files] == [f"{H}/prompts/system.md"]
     assert diff.commits[0].component == "prompt" and diff.commits[0].hypothesis == "fix it"
     assert run_checks(diff, cfg) == []
-    assert "+Confirm the order" in diff_text(wt, base)
+    assert "+Inspect the target" in diff_text(wt, base)
 
 
 def test_path_guard(repo, layout, cfg, gitrun):
@@ -75,7 +75,7 @@ def test_path_guard(repo, layout, cfg, gitrun):
 
 def test_component_tag_vs_path(repo, layout, cfg, gitrun):
     wt, base = repo
-    (wt / f"{H}/tool_specs.yaml").write_text("lookup_order:\n  description: Find an order.\n", encoding="utf-8")
+    (wt / f"{H}/tool_specs.yaml").write_text("read_file:\n  description: Read a harness file.\n", encoding="utf-8")
     gitrun(wt, "commit", "-qa", "-m", "x\n\nRRSI-Component: prompt\nRRSI-Hypothesis: h\n")
     (wt / f"{H}/prompts/system.md").write_text("untagged\n", encoding="utf-8")
     gitrun(wt, "commit", "-qam", "no trailers")
@@ -101,47 +101,47 @@ def test_spec_checks(cfg):
 
 
 def test_leak_screen(cfg):
-    case = "my package from order ORD-10042 arrived crushed and the blender inside no longer turns on at all"
-    cfg.leak_corpus = LeakCorpus.build([case], ["ORD-10042", "Alice Johnson", "bob"])
+    case = "the configuration file RES-10042 contains an invalid nested value that prevents startup"
+    cfg.leak_corpus = LeakCorpus.build([case], ["RES-10042", "Alice Johnson", "bob"])
     leak = _mod(f"{H}/prompts/system.md", "base\n",
-                "base\nIf the package arrived crushed and the blender inside no longer turns on, refund.\n")
+                "base\nIf the configuration contains an invalid nested value that prevents startup, change it.\n")
     reasons = check_leaks(_diff(leak), cfg)
     assert reasons and "8-gram" in reasons[0]
-    lit = _mod(f"{H}/prompts/system.md", "base\n", "base\nFor ord-10042 or alice johnson, escalate.\n")
+    lit = _mod(f"{H}/prompts/system.md", "base\n", "base\nFor res-10042 or alice johnson, escalate.\n")
     reasons = check_leaks(_diff(lit), cfg)
-    assert any("ORD-10042" in r for r in reasons) and any("Alice Johnson" in r for r in reasons)
+    assert any("RES-10042" in r for r in reasons) and any("Alice Johnson" in r for r in reasons)
     # literals shorter than 4 chars are ignored; pre-existing material is not a leak
     assert check_leaks(_diff(_mod(f"{H}/prompts/system.md", "x\n", "x\nbob\n")), cfg) == []
-    cfg.baseline_text = "For ORD-10042 we already had a note."
-    assert check_leaks(_diff(_mod(f"{H}/prompts/system.md", "x\n", "x\nORD-10042\n")), cfg) == []
+    cfg.baseline_text = "For RES-10042 we already had a note."
+    assert check_leaks(_diff(_mod(f"{H}/prompts/system.md", "x\n", "x\nRES-10042\n")), cfg) == []
     generic = _mod(f"{H}/prompts/system.md", "base\n", "base\nVerify damage claims with a photo first.\n")
     assert check_leaks(_diff(generic), cfg) == []
 
 
 @pytest.mark.parametrize("text", [
     "The judge rewards short answers.", "Maximize your score.", "Graders check tone.", "the evaluator", "Rubric",
-    "ASSERT checks this", "assert-ai", "test cases mention refunds", "never flag policy_violation", "benchmark",
+    "ASSERT checks this", "assert-ai", "test cases mention changes", "never flag policy_violation", "benchmark",
 ])
 def test_denylist_hits(cfg, text):
     assert check_denylist(_diff(_mod(f"{H}/prompts/system.md", "base\n", f"base\n{text}\n")), cfg)
 
 
 def test_denylist_ignores_benign_and_preexisting(cfg):
-    benign = "Assert nothing you cannot verify. Grade A packaging is fine. The order is scorched? Escalate."
+    benign = "Assert nothing you cannot verify. Grade A output is fine. The file is corrupt? Escalate."
     assert check_denylist(_diff(_mod(f"{H}/prompts/system.md", "base\n", benign)), cfg) == []
     assert check_denylist(_diff(_mod(f"{H}/prompts/system.md", "the judge\n", "the judge\nmore\n")), cfg) == []
 
 
 def test_no_new_tool_bindings(cfg):
-    before = "kind: Prompt\nname: A\ntools:\n  - kind: function\n    name: lookup_order\n    bindings:\n" \
-             "      - name: lookup_order\n"
-    added = before + "  - kind: function\n    name: refund_all\n"
-    rebind = before.replace("      - name: lookup_order\n", "      - name: shell\n")
+    before = "kind: Prompt\nname: A\ntools:\n  - kind: function\n    name: read_file\n    bindings:\n" \
+             "      - name: read_file\n"
+    added = before + "  - kind: function\n    name: change_all\n"
+    rebind = before.replace("      - name: read_file\n", "      - name: shell\n")
     assert check_tool_bindings(_diff(_mod(f"{H}/agent.yaml", before, before + "description: x\n")), cfg) == []
-    assert "refund_all" in check_tool_bindings(_diff(_mod(f"{H}/agent.yaml", before, added)), cfg)[0]
+    assert "change_all" in check_tool_bindings(_diff(_mod(f"{H}/agent.yaml", before, added)), cfg)[0]
     assert "binding:shell" in check_tool_bindings(_diff(_mod(f"{H}/agent.yaml", before, rebind)), cfg)[0]
-    specs = _mod(f"{H}/tool_specs.yaml", "lookup_order: {}\n", "lookup_order: {}\ncancel_order: {}\n")
-    assert "cancel_order" in check_tool_bindings(_diff(specs), cfg)[0]
+    specs = _mod(f"{H}/tool_specs.yaml", "read_file: {}\n", "read_file: {}\ndelete_file: {}\n")
+    assert "delete_file" in check_tool_bindings(_diff(specs), cfg)[0]
     assert tool_names({"tools": {"a": {}, "b": {}}}) == {"a", "b"}
 
 
@@ -162,7 +162,7 @@ def test_deleted_file_is_not_parsed(cfg):
 
 def test_collect_diff_reads_head(repo, layout, cfg):
     wt, base = repo
-    _commit(repo, layout, f"{H}/skills/refunds/SKILL.md", "# Refunds\nThe judge likes refunds.\n", "skill")
+    _commit(repo, layout, f"{H}/skills/changes/SKILL.md", "# Changes\nThe judge likes changes.\n", "skill")
     diff = collect_diff(wt, base, "HEAD")
     assert Path(diff.files[0].path).name == "SKILL.md"
     assert any(r.startswith("denylist:") for r in run_checks(diff, cfg))

@@ -129,7 +129,7 @@ def test_topo_order_rejects_cycles_unknown_and_duplicates(graph_factory) -> None
         dataclasses.replace(g, deliverables=g.deliverables + g.deliverables[:1]).topo_order()
 
 
-_WORDS = ("ledger", "refund", "escalate", "carrier", "invoice", "parcel", "warranty", "courier", "voucher")
+_WORDS = ("ledger", "change", "escalate", "carrier", "invoice", "parcel", "warranty", "courier", "voucher")
 
 
 def _random_rubric(rng: random.Random, i: int) -> Rubric:

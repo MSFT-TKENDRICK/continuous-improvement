@@ -43,7 +43,7 @@ GOOD_CHECKS = [
     crit("deterministic", {"kind": "file_exists", "path": "out/summary.md", "independent": True}),
     crit("deterministic", {"kind": "command", "argv": ["ruff", "check", "."], "timeout_s": 30}),
     crit("deterministic", {"kind": "python", "callable": "ci_lab.tools.critic_checks.run_checks"}),
-    crit("assert", {"suite": "order-support", "split": "test", "min_score": 1}),
+    crit("assert", {"suite": "harness-agent", "split": "test", "min_score": 1}),
     crit("llm", {"question": "Which tone does the reply use?", "type": "choice", "options": ["formal", "casual"]}),
     crit("s1", {"question": "Does the reply mention goodwill credit?", "type": "noul"}),
 ]
@@ -205,10 +205,10 @@ def test_commitment_must_match_sealed_rubric(tmp_path, graph_factory, rubric_fac
 
 
 @pytest.mark.parametrize("leak", [
-    "Also: does the report cite at least two distinct order identifiers taken from the log?",
+    "Also: does the report cite at least two distinct resource identifiers taken from the log?",
     "Tag the file with 0123456789abcdef.",
     "Make sure c-format holds.",
-    "This is graded by the order-support suite.",
+    "This is graded by the harness-agent suite.",
 ])
 def test_instructions_must_not_leak_rubric(tmp_path, graph_factory, rubric_factory, leak: str) -> None:
     g, vault = sealed_graph(tmp_path, graph_factory, rubric_factory)
@@ -217,4 +217,4 @@ def test_instructions_must_not_leak_rubric(tmp_path, graph_factory, rubric_facto
 
 
 def test_short_overlap_is_not_a_leak(rubric_factory) -> None:
-    assert rubric_leaks("Cite two distinct order identifiers from the log.", rubric_factory()) == []
+    assert rubric_leaks("Cite two distinct resource identifiers from the log.", rubric_factory()) == []

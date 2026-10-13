@@ -22,14 +22,14 @@ from ci_lab.taskgraph.model import Criterion, Rubric
 from ci_lab.testing import Call, FakeChatClient
 
 CANARY = "0123456789abcdef"  # conftest.make_rubric canary
-QUESTION = "Does the report cite at least two distinct order identifiers taken from the log?"
-DESCRIPTION = "Report cites order identifiers from the log"
-CLEAN = "Summarise the order log into out/summary.md as Markdown."
+QUESTION = "Does the report cite at least two distinct resource identifiers taken from the log?"
+DESCRIPTION = "Report cites resource identifiers from the log"
+CLEAN = "Summarise the resource log into out/summary.md as Markdown."
 
 
 @pytest.fixture
 def screen(rubric_factory) -> LeakScreen:
-    return LeakScreen([rubric_factory()], extra_corpus=["refund-abc"])
+    return LeakScreen([rubric_factory()], extra_corpus=["change-abc"])
 
 
 @pytest.mark.parametrize(("text", "category"), [
@@ -37,11 +37,11 @@ def screen(rubric_factory) -> LeakScreen:
     (f"embedded x{CANARY.upper()}y", "canary"),
     ("see criterion c-cites for details", "criterion_id"),
     ("rule judge.c-cites fired", "criterion_id"),
-    ("the order-support suite failed", "suite"),
+    ("the harness-agent suite failed", "suite"),
     (f"Judge asks: {QUESTION.lower()}", "rubric_text"),
     (f"Note: {DESCRIPTION}.", "rubric_text"),
-    ("so does the report cite at least two distinct order things", "ngram"),
-    ("case refund-abc regressed", "corpus"),
+    ("so does the report cite at least two distinct resource things", "ngram"),
+    ("case change-abc regressed", "corpus"),
 ])
 def test_hits_each_category(screen: LeakScreen, text: str, category: str) -> None:
     assert category in screen.hits(text)
@@ -50,18 +50,18 @@ def test_hits_each_category(screen: LeakScreen, text: str, category: str) -> Non
 
 def test_clean_text_has_no_hits(screen: LeakScreen) -> None:
     assert screen.hits(CLEAN) == []
-    assert screen.hits("c-citesx and order-supportive and xc-cites are different words") == []
+    assert screen.hits("c-citesx and harness-agentive and xc-cites are different words") == []
     assert screen.redact(CLEAN) == CLEAN
 
 
 def test_hits_never_quote_material(screen: LeakScreen) -> None:
-    hits = screen.hits(f"{QUESTION} {CANARY} c-suite order-support")
+    hits = screen.hits(f"{QUESTION} {CANARY} c-suite harness-agent")
     assert set(hits) == {"canary", "criterion_id", "suite", "rubric_text", "ngram"}
-    assert not any(CANARY in h or "order-support" in h for h in hits)
+    assert not any(CANARY in h or "harness-agent" in h for h in hits)
 
 
 def test_redact_removes_every_span(screen: LeakScreen) -> None:
-    text = f"Fix c-format. {QUESTION} Suite order-support; canary {CANARY}; case refund-abc. Keep going."
+    text = f"Fix c-format. {QUESTION} Suite harness-agent; canary {CANARY}; case change-abc. Keep going."
     out = screen.redact(text)
     assert screen.hits(out) == []
     assert out.startswith("Fix [redacted].") and out.endswith("Keep going.")
@@ -70,13 +70,13 @@ def test_redact_removes_every_span(screen: LeakScreen) -> None:
 
 def test_sanitize_strips_all_forbidden_items(rubric_factory) -> None:
     rubric = rubric_factory()
-    reasons = ["criterion c-suite: order-support scored 0.42 < threshold 0.8 (42%)",
+    reasons = ["criterion c-suite: harness-agent scored 0.42 < threshold 0.8 (42%)",
                f"c-cites failed: {QUESTION}",
                f"canary {CANARY} leaked; also the heading is missing at the top of the file",
                "the output file out/summary.md is missing a level one heading"]
     corr = sanitize_correction(reasons, rubric, attempt="summary@2")
     assert isinstance(corr, StudentCorrection) and corr.attempt == "summary@2"
-    for bad in ("c-suite", "c-cites", "order-support", "0.42", "0.8", "42", "%", QUESTION, CANARY):
+    for bad in ("c-suite", "c-cites", "harness-agent", "0.42", "0.8", "42", "%", QUESTION, CANARY):
         assert bad not in corr.text
     assert "heading is missing" in corr.text and LeakScreen([rubric]).hits(corr.text) == []
 
@@ -94,7 +94,7 @@ def test_sanitize_fallback_and_limits(rubric_factory) -> None:
         sanitize_correction(["fine reason here"], None, attempt="bad attempt")
 
 
-_WORDS = ("ledger", "refund", "escalate", "carrier", "invoice", "parcel", "warranty", "courier", "voucher",
+_WORDS = ("ledger", "change", "escalate", "repository", "config", "resource", "workflow", "review", "report",
           "heading", "section", "table")
 
 
@@ -135,7 +135,7 @@ def _agent(script: list, tool_result: str, screen: LeakScreen) -> tuple[Agent, S
 
 
 def test_middleware_passes_clean_run(screen: LeakScreen) -> None:
-    agent, mw = _agent([[Call("read_input", {"path": "data/log.txt"})], "done"], "order 1 shipped", screen)
+    agent, mw = _agent([[Call("read_input", {"path": "data/log.txt"})], "done"], "resource 1 updated", screen)
     assert asyncio.run(agent.run(CLEAN)).text == "done"
     assert mw.leaks == []
 
@@ -151,7 +151,7 @@ def test_middleware_blocks_message_leak(screen: LeakScreen) -> None:
 
 def test_middleware_blocks_tool_result_leak(screen: LeakScreen) -> None:
     client_script = [[Call("read_input", {"path": "notes.txt"})], "done"]
-    agent, mw = _agent(client_script, f"grader notes: suite order-support, canary {CANARY}", screen)
+    agent, mw = _agent(client_script, f"grader notes: suite harness-agent, canary {CANARY}", screen)
     with pytest.raises(ContextLeak) as err:
         asyncio.run(agent.run(CLEAN))
     assert err.value.where == "tool:read_input"
