@@ -19,15 +19,13 @@ from pathlib import Path
 from typing import Any
 
 from ci_lab.contracts import CAMPAIGN_RE
+from ci_lab.ledger.atomic import atomic_write_json
 
 STEPS = ("new", "calibrate", "run")
 
 
 def _write(path: Path, data: dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(path.name + ".tmp")
-    tmp.write_text(json.dumps(data, indent=2, sort_keys=True), encoding="utf-8")
-    os.replace(tmp, path)
+    atomic_write_json(path, data)
 
 
 def validate_commands(draft: dict[str, Any]) -> list[list[str]]:
