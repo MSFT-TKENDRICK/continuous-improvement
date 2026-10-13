@@ -25,6 +25,7 @@ export function DraftCard({ draft }) {
     <div className="xc-card" data-testid="xc-draft">
       <h3>Draft <code>{d.cid ?? "(unnamed)"}</code></h3>
       <dl className="xc-fields">
+        <Field label="Domain">{d.domain}</Field>
         <Field label="Target">{d.target ?? "—"}</Field>
         <Field label="Rounds">{d.rounds ?? "—"}</Field>
         <Field label="Est. evaluations"><span title={d.formula}>{d.estimatedEvaluations ?? "—"}</span></Field>

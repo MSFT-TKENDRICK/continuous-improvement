@@ -13,14 +13,14 @@ import { normalizeLaunches } from "./state.js";
 export const AGENT_ID = "experiment_designer";
 
 const SUGGESTIONS = [
-  { title: "Draft a 1-round, 2-arm campaign", message: "Draft a 1-round, 2-arm campaign." },
+  { title: "Improve the harness", message: "Draft a 1-round, 2-arm fake campaign to improve the harness." },
+  { title: "Inspect harness metrics", message: "Summarize current harness campaigns, metrics, and traces." },
   { title: "Explain A/A calibration", message: "Explain A/A calibration and when I need it." },
-  { title: "What strategies exist?", message: "What strategies exist?" },
 ];
 
 const LABELS = {
-  chatInputPlaceholder: "Describe the experiment you want to run…",
-  welcomeMessageText: "Formulate an RRSI campaign as an OES experiment. Launching always asks for your approval.",
+  chatInputPlaceholder: "Describe the harness improvement to test…",
+  welcomeMessageText: "Formulate a harness RRSI campaign as an OES experiment. Launching always asks for approval.",
   modalHeaderTitle: "Experiment chat",
   chatDisclaimerText: "Drafts are proposals; nothing launches without your approval.",
 };

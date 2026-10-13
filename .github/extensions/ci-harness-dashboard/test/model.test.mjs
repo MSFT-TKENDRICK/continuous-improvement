@@ -7,6 +7,7 @@ import { Sources } from "../lib/sources.mjs";
 import {
     buildModel,
     buildSpanTree,
+    campaignView,
     campaignOf,
     experimentDetail,
     flattenOtlp,
@@ -35,6 +36,7 @@ test("campaign view: incumbent, rounds, ΔS/ΔC, budget, stop flag", async () =>
     const m = await model();
     assert.equal(m.campaigns.length, 1);
     const c = m.campaigns[0];
+    assert.equal(c.domain, "harness");
     assert.equal(c.incumbent.score, 0.7);
     assert.equal(c.delta, 0.02);
     assert.equal(c.rounds.length, 1);
@@ -51,6 +53,8 @@ test("campaign view: incumbent, rounds, ΔS/ΔC, budget, stop flag", async () =>
     assert.equal(campaignOf("tone-a1-r12"), "tone-a1");
     assert.equal(campaignOf("tone-a1-confirm"), "tone-a1");
     assert.equal(campaignOf("plain"), null);
+    assert.equal(campaignView({ campaignId: "new" }).domain, "harness");
+    assert.equal(campaignView({ campaignId: "legacy", domain: "order_support" }).domain, "order_support");
 });
 
 test("experiments include rounds, calibration, confirm and sleep nights", async () => {

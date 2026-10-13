@@ -16,6 +16,7 @@ export function normalizeDraft(draft) {
   const evals = pick(estimate, "evaluations") ?? pick(spec, "estimated_evaluations", "estimatedEvaluations", "evaluations");
   return {
     cid: str(pick(spec, "cid", "campaign_id", "campaignId", "id")),
+    domain: str(pick(spec, "domain")) ?? "harness",
     target: str(pick(spec, "target")),
     rounds: num(pick(spec, "rounds", "n_rounds")),
     estimatedEvaluations: num(evals),

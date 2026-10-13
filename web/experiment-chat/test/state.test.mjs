@@ -13,6 +13,7 @@ test("draft card fields come from the STATE_SNAPSHOT draft", () => {
     const draft = lastOf("1_draft", "STATE_SNAPSHOT").snapshot.draft;
     const d = normalizeDraft(draft);
     assert.equal(d.cid, "chat-demo");
+    assert.equal(d.domain, "harness");
     assert.equal(d.target, "local");
     assert.equal(d.rounds, 1);
     assert.equal(d.estimatedEvaluations, draft.estimate.evaluations);
@@ -24,6 +25,7 @@ test("draft card fields come from the STATE_SNAPSHOT draft", () => {
     assert.ok(!rows.some(([k]) => k === "budget" || k === "rrsi"), "null and empty hyperparameters are hidden");
     assert.equal(normalizeDraft(null), null);
     assert.equal(normalizeDraft([1]), null);
+    assert.equal(normalizeDraft({ cid: "legacy", domain: "order_support" }).domain, "order_support");
 });
 
 test("approval card reads the launch call from the interrupt metadata", () => {

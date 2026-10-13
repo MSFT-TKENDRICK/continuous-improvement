@@ -42,6 +42,17 @@ test("chat bundle exists, every file is under 1 MB, flat and servable by the all
     }
 });
 
+test("committed chat bundle defaults its suggestions and draft label to harness", () => {
+    const js = fs.readdirSync(CHAT)
+        .filter((name) => name.endsWith(".js"))
+        .map((name) => fs.readFileSync(path.join(CHAT, name), "utf8"))
+        .join("\n");
+    assert.match(js, /Improve the harness/);
+    assert.match(js, /Inspect harness metrics/);
+    assert.match(js, /label:"Domain"/);
+    assert.match(js, /\?\?"harness"/);
+});
+
 test("chat bundle has no banned vendor names, console logging, eval or telemetry endpoints", () => {
     for (const name of fs.readdirSync(CHAT)) {
         const text = fs.readFileSync(path.join(CHAT, name), "utf8");
