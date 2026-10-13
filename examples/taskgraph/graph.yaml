@@ -1,0 +1,51 @@
+# Diamond task graph: brief -> (facts, risks) -> summary. Rubrics: rubrics.yaml (sealed by `graph run --rubric`).
+# Offline smoke: the `fake` student writes the first fenced block of each deliverable's instructions.
+id: order-escalation-review
+goal: Review the escalated orders and summarize facts and risks.
+deliverables:
+  - id: brief
+    title: Review brief
+    output: {kind: file, path: out/brief.md}
+    rubric_commitment: 9ea583efe2c4e76050636cbd1df43303cf7c774f0b8bdc3aff259f7d0029b03c
+    budget: {max_attempts: 2, timeout_s: 120}
+    instructions: |
+      Write the review brief for the escalated orders. Reference output:
+      ```
+      # Brief
+      Scope: ORD-1 and ORD-2 (escalated last week).
+      ```
+  - id: facts
+    title: Order facts
+    depends_on: [brief]
+    output: {kind: json, path: out/facts.json}
+    rubric_commitment: 906e3ee2eb9a43ab8809905773b8f60af0fcd650634540f787bea42411b8e620
+    budget: {max_attempts: 2, timeout_s: 120}
+    instructions: |
+      From the brief, produce a JSON object with the order ids in scope. Reference output:
+      ```
+      {"orders": ["ORD-1", "ORD-2"]}
+      ```
+  - id: risks
+    title: Order risks
+    depends_on: [brief]
+    output: {kind: file, path: out/risks.md}
+    rubric_commitment: 89be81a3a699ba4453e9020f88b0b186ba30cb6129a6e0b4bd2b3febb4204649
+    budget: {max_attempts: 2, timeout_s: 120}
+    instructions: |
+      From the brief, list the open risks as a markdown list. Reference output:
+      ```
+      # Risks
+      - ORD-2 refund is late
+      ```
+  - id: summary
+    title: Review summary
+    depends_on: [facts, risks]
+    output: {kind: file, path: out/summary.md}
+    rubric_commitment: 83a089404e452a02ce97b0acd3cf95fbe251e15b9f4637d9f8b5ff6e793d9110
+    budget: {max_attempts: 2, timeout_s: 120}
+    instructions: |
+      Combine the facts and risks into a two-line summary. Reference output:
+      ```
+      # Summary
+      2 orders escalated; 1 risk open.
+      ```
