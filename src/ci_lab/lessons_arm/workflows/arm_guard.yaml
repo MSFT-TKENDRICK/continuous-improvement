@@ -1,0 +1,62 @@
+# One RRSI arm, strategy `guard` (lessons -> declarative guard rules); design 13.3 steps 4-8, 13.6 B1/B4.
+# Same shape as campaign's arm_skillopt.yaml (critique -> repair -> evaluate -> finalize) plus one
+# extra gate: guard_paired_eval runs Domain.evaluate twice on identical cases/seeds with
+# CI_GUARDS=off / CI_GUARDS=enforce and writes rulespec.GuardMetrics (marker guard_eval.json).
+# Expression-free: literal arguments only, no PowerFx, no Goto/SetVariable.
+# Wired (21b): ci_lab.workflows.ARM_YAMLS["guard"] = this file; the campaign's arm_tools binds
+#   guard_paired_eval -> ci_lab.lessons_arm.paired.guard_paired_eval_step.
+kind: Workflow
+trigger:
+  kind: OnConversationStart
+  id: rrsi_arm_guard
+  actions:
+    - kind: InvokeFunctionTool
+      id: provision_slot
+      functionName: provision_slot
+      arguments:
+        step: provision_slot
+    - kind: InvokeFunctionTool
+      id: propose
+      functionName: propose
+      arguments:
+        strategy: guard
+    - kind: InvokeFunctionTool
+      id: critique_1
+      functionName: critique
+      arguments:
+        attempt: 1
+    - kind: InvokeFunctionTool
+      id: repair_1
+      functionName: repair
+      arguments:
+        attempt: 1
+    - kind: InvokeFunctionTool
+      id: critique_2
+      functionName: critique
+      arguments:
+        attempt: 2
+    - kind: InvokeFunctionTool
+      id: repair_2
+      functionName: repair
+      arguments:
+        attempt: 2
+    - kind: InvokeFunctionTool
+      id: critique_final
+      functionName: critique
+      arguments:
+        attempt: 3
+    - kind: InvokeFunctionTool
+      id: evaluate
+      functionName: evaluate
+      arguments:
+        split: evolve
+    - kind: InvokeFunctionTool
+      id: guard_paired_eval
+      functionName: guard_paired_eval
+      arguments:
+        split: evolve
+    - kind: InvokeFunctionTool
+      id: finalize_arm
+      functionName: finalize_arm
+      arguments:
+        step: finalize_arm
