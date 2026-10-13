@@ -37,19 +37,20 @@ def _parse_hyper(items: list[str]) -> dict[str, Any]:
 
 
 def load_deps(profile: Profile, *, run_root: Path, ledger_dir: Path | None, repo: str,
-              dry_run_publish: bool) -> CampaignDeps:
+              dry_run_publish: bool, domain_name: str = "order_support") -> CampaignDeps:
     """Build :class:`CampaignDeps` for a profile: ``fake`` from :mod:`.fakes`, ``copilot`` /
     ``offline`` from :mod:`.wiring` (offline is network-free and never publishes)."""
     if profile is Profile.FAKE:
         from ci_lab.campaign.fakes import fake_deps
 
         state = run_root / "_fake"
-        return fake_deps(state, repo=repo, ledger_root=ledger_dir or state / "experiments")
+        return fake_deps(state, repo=repo, ledger_root=ledger_dir or state / "experiments",
+                         domain_name=domain_name)
     from ci_lab.campaign.wiring import NetworkPolicyError, wired_deps
 
     try:
         return wired_deps(profile, run_root=run_root, ledger_dir=ledger_dir, repo=repo,
-                          dry_run_publish=dry_run_publish)
+                          dry_run_publish=dry_run_publish, domain_name=domain_name)
     except (NetworkPolicyError, ImportError) as exc:
         raise IntegrationPending(f"profile {profile.value!r}: {exc}") from exc
 
@@ -78,7 +79,8 @@ def _main(args: argparse.Namespace) -> int:
 def _dispatch(args: argparse.Namespace, profile: Profile, run_root: Path) -> int:
     try:
         deps = load_deps(profile, run_root=run_root, ledger_dir=Path(args.ledger_dir) if args.ledger_dir else None,
-                         repo=args.repo, dry_run_publish=args.dry_run_publish)
+                         repo=args.repo, dry_run_publish=args.dry_run_publish,
+                         domain_name=getattr(args, "domain", "order_support"))
     except IntegrationPending as exc:
         print(json.dumps({"error": str(exc)}))
         return 2
@@ -147,6 +149,8 @@ def _run_command(camp: Campaign, cmd: str, args: argparse.Namespace) -> Any:
 
 
 def register(sub: Any) -> None:
+    from ci_lab.domain import DEFAULT_DOMAIN, DOMAIN_CHOICES
+
     parser = sub.add_parser("campaign", help="RRSI campaigns as OES experiments (MAF workflows)")
     csub = parser.add_subparsers(dest="campaign_command", required=True)
     for name in COMMANDS:
@@ -158,6 +162,7 @@ def register(sub: Any) -> None:
         p.add_argument("--run-dir", help="run root (default: $CI_RUN_DIR or artifacts/ci-runs)")
         p.add_argument("--ledger-dir", help="ledger root (default: experiments/; fake: <run-dir>/_fake)")
         p.add_argument("--repo", default="example/harness", help="GitHub owner/repo for publishing")
+        p.add_argument("--domain", choices=DOMAIN_CHOICES, default=DEFAULT_DOMAIN)
         if name == "new":
             p.add_argument("--hyper", action="append", default=[], metavar="KEY=VALUE")
         if name == "run":

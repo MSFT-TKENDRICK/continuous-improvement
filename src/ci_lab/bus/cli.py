@@ -41,7 +41,8 @@ def pools_from_env(env: dict[str, str] | None = None) -> Any:
     return ResourcePools(caps)
 
 
-def make_voters_for(vault: Any, *, run_dir: Path, profile: str, s1_model: str | None) -> Any:
+def make_voters_for(vault: Any, *, run_dir: Path, profile: str, s1_model: str | None,
+                    domain_name: str = "order_support") -> Any:
     """Deterministic oracles always; s1 / llm / assert voters only for deliverables whose rubric uses them."""
     from ci_lab.bus.voters.local import DeterministicCheckVoter, MetricVoter
     from ci_lab.bus.voters.remote import AgentVoter, AssertVoter, S1RubricVoter
@@ -64,9 +65,12 @@ def make_voters_for(vault: Any, *, run_dir: Path, profile: str, s1_model: str | 
             out.append(AgentVoter(lazy["critic"]))
         if "assert" in measures:
             if "domain" not in lazy:
-                from ci_lab.domain.order_support import OrderSupportDomain
+                from ci_lab.domain import get_domain
 
-                lazy["domain"] = OrderSupportDomain(work_dir=run_dir / "assert")
+                kwargs = {"work_dir": run_dir / "assert"}
+                if domain_name == "harness":
+                    kwargs["profile"] = profile
+                lazy["domain"] = get_domain(domain_name, **kwargs)
             out.append(AssertVoter(lazy["domain"]))
         return out
 
@@ -182,7 +186,8 @@ def cmd_run(a: argparse.Namespace) -> int:
         from ci_lab.adversary.harden import Hardener
 
         hardener = Hardener(vault, run_dir / "artifacts", optimizers=make_optimizers(a.optimizer, a.profile))
-    voters_for = make_voters_for(vault, run_dir=run_dir, profile=a.profile, s1_model=a.s1_model)
+    voters_for = make_voters_for(vault, run_dir=run_dir, profile=a.profile, s1_model=a.s1_model,
+                                 domain_name=getattr(a, "domain", "order_support"))
     if not a.no_telemetry:  # spans + ci.bus.append events -> <run-dir>/telemetry/spans-*.jsonl
         from ci_lab import telemetry
 
@@ -281,6 +286,9 @@ def register(sub: Any) -> None:
     p.add_argument("--quorum", type=int, default=1)
     p.add_argument("--student", choices=("fake", "agent"), default="agent")
     p.add_argument("--profile", choices=("copilot", "offline"), default="copilot")
+    from ci_lab.domain import DEFAULT_DOMAIN, DOMAIN_CHOICES
+
+    p.add_argument("--domain", choices=DOMAIN_CHOICES, default=DEFAULT_DOMAIN)
     p.add_argument("--s1-model", default="default", help="System-1 judge model for s1 criteria ('' = no s1 voter)")
     p.add_argument("--json", action="store_true")
     p.add_argument("--no-telemetry", action="store_true", help="skip <run-dir>/telemetry span export")
