@@ -30,28 +30,28 @@ def _retry_traj() -> Trajectory:
     b = StepBuilder()
     b.user()
     for _ in range(3):
-        b.call("get_order_status", {"order_id": "NW-1"}, None)
-        b.result(b.steps[-1].call_id, {"status": "delivered"}, "get_order_status")
+        b.call("read_file", {"resource_id": "CASE-1"}, None)
+        b.result(b.steps[-1].call_id, {"status": "delivered"}, "read_file")
     b.call("lookup_customer", {"email": "a@b.c"}, None)
     b.result(b.steps[-1].call_id, {"id": "C1"}, "lookup_customer")
-    b.call("get_order_status", {"order_id": "NW-1"}, None)  # repeated lookup, collapsed
-    b.result(b.steps[-1].call_id, {"status": "delivered"}, "get_order_status")
-    b.call("issue_refund", {"order_id": "NW-1", "amount": 10}, None)
-    b.result(b.steps[-1].call_id, {"error": "refund_denied"}, "issue_refund")
-    b.call("issue_refund", {"order_id": "NW-1", "amount": 10}, None)  # immediate retry, deduped
-    b.result(b.steps[-1].call_id, {"error_code": "refund_denied"}, "issue_refund")
+    b.call("read_file", {"resource_id": "CASE-1"}, None)  # repeated lookup, collapsed
+    b.result(b.steps[-1].call_id, {"status": "delivered"}, "read_file")
+    b.call("write_file", {"resource_id": "CASE-1", "amount": 10}, None)
+    b.result(b.steps[-1].call_id, {"error": "change_denied"}, "write_file")
+    b.call("write_file", {"resource_id": "CASE-1", "amount": 10}, None)  # immediate retry, deduped
+    b.result(b.steps[-1].call_id, {"error_code": "change_denied"}, "write_file")
     b.call("escalate", {}, None)
     b.result(b.steps[-1].call_id, {"ok": True}, "escalate")
     return make_trajectory(source="assert", split="evolve", case_id="x", steps=tuple(b.steps), pin="p@1",
-                           passed=False, oracle_rules=["refund.denied"])
+                           passed=False, oracle_rules=["change.denied"])
 
 
 def test_fingerprint_canonicalization() -> None:
     t = _retry_traj()
-    assert [c.tool for c in canonical_calls(t)] == ["get_order_status", "lookup_customer", "issue_refund", "escalate"]
-    assert tool_ngrams(t) == (("get_order_status", "lookup_customer", "issue_refund"),)
+    assert [c.tool for c in canonical_calls(t)] == ["read_file", "lookup_customer", "write_file", "escalate"]
+    assert tool_ngrams(t) == (("read_file", "lookup_customer", "write_file"),)
     fp = fingerprint(t)
-    assert fp.pin == "p@1" and fp.error_class == "refund_denied" and fp.oracle_rules == ("refund.denied",)
+    assert fp.pin == "p@1" and fp.error_class == "change_denied" and fp.oracle_rules == ("change.denied",)
     assert fingerprint(t.model_copy(update={"pin": "p@2"})).digest() != fp.digest()  # versioned by pin (N2)
 
 
@@ -70,7 +70,7 @@ def test_convergence_across_slices(make: Make) -> None:
     res = mine(spread + burst + early)
     assert len(res.clusters) == 1
     (c,) = res.clusters
-    assert c.fingerprint.oracle_rules == ("refund.unverified_order",)
+    assert c.fingerprint.oracle_rules == ("harness.write_without_read",)
     assert len(c.slices) == 4 and c.status == "candidate" and not c.human_confirmed
     # dropped patterns are reported with a reason, never silently lost
     flat = [r for rs in res.dropped.values() for r in rs]
@@ -131,11 +131,11 @@ def _routes(make: Make, kind: str, registry: Registry | None = None) -> tuple[st
 def test_router_ladder(make: Make) -> None:
     route, f, _, _ = _routes(make, "unverified")
     assert route == "R2"
-    assert f == {"target_tool": "issue_refund", "subject_arg": "order_id", "prior_tool": "get_order_status",
-                 "prior_subject_field": "order_id", "trusted": True}
+    assert f == {"target_tool": "write_file", "subject_arg": "resource_id", "prior_tool": "read_file",
+                 "prior_subject_field": "resource_id", "trusted": True}
     route, f, _, _ = _routes(make, "overlimit")
     assert route == "R1"
-    assert f == {"target_tool": "issue_refund", "arg": "amount", "op": "le", "values": [80.0], "trusted": True}
+    assert f == {"target_tool": "write_file", "arg": "amount", "op": "le", "values": [80.0], "trusted": True}
     route, f, _, _ = _routes(make, "pii")
     assert route == "R3" and f["pattern_classes"] == ["email"]
     route, f, _, _ = _routes(make, "ungrounded")

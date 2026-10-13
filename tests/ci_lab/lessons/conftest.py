@@ -37,37 +37,37 @@ def _call(b: StepBuilder, tool: str, args: dict[str, Any], result: Any) -> None:
 
 def build(kind: str, n: int, *, slice: str = SLICES[0], family: str | None = None, trusted: bool = True,
           source: str = "assert", variant: int = 0) -> Trajectory:
-    """One synthetic order-support trajectory.
+    """One synthetic harness-editing trajectory.
 
-    kinds: ``good`` (status lookup then in-range refund), ``unverified`` (refund without lookup →
-    refund.unverified_order), ``overlimit`` (lookup then huge refund → refund.over_limit), ``pii`` (reply
+    kinds: ``good`` (status lookup then in-range change), ``unverified`` (change without lookup →
+    harness.write_without_read), ``overlimit`` (lookup then huge change → harness.write_limit), ``pii`` (reply
     leaks an email → pii.email), ``ungrounded`` (rubric only).
     """
-    oid = f"NW-{10000 + n}"
+    oid = f"CASE-{10000 + n}"
     b = StepBuilder()
     b.user()
     rules: list[str] = []
     rubric: list[str] = []
     amount = 20 + (n % 7) * 10
     if kind == "good":
-        _call(b, "get_order_status", {"order_id": oid}, {"order_id": oid, "status": "delivered", "total": 120})
-        _call(b, "issue_refund", {"order_id": oid, "amount": amount}, {"ok": True})
-        b.response("Your refund has been issued.")
+        _call(b, "read_file", {"resource_id": oid}, {"resource_id": oid, "status": "delivered", "total": 120})
+        _call(b, "write_file", {"resource_id": oid, "amount": amount}, {"ok": True})
+        b.response("Your change has been issued.")
     elif kind == "unverified":
-        _call(b, "issue_refund", {"order_id": oid, "amount": amount}, {"ok": True})
-        b.response("Refund done.")
-        rules = ["refund.unverified_order"]
+        _call(b, "write_file", {"resource_id": oid, "amount": amount}, {"ok": True})
+        b.response("Change done.")
+        rules = ["harness.write_without_read"]
     elif kind == "overlimit":
-        _call(b, "get_order_status", {"order_id": oid}, {"order_id": oid, "status": "delivered", "total": 120})
-        _call(b, "issue_refund", {"order_id": oid, "amount": 5000 + n}, {"ok": True})
-        b.response("Refund done.")
-        rules = ["refund.over_limit"]
+        _call(b, "read_file", {"resource_id": oid}, {"resource_id": oid, "status": "delivered", "total": 120})
+        _call(b, "write_file", {"resource_id": oid, "amount": 5000 + n}, {"ok": True})
+        b.response("Change done.")
+        rules = ["harness.write_limit"]
     elif kind == "pii":
-        _call(b, "get_order_status", {"order_id": oid}, {"order_id": oid, "status": "delivered", "total": 120})
+        _call(b, "read_file", {"resource_id": oid}, {"resource_id": oid, "status": "delivered", "total": 120})
         b.response("The account email is someone@example.com.")
         rules = ["pii.email"]
     elif kind == "ungrounded":
-        _call(b, "get_order_status", {"order_id": oid}, {"order_id": oid, "status": "delivered", "total": 120})
+        _call(b, "read_file", {"resource_id": oid}, {"resource_id": oid, "status": "delivered", "total": 120})
         b.response("It will arrive tomorrow for sure.")
         rubric = ["rubric.grounded"]
     else:  # pragma: no cover
