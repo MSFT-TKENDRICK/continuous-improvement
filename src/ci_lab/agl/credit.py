@@ -188,6 +188,9 @@ def heuristic_credit(digests: Sequence[RolloutDigest], components: Sequence[str]
         all_tokens = [d.metrics.get("tokens_in", 0) + d.metrics.get("tokens_out", 0) for d in digests]
         if _outlier(tokens, all_tokens):
             add("agent", 0.8, "cost.tokens", f"{digest.case}:tokens")
+        wall = digest.metrics.get("wall_ms", 0)
+        if _outlier(wall, [d.metrics.get("wall_ms", 0) for d in digests]):
+            add("loop", 0.7, "cost.wall", f"{digest.case}:wall")
         if digest.score is not None and digest.score < 0.5 and not digest.violation_rule_ids:
             touched = sorted(digest.component_touches.items(), key=lambda item: (-item[1], item[0]))
             component = next((c for c, count in touched if count and c in allowed), "agent")

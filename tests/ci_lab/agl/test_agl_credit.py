@@ -39,13 +39,15 @@ def test_assign_credit_strict_json_one_call() -> None:
 def test_malformed_response_retries_then_falls_back() -> None:
     client = FakeChatClient(["not json", '{"credits":[{"component":"prompt"}]}'])
     digests = [
-        digest("normal", rules=("workflow.invalid",), metrics={"llm_calls": 2, "tool_calls": 1, "tokens_in": 10}),
-        digest("costly", metrics={"llm_calls": 20, "tool_calls": 10, "tokens_in": 1000}),
+        digest("normal", rules=("workflow.invalid",),
+               metrics={"llm_calls": 2, "tool_calls": 1, "tokens_in": 10, "wall_ms": 10}),
+        digest("costly", metrics={"llm_calls": 20, "tool_calls": 10, "tokens_in": 1000, "wall_ms": 100}),
     ]
     credits = asyncio.run(assign_credit(digests, client=client, components=("agent", "loop", "workflow")))
     assert len(client.requests) == 2
     assert Credit("workflow", 1.0, "violation.rule", ("normal:workflow.invalid",)) in credits
     assert any(c.component == "loop" and c.reason_code == "cost.calls" for c in credits)
+    assert any(c.component == "loop" and c.reason_code == "cost.wall" for c in credits)
     assert any(c.component == "agent" and c.reason_code == "cost.tokens" for c in credits)
 
 
