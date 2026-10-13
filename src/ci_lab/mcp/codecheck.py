@@ -11,8 +11,16 @@ BLOCKED_NAMES = frozenset({
     "open", "exec", "eval", "compile", "__import__", "globals", "locals", "vars", "breakpoint", "input",
     "setattr", "delattr", "help", "memoryview", "exit", "quit",
 })
-# str.format/format_map can reach attributes through the format spec ("{0.__class__}").
-BLOCKED_ATTRS = frozenset({"format", "format_map"})
+# str.format/format_map can reach attributes through the format spec ("{0.__class__}"); module-valued
+# attributes (``collections.sys``, ``json.codecs``) would re-open forbidden modules.
+BLOCKED_ATTRS = frozenset({
+    "format", "format_map", "codecs", "open", "modules", "system", "popen", "posixpath", "ntpath",
+    "genericpath", "linecache", "tokenize", "os", "sys", "subprocess", "socket", "ctypes", "importlib",
+    "builtins", "shutil", "pathlib", "io", "multiprocessing", "threading", "pickle", "marshal", "inspect",
+    "gc", "runpy", "pty", "asyncio", "urllib", "ssl", "mmap", "winreg",
+})
+# Frame/code/traceback introspection (gen.gi_frame.f_back.f_globals) reaches the bootstrap's globals.
+BLOCKED_ATTR_PREFIXES = ("f_", "gi_", "cr_", "ag_", "tb_", "co_")
 LITERAL_NAME_CALLS = frozenset({"getattr", "hasattr"})
 STUB_MODULE = "tools"
 
@@ -22,8 +30,9 @@ def check_code(code: str, allowed_imports: Iterable[str]) -> list[str]:
 
     Rules: imports only from ``allowed_imports`` (minus FORBIDDEN_MODULES) and the ``tools`` stubs, no
     relative or star imports; no name or attribute starting with ``_`` beyond plain ``_x`` locals (no
-    dunders anywhere); no ``open``/``exec``/``eval``/``compile``/``globals``/...; ``getattr``/``hasattr``
-    only as direct calls with a literal, non-underscore attribute name.
+    dunders anywhere); no module-valued (``collections.sys``) or frame-introspection (``gi_frame``,
+    ``f_back``, ...) attributes; no ``open``/``exec``/``eval``/``compile``/``globals``/...; ``getattr``/
+    ``hasattr`` only as direct calls with a literal, non-underscore attribute name.
     """
     try:
         tree = ast.parse(code, "<run_code>")
@@ -62,8 +71,8 @@ def check_code(code: str, allowed_imports: Iterable[str]) -> list[str]:
         elif isinstance(node, ast.Attribute):
             if node.attr.startswith("_"):
                 bad(node, f"attribute {node.attr!r} starts with '_'")
-            elif node.attr in BLOCKED_ATTRS:
-                bad(node, f"attribute {node.attr!r} is not allowed (use f-strings)")
+            elif node.attr in BLOCKED_ATTRS or node.attr.startswith(BLOCKED_ATTR_PREFIXES):
+                bad(node, f"attribute {node.attr!r} is not allowed")
         elif isinstance(node, ast.Name):
             if node.id in BLOCKED_NAMES:
                 bad(node, f"name {node.id!r} is not allowed")
