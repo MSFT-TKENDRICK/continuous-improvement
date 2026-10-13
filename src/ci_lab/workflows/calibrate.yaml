@@ -1,0 +1,21 @@
+# A/A calibration of the campaign incumbent (design-oes-rrsi-v1 §6, C8).
+kind: Workflow
+trigger:
+  kind: OnConversationStart
+  id: rrsi_calibrate
+  actions:
+    - kind: InvokeFunctionTool
+      id: aa_runs
+      functionName: aa_runs
+      arguments:
+        split: evolve
+    - kind: InvokeFunctionTool
+      id: delta
+      functionName: delta
+      arguments:
+        step: delta
+    - kind: InvokeFunctionTool
+      id: record
+      functionName: record
+      arguments:
+        step: record
