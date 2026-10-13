@@ -1,0 +1,37 @@
+id: harness_triage
+version: 1
+deliverable: triage_result
+pass_score: 0.75
+canary: a6017f2c4e8b390d
+criteria:
+  - id: exact-labels
+    description: The component and frozen reason code match the case oracle.
+    measure: assert
+    role: quality
+    threshold: 1.0
+    weight: 3.0
+    required: true
+    check: {suite: harness_triage, split: case, min_score: 1.0}
+  - id: bounded-evidence
+    description: The response connects bounded evidence ids to the selected labels.
+    measure: s1
+    role: quality
+    threshold: 0.5
+    weight: 1.0
+    check:
+      question: Does the response cite only bounded evidence ids and explain their connection to the selected labels?
+      type: noul
+  - id: runtime-wall
+    description: Evaluator-observed triage latency stays within the runtime envelope.
+    measure: metric
+    role: resource
+    threshold: 0.5
+    required: true
+    check: {kind: metric, metric: wall_ms, op: le, target: 1500, worst: 6000}
+  - id: resource-efficiency
+    description: Triage uses a bounded number of model calls without claiming structural simplification.
+    measure: metric
+    role: resource
+    threshold: 0.5
+    required: true
+    check: {kind: metric, metric: llm_calls, op: le, target: 1, worst: 4}
