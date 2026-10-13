@@ -24,7 +24,7 @@ from ci_lab.judge import provider as P
 from ci_lab.judge.s1types import Answer
 
 ROOT = Path(__file__).resolve().parents[3]
-REPLAY = ROOT / "evals" / "assert" / "judge_replay"
+REPLAY = Path(__file__).parent / "fixtures"
 
 
 def _contract(dimensions: dict | None = None):
