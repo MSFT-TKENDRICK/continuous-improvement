@@ -18,7 +18,7 @@ PRs, `permissions: {}` workflows and CODEOWNERS ([harness.md](harness.md#trust-b
             CI_GOVERNANCE_MODE=enforce|evaluate_only (invalid => startup error)
                                      |
  policies/*.acs.yaml --load_manifest--> AcsRuntime(dispatcher=adapters.DISPATCHER,
- (order_support, meta_agents,              annotator=adapters.Annotator)
+ (harness, meta_agents,                  annotator=adapters.Annotator)
   campaign)                                  |
                                      AgentControl.guard(point, snapshot)
                                      |          |                 |
@@ -43,7 +43,6 @@ PRs, `permissions: {}` workflows and CODEOWNERS ([harness.md](harness.md#trust-b
   `agt.governed-agent-factory` flags any `Agent(`/`ChatAgent(` construction elsewhere in `src/`.
   These modules build their agents through the factory:
   - `maf/loader.py`
-  - `order_support/agent.py`
   - `lessons_arm/agent.py`
   - `meta/spec_loader.py`
   - `chat/agent.py`
@@ -53,9 +52,7 @@ PRs, `permissions: {}` workflows and CODEOWNERS ([harness.md](harness.md#trust-b
 - **Modes.**
   - `enforce`: a deny sets a refusal result and raises MAF's `MiddlewareTermination`.
   - `evaluate_only`: decisions are only audited.
-  - The order-support **target** defaults to `evaluate_only`, because its enforcement layer is the
-    guard bundle measured by paired experiments. It enforces only when `CI_GOVERNANCE_MODE` is set
-    explicitly.
+  - Harness agents use the frozen harness tool policy; campaign and meta-agent policies remain separate.
 - **Approvals.** A liftable deny (`escalate`) is held in the file queue under its
   `enforced_identity`. The decision is bound to that identity, so an approval can't be replayed
   for a different action. An approval is consumed once.
@@ -65,12 +62,12 @@ PRs, `permissions: {}` workflows and CODEOWNERS ([harness.md](harness.md#trust-b
 | ACS point | Where | Snapshot | Used by |
 |---|---|---|---|
 | `agent_startup` | `governance.campaign.check_launch` from `ci-lab campaign calibrate/run/confirm/publish/land` | `campaign.{id, publish, dry_run, budget_exhausted, arms[].edit_scope}` | `campaign` |
-| `input` | `AgentMiddleware` before the run (last user message) | `input.text` | `order_support` |
+| `input` | `AgentMiddleware` before the run (last user message) | `input.text` | not configured |
 | `pre_model_call` | `ChatMiddleware` before the model | `model.{id, allowed}`, message count | `meta_agents` |
 | `post_model_call` | `ChatMiddleware` after the model (non-streaming) | `response.text` | not configured |
-| `pre_tool_call` | `FunctionMiddleware` before the tool | `call.{name, arguments}`, tool `history` | `order_support`, `meta_agents` |
+| `pre_tool_call` | `FunctionMiddleware` before the tool | `call.{name, arguments}`, tool `history` | `harness`, `meta_agents` |
 | `post_tool_call` | `FunctionMiddleware` after the tool | `call`, `result` | not configured |
-| `output` | `AgentMiddleware` on the final response (and on the stream's final response) | `output.text` | `order_support`, `meta_agents` |
+| `output` | `AgentMiddleware` on the final response (and on the stream's final response) | `output.text` | `meta_agents` |
 | `agent_shutdown` | not hosted | — | — |
 
 A point that is missing from a manifest is skipped. `ci-lab governance doctor` fails if a configured
@@ -80,7 +77,7 @@ point has no policy.
 
 | Policy | Rules (reason codes) |
 |---|---|
-| `order_support` | `issue_refund` needs a prior successful `verify_identity` for the same order (`identity_not_verified`) and a valid amount (`refund_amount_invalid`). An amount over the refund limit escalates for approval (`refund_over_limit`). Inputs with injection markers are denied (`injection_marker`). Output is redacted for PII and secrets (transform). |
+| `harness` | Tool names are allowlisted per harness agent; code-mode size, timeout, output, import, and path arguments are bounded. |
 | `meta_agents` | Write tools may not touch protected globs (`protected_path`). Only allow-listed models may be called (`model_not_allowed`; `CI_ALLOWED_MODELS` extends the list). Output that leaks the rubric is denied (`rubric_leak`); other output is redacted. |
 | `campaign` | A launch is refused when the kill switch is engaged (`kill_switch_engaged`), the SRE error budget is exhausted (`budget_exhausted`), or an arm's edit scope overlaps a protected glob (`protected_scope`). A non-dry-run publish is a liftable deny (`publish_requires_approval`). |
 
@@ -145,15 +142,15 @@ It rates 7 risks Full and 3 Partial. Our column says what this repo actually wir
 
 | ASI | Risk | AGT (self-rated) | This repo |
 |---|---|---|---|
-| ASI01 | Agent goal hijack | Full | Partial. Input injection-marker deny (order support), and tool-result text is treated as data (guards, evals). Markers are regex heuristics. |
-| ASI02 | Tool misuse | Full | Yes. `pre_tool_call` policies (refund preconditions, protected write paths), and the guards bundle. |
+| ASI01 | Agent goal hijack | Full | Partial. Tool output and evidence excerpts are treated as untrusted data by the harness injection suite and target prompts. Markers are regex heuristics. |
+| ASI02 | Tool misuse | Full | Yes. `pre_tool_call` allowlists, bounded code mode, protected write paths, and the guard engine. |
 | ASI03 | Identity and privilege abuse | Full | Partial. DIDs per agent role and run via `agentmesh`. They are derived from names; no handshake or credentials. |
 | ASI04 | Agentic supply chain | **Partial** (no SBOM or vulnerability scan) | Partial. Pinned actions, no committed lockfile (internal proxy), a lint ban on unwanted stacks. No SBOM. |
 | ASI05 | Unexpected code execution | Full | Partial. No `eval`/`exec` tools; the sleep interpreter runs only on request. No OS sandbox. |
 | ASI06 | Memory and context poisoning | **Partial** (opt-in `MemoryGuard`) | Partial. Lessons, sealed and `.lkg` paths are write-protected for arms. Lessons still feed later prompts. |
 | ASI07 | Insecure inter-agent communication | Full | Not applicable in-process (subagents share one process). No trust-gate handshake. |
 | ASI08 | Cascading failures | Full | Yes. SRE error-budget vetoes per arm, the kill switch, campaign budget stops. |
-| ASI09 | Human-agent trust exploitation | **Partial** (no universal approval UI) | Partial. Identity-bound file approvals for publish and over-limit refunds; draft PRs only. No UI beyond the CLI. |
+| ASI09 | Human-agent trust exploitation | **Partial** (no universal approval UI) | Partial. Identity-bound file approvals for publish; draft PRs only. No UI beyond the CLI. |
 | ASI10 | Rogue agents | Full | Partial. The kill switch and the launch gate. No behavior monitor or quarantine. |
 | — | Traceability (AGT extension) | Full | Yes. Content-free hash-chained audit, checked by `audit-verify` and stamped into OES envelopes. |
 
@@ -163,7 +160,7 @@ AGT's `docs/LIMITATIONS.md` lists these gaps. We mitigate some of them; none are
 
 - **Sequence-level ("salami") attacks.** Each action can be individually allowed while the sequence
   is harmful. ACS sees one call at a time. Mitigations:
-  - `order_support` policies read the tool `history`, so a refund must follow verification.
+  - Harness tool policy evaluates each call against the agent-specific allowlist and bounded arguments.
   - Campaign arms are reviewed on their **net diff** in a draft PR, not edit by edit, and a human
     merges.
 - **Semantic bypass and policy self-editing.** A self-improving harness could weaken its own

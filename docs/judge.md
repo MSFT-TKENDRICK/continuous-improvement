@@ -17,13 +17,12 @@ They use only `obs.span` and `obs.annotate`, with scalar attributes (obs v2.3.1)
 ### Integration hook (ASSERT wrapper)
 
 ASSERT calls the judge through LiteLLM inside the wrapper process, so registering the provider there is enough.
-`order-support-evals run` (`cmd_run`) and the ASSERT wrapper's `install()` both call
-`order_support.assert_wrapper.register_judge()`, which runs `ci_lab.judge.provider.register()` before ASSERT starts.
+`ci_lab.domain.harness_assert_wrapper.install()` registers `ci_lab.judge.provider` before ASSERT starts and accepts only `harness_*` suite directories.
 
 Every suite under `evals/assert/` pins `pipeline.judge.model.name: s1/llamacpp/qwen3.5-4b`, so ASSERT judges through the System-1 provider by default (a test in `tests/integration/test_reallib_assert.py` enforces this). To pick another System-1 backend for one run, without editing the suite:
 
 ```powershell
-uv run order-support-evals run evals/assert/judge_replay/eval_config.yaml --override pipeline.judge.model.name=s1/scripted/default
+uv run python -m ci_lab.domain.harness_assert_wrapper run evals/assert/harness_triage/eval_config.yaml --override pipeline.judge.model.name=s1/scripted/default
 ```
 
 `register()` is idempotent and thread-safe. It adds one `{"provider": "s1", ...}` entry to `litellm.custom_provider_map` and re-runs `litellm.utils.custom_llm_setup()`. `register(force=True)` replaces the handler, and `unregister()` removes it.
@@ -43,10 +42,10 @@ These are ported from `s1eval` on `origin/main`.
 
 ### Host-wide admission queue (local llama.cpp)
 
-Parallel ASSERT suites, campaign arms (each case is an `order-support-evals run` subprocess) and `ci-lab judge` all judge through one llama-server. `ci_lab.judge.admission` makes them queue for it host-wide instead of piling requests onto the server:
+Parallel harness ASSERT suites, campaign arms, and `ci-lab judge` all judge through one llama-server. `ci_lab.judge.admission` makes them queue for it host-wide instead of piling requests onto the server:
 
 - **Slot leases.** A caller holds one of `capacity` leases while it talks to the server. Leases are OS file locks (`msvcrt.locking` on Windows, `fcntl.flock` on POSIX) on `<lock root>/s1-<sha256(url)[:12]>/slot-<i>.lock`, keyed by the normalised server URL, so the OS releases them if the holder dies.
-- **Where the wait happens.** `order-support-evals run` takes the lease around ASSERT's `_single_judge_call`, *before* ASSERT's per-call timeout starts, and holds it across ASSERT's retries of that call. `LlamaCppLogprobBackend.decide` takes a lease itself only when its caller doesn't already hold one (the lease is a context variable, so nested acquisition is reentrant and `asyncio.to_thread` shares it). This covers campaigns, `provider-check` and other non-ASSERT callers.
+- **Where the wait happens.** the harness ASSERT wrapper takes the lease around ASSERT's `_single_judge_call`, *before* ASSERT's per-call timeout starts, and holds it across ASSERT's retries of that call. `LlamaCppLogprobBackend.decide` takes a lease itself only when its caller doesn't already hold one (the lease is a context variable, so nested acquisition is reentrant and `asyncio.to_thread` shares it). This covers campaigns, `provider-check` and other non-ASSERT callers.
 - **Fairness.** Waiters drop a locked ticket file in `queue/` and only the `capacity` oldest live tickets compete for a free slot, so service is FIFO within windows of `capacity`. Tickets of dead waiters are reaped. Waiters poll with jittered backoff (50 ms to 1 s).
 - **Observability.** Waits are logged at INFO every 30 s. The lease's wait, slot and capacity are added to the current OTel span as `ci.s1.queue_wait_s`, `ci.s1.slot` and `ci.s1.capacity`.
 

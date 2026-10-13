@@ -172,7 +172,7 @@ ci-lab graph show <run-dir>                           # summary + bus heads
   `asyncio`, the student to `agent` and the profile to `copilot`.
 - **Voters.** Every deliverable gets the deterministic voter. `S1RubricVoter` is added when the rubric
   has `s1` criteria and `--s1-model` isn't `""`. `AgentVoter` is added for `llm` criteria, and
-  `AssertVoter` (order-support domain) for `assert` criteria.
+  `AssertVoter` (harness domain) for `assert` criteria.
 - **Challenger.** A hardener is attached only when `--challenger` isn't `off`. `--optimizer gepa`
   (needs a challenger) adds GEPA soft-question candidates after template patches; see
   [adversary.md](adversary.md#wiring).

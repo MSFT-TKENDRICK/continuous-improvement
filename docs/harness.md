@@ -1,7 +1,6 @@
 # The self-improving harness
 
-The repo started as a set of ASSERT safety and quality evals for the order-support agent (see the
-[README](../README.md)). On top of those evals sits `ci_lab`, a harness that improves itself. Every
+The repository evaluates and improves its own repo-root harness tree. `ci_lab` keeps the evaluator, governance, selection, and orchestration frozen while candidate arms edit bounded agent-facing assets. Every
 agent and workflow runs on the Microsoft Agent Framework (MAF, Python, declarative YAML,
 checkpointed), using models reached through the GitHub Copilot SDK with ambient auth.
 
@@ -21,9 +20,6 @@ step is traced to OpenTelemetry and shown on the Aspire dashboard and the Copilo
 
 Nothing is adopted automatically. Every change lands as a draft PR that a human reviews and merges.
 
-The binding design is [design/self-improving-harness.md](design/self-improving-harness.md). Where
-sections conflict, §9 and §13.6–§13.7 override earlier ones.
-
 ## Architecture
 
 ```mermaid
@@ -34,7 +30,7 @@ flowchart TB
     MAF --- CKPT
   end
   PROV["Copilot SDK provider<br/>(ci_lab.providers, ambient gh auth)"] --> MAF
-  AGENT["Order-support agent<br/>(src/order_support, data-only harness)"]
+  AGENT["Self-hosted harness target<br/>(repo-root harness tree)"]
   MAF --> AGENT
 
   subgraph Eval["Evaluation"]
@@ -136,12 +132,10 @@ changes selection or history; see [adversary.md](adversary.md#in-campaigns).
 
 | Doc | Module | What it covers |
 |---|---|---|
-| [design/self-improving-harness.md](design/self-improving-harness.md) | — | Binding design: v2 constraints C1–C38, §11 optimizers, §12 telemetry, §13 lessons as structure (B1–B8, N1–N6) |
 | [maf.md](maf.md) | `ci_lab.maf` | MAF core: declarative agents/workflows without PowerFx, tool registry, checkpoints |
 | [providers.md](providers.md) | `ci_lab.providers` | `CopilotChatClient` on the Copilot SDK (ambient auth), client factory and profiles |
 | [models.md](models.md) | `ci_lab.providers.models`, `campaign.preflight` | Every model id, its override (`CI_META_MODEL`, `CI_ASSERT_MODEL`, ...) and the copilot model preflight |
 | [template.md](template.md) | `ci_lab.template` | Use this repo as a GitHub template: `ci-lab template init` / `doctor`, opt-in workflows, swapping in your own agent |
-| [order-support-agent.md](order-support-agent.md) | `order_support` | The system under test: MAF declarative agent over the data-only harness |
 | [judge.md](judge.md) | `ci_lab.judge` | System-1 judge provider, agreement audit, DSPy rubric alignment (proposal only) |
 | [oes.md](oes.md) | `ci_lab.oes` | Open Experiment Standard 0.1.0 envelopes for every experiment |
 | [rrsi.md](rrsi.md) | `ci_lab.rrsi` | RRSI Algorithms 1 and 2 with the v2 safeguards (pure) |
