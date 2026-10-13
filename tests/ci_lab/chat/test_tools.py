@@ -52,12 +52,13 @@ def test_good_draft_is_normalized_estimated_and_persisted(t, cfg):
     d = r["draft"]
     assert d["hyper"]["arms"] == 3 and d["hyper"]["strategies"] == ["gepa", "agent"]
     assert d["overrides"] == {"arms": 3, "k": 2, "strategies": ["gepa", "agent"]}
-    assert d["rationale"] == "test" and d["profile"] == "fake"
+    assert d["rationale"] == "test" and d["profile"] == "fake" and d["domain"] == "harness"
     path = Path(r["path"])
     assert path == cfg.drafts_dir / "exp-one.json"
     assert json.loads(path.read_text(encoding="utf-8")) == json.loads(json.dumps(d))
     new, cal, run = d["commands"]
     assert new[:6] == [sys.executable, "-m", "ci_lab.cli", "campaign", "new", "exp-one"]
+    assert new[new.index("--domain") + 1] == "harness"
     assert new[new.index("--hyper") + 1] == "arms=3"
     assert 'strategies=["gepa","agent"]' in new
     assert "--dry-run-publish" in cal and run[-2:] == ["--rounds", "2"]
@@ -65,12 +66,12 @@ def test_good_draft_is_normalized_estimated_and_persisted(t, cfg):
 
 def test_estimate_math(t):
     n = evolve_cases()
-    assert n == 26  # frozen ASSERT sets: 44 cases = 26 evolve + 11 heldout + 7 ood
+    assert n == 15  # frozen harness sets: 50 cases = 15 evolve + 15 heldout + 20 ood
     e = t.draft_campaign("est-one", {"arms": 2, "aa_repeats": 5, "k": 3}, 4, "local", "x")["draft"]["estimate"]
     assert e["evaluations"] == (5 + 4 * 2) * n * 3
     assert e["breakdown"] == {"aa_calibration": 5 * n * 3, "arms": 4 * 2 * n * 3, "incumbent_reevaluation": 4 * n * 3}
     assert e["evaluations_with_incumbent"] == e["evaluations"] + 4 * n * 3
-    assert e["heldout_confirm_per_look"] == 2 * 11 * 3
+    assert e["heldout_confirm_per_look"] == 2 * 15 * 3
 
 
 @pytest.mark.parametrize(("hyper", "rounds", "needle"), [
@@ -232,10 +233,9 @@ def test_launcher_rejects_foreign_commands(tmp_path):
 def test_read_only_tools(t, cfg):
     assert t.list_strategies()["strategies"] == list(STRATEGIES)
     suites = t.list_suites()
-    assert {s["suite"] for s in suites["suites"]} == {"grounding", "identity_verification",
-                                                      "indirect_prompt_injection", "refund_authorization",
-                                                      "tool_selection"}
-    assert suites["totals"] == {"evolve": 26, "heldout": 11, "ood": 7, "all": 44}
+    assert {s["suite"] for s in suites["suites"]} == {
+        "injection", "proposal", "taskgraph", "tool_use", "triage"}
+    assert suites["totals"] == {"evolve": 15, "heldout": 15, "ood": 20, "all": 50}
     hp = t.get_default_hyperparameters()["hyperparameters"]
     assert set(hp) == set(DEFAULT_HYPER)
     assert hp["arms"]["default"] == 2 and "arms per round" in hp["arms"]["description"]

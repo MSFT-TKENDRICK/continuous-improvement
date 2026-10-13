@@ -112,7 +112,7 @@
         {
           "type": "TOOL_CALL_ARGS",
           "toolCallId": "<call-1>",
-          "delta": "{\"cid\": \"chat-demo\", \"hyper\": {\"arms\": 2}, \"rounds\": 1, \"target\": \"local\", \"rationale\": \"scripted fake-profile draft\"}"
+          "delta": "{\"cid\": \"chat-demo\", \"hyper\": {\"arms\": 2}, \"rounds\": 1, \"target\": \"local\", \"rationale\": \"improve the harness (fake profile)\"}"
         },
         {
           "type": "TOOL_CALL_END",
@@ -122,7 +122,7 @@
           "type": "TOOL_CALL_RESULT",
           "messageId": "<uuid-2>",
           "toolCallId": "<call-1>",
-          "content": "{\"draft\": {\"cid\": \"chat-demo\", \"commands\": [[\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"new\", \"chat-demo\", \"--profile\", \"fake\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\"], [\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"calibrate\", \"chat-demo\", \"--profile\", \"fake\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\"], [\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"run\", \"chat-demo\", \"--profile\", \"fake\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\", \"--rounds\", \"1\"]], \"created\": 0, \"estimate\": {\"aa_repeats\": 5, \"arms\": 2, \"breakdown\": {\"aa_calibration\": 130, \"arms\": 52, \"incumbent_reevaluation\": 26}, \"cases\": 26, \"evaluations\": 182, \"evaluations_with_incumbent\": 208, \"formula\": \"(aa_repeats + rounds * arms) * cases * k\", \"heldout_confirm_per_look\": 22, \"k\": 1, \"notes\": [\"cases = evolve-split cases of the frozen ASSERT sets\", \"each evaluation is one agent rollout plus judging; guard arms run paired guard-off/on trials and may cost more\", \"the held-out confirm look (`campaign confirm`) is not part of the launch chain\"], \"rounds\": 1}, \"hyper\": {\"aa_repeats\": 5, \"arm_budget_tokens\": null, \"arms\": 2, \"b_max\": null, \"b_min\": null, \"budget\": null, \"budget_tokens\": null, \"bus\": true, \"challenger\": \"det\", \"draft_prs\": true, \"guard_margin\": 0.0, \"guard_stochastic\": null, \"guard_trials\": null, \"heartbeat_s\": 30.0, \"holdout_looks\": 1, \"k\": 1, \"max_arm_attempts\": 2, \"max_parallel_arms\": 2, \"max_rounds\": 8, \"rrsi\": {}, \"rrsi_profile\": \"local\", \"seed\": 0, \"strategies\": [\"agent\", \"gepa\", \"skillopt\", \"guard\"]}, \"ignored_overrides\": {}, \"overrides\": {}, \"profile\": \"fake\", \"rationale\": \"scripted fake-profile draft\", \"rounds\": 1, \"target\": \"local\", \"warnings\": []}, \"ok\": true, \"path\": \"<tmp>/chat/drafts/chat-demo.json\", \"warnings\": []}",
+          "content": "{\"draft\": {\"cid\": \"chat-demo\", \"commands\": [[\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"new\", \"chat-demo\", \"--profile\", \"fake\", \"--domain\", \"harness\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\"], [\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"calibrate\", \"chat-demo\", \"--profile\", \"fake\", \"--domain\", \"harness\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\"], [\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"run\", \"chat-demo\", \"--profile\", \"fake\", \"--domain\", \"harness\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\", \"--rounds\", \"1\"]], \"created\": 0, \"domain\": \"harness\", \"estimate\": {\"aa_repeats\": 5, \"arms\": 2, \"breakdown\": {\"aa_calibration\": 75, \"arms\": 30, \"incumbent_reevaluation\": 15}, \"cases\": 15, \"evaluations\": 105, \"evaluations_with_incumbent\": 120, \"formula\": \"(aa_repeats + rounds * arms) * cases * k\", \"heldout_confirm_per_look\": 30, \"k\": 1, \"notes\": [\"cases = evolve-split cases of the frozen ASSERT sets\", \"each evaluation is one agent rollout plus judging; guard arms run paired guard-off/on trials and may cost more\", \"the held-out confirm look (`campaign confirm`) is not part of the launch chain\"], \"rounds\": 1}, \"hyper\": {\"aa_repeats\": 5, \"arm_budget_tokens\": null, \"arms\": 2, \"b_max\": null, \"b_min\": null, \"budget\": null, \"budget_tokens\": null, \"bus\": true, \"challenger\": \"det\", \"draft_prs\": true, \"guard_margin\": 0.0, \"guard_stochastic\": null, \"guard_trials\": null, \"heartbeat_s\": 30.0, \"holdout_looks\": 1, \"k\": 1, \"max_arm_attempts\": 2, \"max_parallel_arms\": 2, \"max_rounds\": 8, \"rrsi\": {}, \"rrsi_profile\": \"harness\", \"seed\": 0, \"strategies\": [\"agent\", \"gepa\", \"skillopt\", \"agl\"]}, \"ignored_overrides\": {}, \"overrides\": {}, \"profile\": \"fake\", \"rationale\": \"improve the harness (fake profile)\", \"rounds\": 1, \"target\": \"local\", \"warnings\": []}, \"ok\": true, \"path\": \"<tmp>/chat/drafts/chat-demo.json\", \"warnings\": []}",
           "role": "tool"
         },
         {
@@ -132,7 +132,8 @@
               "cid": "chat-demo",
               "target": "local",
               "rounds": 1,
-              "rationale": "scripted fake-profile draft",
+              "rationale": "improve the harness (fake profile)",
+              "domain": "harness",
               "hyper": {
                 "arms": 2,
                 "k": 1,
@@ -143,7 +144,7 @@
                 "budget": null,
                 "b_min": null,
                 "b_max": null,
-                "rrsi_profile": "local",
+                "rrsi_profile": "harness",
                 "rrsi": {},
                 "budget_tokens": null,
                 "max_arm_attempts": 2,
@@ -153,7 +154,7 @@
                   "agent",
                   "gepa",
                   "skillopt",
-                  "guard"
+                  "agl"
                 ],
                 "arm_budget_tokens": null,
                 "heartbeat_s": 30.0,
@@ -167,19 +168,19 @@
               "ignored_overrides": {},
               "estimate": {
                 "formula": "(aa_repeats + rounds * arms) * cases * k",
-                "cases": 26,
+                "cases": 15,
                 "k": 1,
                 "arms": 2,
                 "rounds": 1,
                 "aa_repeats": 5,
-                "evaluations": 182,
+                "evaluations": 105,
                 "breakdown": {
-                  "aa_calibration": 130,
-                  "arms": 52,
-                  "incumbent_reevaluation": 26
+                  "aa_calibration": 75,
+                  "arms": 30,
+                  "incumbent_reevaluation": 15
                 },
-                "evaluations_with_incumbent": 208,
-                "heldout_confirm_per_look": 22,
+                "evaluations_with_incumbent": 120,
+                "heldout_confirm_per_look": 30,
                 "notes": [
                   "cases = evolve-split cases of the frozen ASSERT sets",
                   "each evaluation is one agent rollout plus judging; guard arms run paired guard-off/on trials and may cost more",
@@ -199,6 +200,8 @@
                   "chat-demo",
                   "--profile",
                   "fake",
+                  "--domain",
+                  "harness",
                   "--run-dir",
                   "<tmp>/runs",
                   "--dry-run-publish"
@@ -212,6 +215,8 @@
                   "chat-demo",
                   "--profile",
                   "fake",
+                  "--domain",
+                  "harness",
                   "--run-dir",
                   "<tmp>/runs",
                   "--dry-run-publish"
@@ -225,6 +230,8 @@
                   "chat-demo",
                   "--profile",
                   "fake",
+                  "--domain",
+                  "harness",
                   "--run-dir",
                   "<tmp>/runs",
                   "--dry-run-publish",
@@ -253,7 +260,7 @@
         {
           "type": "TEXT_MESSAGE_CONTENT",
           "messageId": "<uuid-3>",
-          "delta": "about 182 evaluations. Say \"launch chat-demo\" "
+          "delta": "about 105 evaluations. Say \"launch chat-demo\" "
         },
         {
           "type": "TEXT_MESSAGE_CONTENT",
@@ -281,7 +288,7 @@
                   "type": "function",
                   "function": {
                     "name": "draft_campaign",
-                    "arguments": "{\"cid\": \"chat-demo\", \"hyper\": {\"arms\": 2}, \"rounds\": 1, \"target\": \"local\", \"rationale\": \"scripted fake-profile draft\"}"
+                    "arguments": "{\"cid\": \"chat-demo\", \"hyper\": {\"arms\": 2}, \"rounds\": 1, \"target\": \"local\", \"rationale\": \"improve the harness (fake profile)\"}"
                   }
                 }
               ]
@@ -289,13 +296,13 @@
             {
               "id": "<uuid-2>",
               "role": "tool",
-              "content": "{\"draft\": {\"cid\": \"chat-demo\", \"commands\": [[\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"new\", \"chat-demo\", \"--profile\", \"fake\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\"], [\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"calibrate\", \"chat-demo\", \"--profile\", \"fake\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\"], [\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"run\", \"chat-demo\", \"--profile\", \"fake\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\", \"--rounds\", \"1\"]], \"created\": 0, \"estimate\": {\"aa_repeats\": 5, \"arms\": 2, \"breakdown\": {\"aa_calibration\": 130, \"arms\": 52, \"incumbent_reevaluation\": 26}, \"cases\": 26, \"evaluations\": 182, \"evaluations_with_incumbent\": 208, \"formula\": \"(aa_repeats + rounds * arms) * cases * k\", \"heldout_confirm_per_look\": 22, \"k\": 1, \"notes\": [\"cases = evolve-split cases of the frozen ASSERT sets\", \"each evaluation is one agent rollout plus judging; guard arms run paired guard-off/on trials and may cost more\", \"the held-out confirm look (`campaign confirm`) is not part of the launch chain\"], \"rounds\": 1}, \"hyper\": {\"aa_repeats\": 5, \"arm_budget_tokens\": null, \"arms\": 2, \"b_max\": null, \"b_min\": null, \"budget\": null, \"budget_tokens\": null, \"bus\": true, \"challenger\": \"det\", \"draft_prs\": true, \"guard_margin\": 0.0, \"guard_stochastic\": null, \"guard_trials\": null, \"heartbeat_s\": 30.0, \"holdout_looks\": 1, \"k\": 1, \"max_arm_attempts\": 2, \"max_parallel_arms\": 2, \"max_rounds\": 8, \"rrsi\": {}, \"rrsi_profile\": \"local\", \"seed\": 0, \"strategies\": [\"agent\", \"gepa\", \"skillopt\", \"guard\"]}, \"ignored_overrides\": {}, \"overrides\": {}, \"profile\": \"fake\", \"rationale\": \"scripted fake-profile draft\", \"rounds\": 1, \"target\": \"local\", \"warnings\": []}, \"ok\": true, \"path\": \"<tmp>/chat/drafts/chat-demo.json\", \"warnings\": []}",
+              "content": "{\"draft\": {\"cid\": \"chat-demo\", \"commands\": [[\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"new\", \"chat-demo\", \"--profile\", \"fake\", \"--domain\", \"harness\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\"], [\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"calibrate\", \"chat-demo\", \"--profile\", \"fake\", \"--domain\", \"harness\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\"], [\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"run\", \"chat-demo\", \"--profile\", \"fake\", \"--domain\", \"harness\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\", \"--rounds\", \"1\"]], \"created\": 0, \"domain\": \"harness\", \"estimate\": {\"aa_repeats\": 5, \"arms\": 2, \"breakdown\": {\"aa_calibration\": 75, \"arms\": 30, \"incumbent_reevaluation\": 15}, \"cases\": 15, \"evaluations\": 105, \"evaluations_with_incumbent\": 120, \"formula\": \"(aa_repeats + rounds * arms) * cases * k\", \"heldout_confirm_per_look\": 30, \"k\": 1, \"notes\": [\"cases = evolve-split cases of the frozen ASSERT sets\", \"each evaluation is one agent rollout plus judging; guard arms run paired guard-off/on trials and may cost more\", \"the held-out confirm look (`campaign confirm`) is not part of the launch chain\"], \"rounds\": 1}, \"hyper\": {\"aa_repeats\": 5, \"arm_budget_tokens\": null, \"arms\": 2, \"b_max\": null, \"b_min\": null, \"budget\": null, \"budget_tokens\": null, \"bus\": true, \"challenger\": \"det\", \"draft_prs\": true, \"guard_margin\": 0.0, \"guard_stochastic\": null, \"guard_trials\": null, \"heartbeat_s\": 30.0, \"holdout_looks\": 1, \"k\": 1, \"max_arm_attempts\": 2, \"max_parallel_arms\": 2, \"max_rounds\": 8, \"rrsi\": {}, \"rrsi_profile\": \"harness\", \"seed\": 0, \"strategies\": [\"agent\", \"gepa\", \"skillopt\", \"agl\"]}, \"ignored_overrides\": {}, \"overrides\": {}, \"profile\": \"fake\", \"rationale\": \"improve the harness (fake profile)\", \"rounds\": 1, \"target\": \"local\", \"warnings\": []}, \"ok\": true, \"path\": \"<tmp>/chat/drafts/chat-demo.json\", \"warnings\": []}",
               "toolCallId": "<call-1>"
             },
             {
               "id": "<uuid-3>",
               "role": "assistant",
-              "content": "Drafted chat-demo: 1 round(s), target local, about 182 evaluations. Say \"launch chat-demo\" to start it."
+              "content": "Drafted chat-demo: 1 round(s), target local, about 105 evaluations. Say \"launch chat-demo\" to start it."
             }
           ]
         },
@@ -333,7 +340,7 @@
                   "type": "function",
                   "function": {
                     "name": "draft_campaign",
-                    "arguments": "{\"cid\": \"chat-demo\", \"hyper\": {\"arms\": 2}, \"rounds\": 1, \"target\": \"local\", \"rationale\": \"scripted fake-profile draft\"}"
+                    "arguments": "{\"cid\": \"chat-demo\", \"hyper\": {\"arms\": 2}, \"rounds\": 1, \"target\": \"local\", \"rationale\": \"improve the harness (fake profile)\"}"
                   }
                 }
               ]
@@ -341,13 +348,13 @@
             {
               "id": "<uuid-2>",
               "role": "tool",
-              "content": "{\"draft\": {\"cid\": \"chat-demo\", \"commands\": [[\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"new\", \"chat-demo\", \"--profile\", \"fake\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\"], [\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"calibrate\", \"chat-demo\", \"--profile\", \"fake\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\"], [\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"run\", \"chat-demo\", \"--profile\", \"fake\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\", \"--rounds\", \"1\"]], \"created\": 0, \"estimate\": {\"aa_repeats\": 5, \"arms\": 2, \"breakdown\": {\"aa_calibration\": 130, \"arms\": 52, \"incumbent_reevaluation\": 26}, \"cases\": 26, \"evaluations\": 182, \"evaluations_with_incumbent\": 208, \"formula\": \"(aa_repeats + rounds * arms) * cases * k\", \"heldout_confirm_per_look\": 22, \"k\": 1, \"notes\": [\"cases = evolve-split cases of the frozen ASSERT sets\", \"each evaluation is one agent rollout plus judging; guard arms run paired guard-off/on trials and may cost more\", \"the held-out confirm look (`campaign confirm`) is not part of the launch chain\"], \"rounds\": 1}, \"hyper\": {\"aa_repeats\": 5, \"arm_budget_tokens\": null, \"arms\": 2, \"b_max\": null, \"b_min\": null, \"budget\": null, \"budget_tokens\": null, \"bus\": true, \"challenger\": \"det\", \"draft_prs\": true, \"guard_margin\": 0.0, \"guard_stochastic\": null, \"guard_trials\": null, \"heartbeat_s\": 30.0, \"holdout_looks\": 1, \"k\": 1, \"max_arm_attempts\": 2, \"max_parallel_arms\": 2, \"max_rounds\": 8, \"rrsi\": {}, \"rrsi_profile\": \"local\", \"seed\": 0, \"strategies\": [\"agent\", \"gepa\", \"skillopt\", \"guard\"]}, \"ignored_overrides\": {}, \"overrides\": {}, \"profile\": \"fake\", \"rationale\": \"scripted fake-profile draft\", \"rounds\": 1, \"target\": \"local\", \"warnings\": []}, \"ok\": true, \"path\": \"<tmp>/chat/drafts/chat-demo.json\", \"warnings\": []}",
+              "content": "{\"draft\": {\"cid\": \"chat-demo\", \"commands\": [[\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"new\", \"chat-demo\", \"--profile\", \"fake\", \"--domain\", \"harness\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\"], [\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"calibrate\", \"chat-demo\", \"--profile\", \"fake\", \"--domain\", \"harness\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\"], [\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"run\", \"chat-demo\", \"--profile\", \"fake\", \"--domain\", \"harness\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\", \"--rounds\", \"1\"]], \"created\": 0, \"domain\": \"harness\", \"estimate\": {\"aa_repeats\": 5, \"arms\": 2, \"breakdown\": {\"aa_calibration\": 75, \"arms\": 30, \"incumbent_reevaluation\": 15}, \"cases\": 15, \"evaluations\": 105, \"evaluations_with_incumbent\": 120, \"formula\": \"(aa_repeats + rounds * arms) * cases * k\", \"heldout_confirm_per_look\": 30, \"k\": 1, \"notes\": [\"cases = evolve-split cases of the frozen ASSERT sets\", \"each evaluation is one agent rollout plus judging; guard arms run paired guard-off/on trials and may cost more\", \"the held-out confirm look (`campaign confirm`) is not part of the launch chain\"], \"rounds\": 1}, \"hyper\": {\"aa_repeats\": 5, \"arm_budget_tokens\": null, \"arms\": 2, \"b_max\": null, \"b_min\": null, \"budget\": null, \"budget_tokens\": null, \"bus\": true, \"challenger\": \"det\", \"draft_prs\": true, \"guard_margin\": 0.0, \"guard_stochastic\": null, \"guard_trials\": null, \"heartbeat_s\": 30.0, \"holdout_looks\": 1, \"k\": 1, \"max_arm_attempts\": 2, \"max_parallel_arms\": 2, \"max_rounds\": 8, \"rrsi\": {}, \"rrsi_profile\": \"harness\", \"seed\": 0, \"strategies\": [\"agent\", \"gepa\", \"skillopt\", \"agl\"]}, \"ignored_overrides\": {}, \"overrides\": {}, \"profile\": \"fake\", \"rationale\": \"improve the harness (fake profile)\", \"rounds\": 1, \"target\": \"local\", \"warnings\": []}, \"ok\": true, \"path\": \"<tmp>/chat/drafts/chat-demo.json\", \"warnings\": []}",
               "toolCallId": "<call-1>"
             },
             {
               "id": "<uuid-3>",
               "role": "assistant",
-              "content": "Drafted chat-demo: 1 round(s), target local, about 182 evaluations. Say \"launch chat-demo\" to start it."
+              "content": "Drafted chat-demo: 1 round(s), target local, about 105 evaluations. Say \"launch chat-demo\" to start it."
             },
             {
               "id": "user-2",
@@ -360,7 +367,8 @@
               "cid": "chat-demo",
               "target": "local",
               "rounds": 1,
-              "rationale": "scripted fake-profile draft",
+              "rationale": "improve the harness (fake profile)",
+              "domain": "harness",
               "hyper": {
                 "arms": 2,
                 "k": 1,
@@ -371,7 +379,7 @@
                 "budget": null,
                 "b_min": null,
                 "b_max": null,
-                "rrsi_profile": "local",
+                "rrsi_profile": "harness",
                 "rrsi": {},
                 "budget_tokens": null,
                 "max_arm_attempts": 2,
@@ -381,7 +389,7 @@
                   "agent",
                   "gepa",
                   "skillopt",
-                  "guard"
+                  "agl"
                 ],
                 "arm_budget_tokens": null,
                 "heartbeat_s": 30.0,
@@ -395,19 +403,19 @@
               "ignored_overrides": {},
               "estimate": {
                 "formula": "(aa_repeats + rounds * arms) * cases * k",
-                "cases": 26,
+                "cases": 15,
                 "k": 1,
                 "arms": 2,
                 "rounds": 1,
                 "aa_repeats": 5,
-                "evaluations": 182,
+                "evaluations": 105,
                 "breakdown": {
-                  "aa_calibration": 130,
-                  "arms": 52,
-                  "incumbent_reevaluation": 26
+                  "aa_calibration": 75,
+                  "arms": 30,
+                  "incumbent_reevaluation": 15
                 },
-                "evaluations_with_incumbent": 208,
-                "heldout_confirm_per_look": 22,
+                "evaluations_with_incumbent": 120,
+                "heldout_confirm_per_look": 30,
                 "notes": [
                   "cases = evolve-split cases of the frozen ASSERT sets",
                   "each evaluation is one agent rollout plus judging; guard arms run paired guard-off/on trials and may cost more",
@@ -427,6 +435,8 @@
                   "chat-demo",
                   "--profile",
                   "fake",
+                  "--domain",
+                  "harness",
                   "--run-dir",
                   "<tmp>/runs",
                   "--dry-run-publish"
@@ -440,6 +450,8 @@
                   "chat-demo",
                   "--profile",
                   "fake",
+                  "--domain",
+                  "harness",
                   "--run-dir",
                   "<tmp>/runs",
                   "--dry-run-publish"
@@ -453,6 +465,8 @@
                   "chat-demo",
                   "--profile",
                   "fake",
+                  "--domain",
+                  "harness",
                   "--run-dir",
                   "<tmp>/runs",
                   "--dry-run-publish",
@@ -481,7 +495,8 @@
               "cid": "chat-demo",
               "target": "local",
               "rounds": 1,
-              "rationale": "scripted fake-profile draft",
+              "rationale": "improve the harness (fake profile)",
+              "domain": "harness",
               "hyper": {
                 "arms": 2,
                 "k": 1,
@@ -492,7 +507,7 @@
                 "budget": null,
                 "b_min": null,
                 "b_max": null,
-                "rrsi_profile": "local",
+                "rrsi_profile": "harness",
                 "rrsi": {},
                 "budget_tokens": null,
                 "max_arm_attempts": 2,
@@ -502,7 +517,7 @@
                   "agent",
                   "gepa",
                   "skillopt",
-                  "guard"
+                  "agl"
                 ],
                 "arm_budget_tokens": null,
                 "heartbeat_s": 30.0,
@@ -516,19 +531,19 @@
               "ignored_overrides": {},
               "estimate": {
                 "formula": "(aa_repeats + rounds * arms) * cases * k",
-                "cases": 26,
+                "cases": 15,
                 "k": 1,
                 "arms": 2,
                 "rounds": 1,
                 "aa_repeats": 5,
-                "evaluations": 182,
+                "evaluations": 105,
                 "breakdown": {
-                  "aa_calibration": 130,
-                  "arms": 52,
-                  "incumbent_reevaluation": 26
+                  "aa_calibration": 75,
+                  "arms": 30,
+                  "incumbent_reevaluation": 15
                 },
-                "evaluations_with_incumbent": 208,
-                "heldout_confirm_per_look": 22,
+                "evaluations_with_incumbent": 120,
+                "heldout_confirm_per_look": 30,
                 "notes": [
                   "cases = evolve-split cases of the frozen ASSERT sets",
                   "each evaluation is one agent rollout plus judging; guard arms run paired guard-off/on trials and may cost more",
@@ -548,6 +563,8 @@
                   "chat-demo",
                   "--profile",
                   "fake",
+                  "--domain",
+                  "harness",
                   "--run-dir",
                   "<tmp>/runs",
                   "--dry-run-publish"
@@ -561,6 +578,8 @@
                   "chat-demo",
                   "--profile",
                   "fake",
+                  "--domain",
+                  "harness",
                   "--run-dir",
                   "<tmp>/runs",
                   "--dry-run-publish"
@@ -574,6 +593,8 @@
                   "chat-demo",
                   "--profile",
                   "fake",
+                  "--domain",
+                  "harness",
                   "--run-dir",
                   "<tmp>/runs",
                   "--dry-run-publish",
@@ -641,7 +662,7 @@
                   "type": "function",
                   "function": {
                     "name": "draft_campaign",
-                    "arguments": "{\"cid\": \"chat-demo\", \"hyper\": {\"arms\": 2}, \"rounds\": 1, \"target\": \"local\", \"rationale\": \"scripted fake-profile draft\"}"
+                    "arguments": "{\"cid\": \"chat-demo\", \"hyper\": {\"arms\": 2}, \"rounds\": 1, \"target\": \"local\", \"rationale\": \"improve the harness (fake profile)\"}"
                   }
                 }
               ]
@@ -649,13 +670,13 @@
             {
               "id": "<uuid-2>",
               "role": "tool",
-              "content": "{\"draft\": {\"cid\": \"chat-demo\", \"commands\": [[\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"new\", \"chat-demo\", \"--profile\", \"fake\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\"], [\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"calibrate\", \"chat-demo\", \"--profile\", \"fake\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\"], [\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"run\", \"chat-demo\", \"--profile\", \"fake\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\", \"--rounds\", \"1\"]], \"created\": 0, \"estimate\": {\"aa_repeats\": 5, \"arms\": 2, \"breakdown\": {\"aa_calibration\": 130, \"arms\": 52, \"incumbent_reevaluation\": 26}, \"cases\": 26, \"evaluations\": 182, \"evaluations_with_incumbent\": 208, \"formula\": \"(aa_repeats + rounds * arms) * cases * k\", \"heldout_confirm_per_look\": 22, \"k\": 1, \"notes\": [\"cases = evolve-split cases of the frozen ASSERT sets\", \"each evaluation is one agent rollout plus judging; guard arms run paired guard-off/on trials and may cost more\", \"the held-out confirm look (`campaign confirm`) is not part of the launch chain\"], \"rounds\": 1}, \"hyper\": {\"aa_repeats\": 5, \"arm_budget_tokens\": null, \"arms\": 2, \"b_max\": null, \"b_min\": null, \"budget\": null, \"budget_tokens\": null, \"bus\": true, \"challenger\": \"det\", \"draft_prs\": true, \"guard_margin\": 0.0, \"guard_stochastic\": null, \"guard_trials\": null, \"heartbeat_s\": 30.0, \"holdout_looks\": 1, \"k\": 1, \"max_arm_attempts\": 2, \"max_parallel_arms\": 2, \"max_rounds\": 8, \"rrsi\": {}, \"rrsi_profile\": \"local\", \"seed\": 0, \"strategies\": [\"agent\", \"gepa\", \"skillopt\", \"guard\"]}, \"ignored_overrides\": {}, \"overrides\": {}, \"profile\": \"fake\", \"rationale\": \"scripted fake-profile draft\", \"rounds\": 1, \"target\": \"local\", \"warnings\": []}, \"ok\": true, \"path\": \"<tmp>/chat/drafts/chat-demo.json\", \"warnings\": []}",
+              "content": "{\"draft\": {\"cid\": \"chat-demo\", \"commands\": [[\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"new\", \"chat-demo\", \"--profile\", \"fake\", \"--domain\", \"harness\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\"], [\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"calibrate\", \"chat-demo\", \"--profile\", \"fake\", \"--domain\", \"harness\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\"], [\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"run\", \"chat-demo\", \"--profile\", \"fake\", \"--domain\", \"harness\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\", \"--rounds\", \"1\"]], \"created\": 0, \"domain\": \"harness\", \"estimate\": {\"aa_repeats\": 5, \"arms\": 2, \"breakdown\": {\"aa_calibration\": 75, \"arms\": 30, \"incumbent_reevaluation\": 15}, \"cases\": 15, \"evaluations\": 105, \"evaluations_with_incumbent\": 120, \"formula\": \"(aa_repeats + rounds * arms) * cases * k\", \"heldout_confirm_per_look\": 30, \"k\": 1, \"notes\": [\"cases = evolve-split cases of the frozen ASSERT sets\", \"each evaluation is one agent rollout plus judging; guard arms run paired guard-off/on trials and may cost more\", \"the held-out confirm look (`campaign confirm`) is not part of the launch chain\"], \"rounds\": 1}, \"hyper\": {\"aa_repeats\": 5, \"arm_budget_tokens\": null, \"arms\": 2, \"b_max\": null, \"b_min\": null, \"budget\": null, \"budget_tokens\": null, \"bus\": true, \"challenger\": \"det\", \"draft_prs\": true, \"guard_margin\": 0.0, \"guard_stochastic\": null, \"guard_trials\": null, \"heartbeat_s\": 30.0, \"holdout_looks\": 1, \"k\": 1, \"max_arm_attempts\": 2, \"max_parallel_arms\": 2, \"max_rounds\": 8, \"rrsi\": {}, \"rrsi_profile\": \"harness\", \"seed\": 0, \"strategies\": [\"agent\", \"gepa\", \"skillopt\", \"agl\"]}, \"ignored_overrides\": {}, \"overrides\": {}, \"profile\": \"fake\", \"rationale\": \"improve the harness (fake profile)\", \"rounds\": 1, \"target\": \"local\", \"warnings\": []}, \"ok\": true, \"path\": \"<tmp>/chat/drafts/chat-demo.json\", \"warnings\": []}",
               "toolCallId": "<call-1>"
             },
             {
               "id": "<uuid-3>",
               "role": "assistant",
-              "content": "Drafted chat-demo: 1 round(s), target local, about 182 evaluations. Say \"launch chat-demo\" to start it."
+              "content": "Drafted chat-demo: 1 round(s), target local, about 105 evaluations. Say \"launch chat-demo\" to start it."
             },
             {
               "id": "user-2",
@@ -789,7 +810,7 @@
                   "type": "function",
                   "function": {
                     "name": "draft_campaign",
-                    "arguments": "{\"cid\": \"chat-demo\", \"hyper\": {\"arms\": 2}, \"rounds\": 1, \"target\": \"local\", \"rationale\": \"scripted fake-profile draft\"}"
+                    "arguments": "{\"cid\": \"chat-demo\", \"hyper\": {\"arms\": 2}, \"rounds\": 1, \"target\": \"local\", \"rationale\": \"improve the harness (fake profile)\"}"
                   }
                 }
               ]
@@ -797,13 +818,13 @@
             {
               "id": "<uuid-2>",
               "role": "tool",
-              "content": "{\"draft\": {\"cid\": \"chat-demo\", \"commands\": [[\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"new\", \"chat-demo\", \"--profile\", \"fake\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\"], [\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"calibrate\", \"chat-demo\", \"--profile\", \"fake\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\"], [\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"run\", \"chat-demo\", \"--profile\", \"fake\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\", \"--rounds\", \"1\"]], \"created\": 0, \"estimate\": {\"aa_repeats\": 5, \"arms\": 2, \"breakdown\": {\"aa_calibration\": 130, \"arms\": 52, \"incumbent_reevaluation\": 26}, \"cases\": 26, \"evaluations\": 182, \"evaluations_with_incumbent\": 208, \"formula\": \"(aa_repeats + rounds * arms) * cases * k\", \"heldout_confirm_per_look\": 22, \"k\": 1, \"notes\": [\"cases = evolve-split cases of the frozen ASSERT sets\", \"each evaluation is one agent rollout plus judging; guard arms run paired guard-off/on trials and may cost more\", \"the held-out confirm look (`campaign confirm`) is not part of the launch chain\"], \"rounds\": 1}, \"hyper\": {\"aa_repeats\": 5, \"arm_budget_tokens\": null, \"arms\": 2, \"b_max\": null, \"b_min\": null, \"budget\": null, \"budget_tokens\": null, \"bus\": true, \"challenger\": \"det\", \"draft_prs\": true, \"guard_margin\": 0.0, \"guard_stochastic\": null, \"guard_trials\": null, \"heartbeat_s\": 30.0, \"holdout_looks\": 1, \"k\": 1, \"max_arm_attempts\": 2, \"max_parallel_arms\": 2, \"max_rounds\": 8, \"rrsi\": {}, \"rrsi_profile\": \"local\", \"seed\": 0, \"strategies\": [\"agent\", \"gepa\", \"skillopt\", \"guard\"]}, \"ignored_overrides\": {}, \"overrides\": {}, \"profile\": \"fake\", \"rationale\": \"scripted fake-profile draft\", \"rounds\": 1, \"target\": \"local\", \"warnings\": []}, \"ok\": true, \"path\": \"<tmp>/chat/drafts/chat-demo.json\", \"warnings\": []}",
+              "content": "{\"draft\": {\"cid\": \"chat-demo\", \"commands\": [[\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"new\", \"chat-demo\", \"--profile\", \"fake\", \"--domain\", \"harness\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\"], [\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"calibrate\", \"chat-demo\", \"--profile\", \"fake\", \"--domain\", \"harness\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\"], [\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"run\", \"chat-demo\", \"--profile\", \"fake\", \"--domain\", \"harness\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\", \"--rounds\", \"1\"]], \"created\": 0, \"domain\": \"harness\", \"estimate\": {\"aa_repeats\": 5, \"arms\": 2, \"breakdown\": {\"aa_calibration\": 75, \"arms\": 30, \"incumbent_reevaluation\": 15}, \"cases\": 15, \"evaluations\": 105, \"evaluations_with_incumbent\": 120, \"formula\": \"(aa_repeats + rounds * arms) * cases * k\", \"heldout_confirm_per_look\": 30, \"k\": 1, \"notes\": [\"cases = evolve-split cases of the frozen ASSERT sets\", \"each evaluation is one agent rollout plus judging; guard arms run paired guard-off/on trials and may cost more\", \"the held-out confirm look (`campaign confirm`) is not part of the launch chain\"], \"rounds\": 1}, \"hyper\": {\"aa_repeats\": 5, \"arm_budget_tokens\": null, \"arms\": 2, \"b_max\": null, \"b_min\": null, \"budget\": null, \"budget_tokens\": null, \"bus\": true, \"challenger\": \"det\", \"draft_prs\": true, \"guard_margin\": 0.0, \"guard_stochastic\": null, \"guard_trials\": null, \"heartbeat_s\": 30.0, \"holdout_looks\": 1, \"k\": 1, \"max_arm_attempts\": 2, \"max_parallel_arms\": 2, \"max_rounds\": 8, \"rrsi\": {}, \"rrsi_profile\": \"harness\", \"seed\": 0, \"strategies\": [\"agent\", \"gepa\", \"skillopt\", \"agl\"]}, \"ignored_overrides\": {}, \"overrides\": {}, \"profile\": \"fake\", \"rationale\": \"improve the harness (fake profile)\", \"rounds\": 1, \"target\": \"local\", \"warnings\": []}, \"ok\": true, \"path\": \"<tmp>/chat/drafts/chat-demo.json\", \"warnings\": []}",
               "toolCallId": "<call-1>"
             },
             {
               "id": "<uuid-3>",
               "role": "assistant",
-              "content": "Drafted chat-demo: 1 round(s), target local, about 182 evaluations. Say \"launch chat-demo\" to start it."
+              "content": "Drafted chat-demo: 1 round(s), target local, about 105 evaluations. Say \"launch chat-demo\" to start it."
             },
             {
               "id": "user-2",
@@ -830,7 +851,8 @@
               "cid": "chat-demo",
               "target": "local",
               "rounds": 1,
-              "rationale": "scripted fake-profile draft",
+              "rationale": "improve the harness (fake profile)",
+              "domain": "harness",
               "hyper": {
                 "arms": 2,
                 "k": 1,
@@ -841,7 +863,7 @@
                 "budget": null,
                 "b_min": null,
                 "b_max": null,
-                "rrsi_profile": "local",
+                "rrsi_profile": "harness",
                 "rrsi": {},
                 "budget_tokens": null,
                 "max_arm_attempts": 2,
@@ -851,7 +873,7 @@
                   "agent",
                   "gepa",
                   "skillopt",
-                  "guard"
+                  "agl"
                 ],
                 "arm_budget_tokens": null,
                 "heartbeat_s": 30.0,
@@ -865,19 +887,19 @@
               "ignored_overrides": {},
               "estimate": {
                 "formula": "(aa_repeats + rounds * arms) * cases * k",
-                "cases": 26,
+                "cases": 15,
                 "k": 1,
                 "arms": 2,
                 "rounds": 1,
                 "aa_repeats": 5,
-                "evaluations": 182,
+                "evaluations": 105,
                 "breakdown": {
-                  "aa_calibration": 130,
-                  "arms": 52,
-                  "incumbent_reevaluation": 26
+                  "aa_calibration": 75,
+                  "arms": 30,
+                  "incumbent_reevaluation": 15
                 },
-                "evaluations_with_incumbent": 208,
-                "heldout_confirm_per_look": 22,
+                "evaluations_with_incumbent": 120,
+                "heldout_confirm_per_look": 30,
                 "notes": [
                   "cases = evolve-split cases of the frozen ASSERT sets",
                   "each evaluation is one agent rollout plus judging; guard arms run paired guard-off/on trials and may cost more",
@@ -897,6 +919,8 @@
                   "chat-demo",
                   "--profile",
                   "fake",
+                  "--domain",
+                  "harness",
                   "--run-dir",
                   "<tmp>/runs",
                   "--dry-run-publish"
@@ -910,6 +934,8 @@
                   "chat-demo",
                   "--profile",
                   "fake",
+                  "--domain",
+                  "harness",
                   "--run-dir",
                   "<tmp>/runs",
                   "--dry-run-publish"
@@ -923,6 +949,8 @@
                   "chat-demo",
                   "--profile",
                   "fake",
+                  "--domain",
+                  "harness",
                   "--run-dir",
                   "<tmp>/runs",
                   "--dry-run-publish",
@@ -960,7 +988,8 @@
               "cid": "chat-demo",
               "target": "local",
               "rounds": 1,
-              "rationale": "scripted fake-profile draft",
+              "rationale": "improve the harness (fake profile)",
+              "domain": "harness",
               "hyper": {
                 "arms": 2,
                 "k": 1,
@@ -971,7 +1000,7 @@
                 "budget": null,
                 "b_min": null,
                 "b_max": null,
-                "rrsi_profile": "local",
+                "rrsi_profile": "harness",
                 "rrsi": {},
                 "budget_tokens": null,
                 "max_arm_attempts": 2,
@@ -981,7 +1010,7 @@
                   "agent",
                   "gepa",
                   "skillopt",
-                  "guard"
+                  "agl"
                 ],
                 "arm_budget_tokens": null,
                 "heartbeat_s": 30.0,
@@ -995,19 +1024,19 @@
               "ignored_overrides": {},
               "estimate": {
                 "formula": "(aa_repeats + rounds * arms) * cases * k",
-                "cases": 26,
+                "cases": 15,
                 "k": 1,
                 "arms": 2,
                 "rounds": 1,
                 "aa_repeats": 5,
-                "evaluations": 182,
+                "evaluations": 105,
                 "breakdown": {
-                  "aa_calibration": 130,
-                  "arms": 52,
-                  "incumbent_reevaluation": 26
+                  "aa_calibration": 75,
+                  "arms": 30,
+                  "incumbent_reevaluation": 15
                 },
-                "evaluations_with_incumbent": 208,
-                "heldout_confirm_per_look": 22,
+                "evaluations_with_incumbent": 120,
+                "heldout_confirm_per_look": 30,
                 "notes": [
                   "cases = evolve-split cases of the frozen ASSERT sets",
                   "each evaluation is one agent rollout plus judging; guard arms run paired guard-off/on trials and may cost more",
@@ -1027,6 +1056,8 @@
                   "chat-demo",
                   "--profile",
                   "fake",
+                  "--domain",
+                  "harness",
                   "--run-dir",
                   "<tmp>/runs",
                   "--dry-run-publish"
@@ -1040,6 +1071,8 @@
                   "chat-demo",
                   "--profile",
                   "fake",
+                  "--domain",
+                  "harness",
                   "--run-dir",
                   "<tmp>/runs",
                   "--dry-run-publish"
@@ -1053,6 +1086,8 @@
                   "chat-demo",
                   "--profile",
                   "fake",
+                  "--domain",
+                  "harness",
                   "--run-dir",
                   "<tmp>/runs",
                   "--dry-run-publish",
@@ -1068,7 +1103,7 @@
           "type": "TOOL_CALL_RESULT",
           "messageId": "<uuid-5>",
           "toolCallId": "<call-2>",
-          "content": "{\"argv\": [\"<python>\", \"-m\", \"ci_lab.chat.launch\", \"<tmp>/chat/drafts/chat-demo.json\"], \"cid\": \"chat-demo\", \"commands\": [[\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"new\", \"chat-demo\", \"--profile\", \"fake\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\"], [\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"calibrate\", \"chat-demo\", \"--profile\", \"fake\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\"], [\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"run\", \"chat-demo\", \"--profile\", \"fake\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\", \"--rounds\", \"1\"]], \"dry_run\": true, \"launched\": false, \"message\": \"dry-run: recorded the command; nothing was executed\", \"ok\": true, \"status\": \"dry_run\", \"target\": \"local\", \"warnings\": []}",
+          "content": "{\"argv\": [\"<python>\", \"-m\", \"ci_lab.chat.launch\", \"<tmp>/chat/drafts/chat-demo.json\"], \"cid\": \"chat-demo\", \"commands\": [[\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"new\", \"chat-demo\", \"--profile\", \"fake\", \"--domain\", \"harness\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\"], [\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"calibrate\", \"chat-demo\", \"--profile\", \"fake\", \"--domain\", \"harness\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\"], [\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"run\", \"chat-demo\", \"--profile\", \"fake\", \"--domain\", \"harness\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\", \"--rounds\", \"1\"]], \"dry_run\": true, \"launched\": false, \"message\": \"dry-run: recorded the command; nothing was executed\", \"ok\": true, \"status\": \"dry_run\", \"target\": \"local\", \"warnings\": []}",
           "role": "tool"
         },
         {
@@ -1078,7 +1113,8 @@
               "cid": "chat-demo",
               "target": "local",
               "rounds": 1,
-              "rationale": "scripted fake-profile draft",
+              "rationale": "improve the harness (fake profile)",
+              "domain": "harness",
               "hyper": {
                 "arms": 2,
                 "k": 1,
@@ -1089,7 +1125,7 @@
                 "budget": null,
                 "b_min": null,
                 "b_max": null,
-                "rrsi_profile": "local",
+                "rrsi_profile": "harness",
                 "rrsi": {},
                 "budget_tokens": null,
                 "max_arm_attempts": 2,
@@ -1099,7 +1135,7 @@
                   "agent",
                   "gepa",
                   "skillopt",
-                  "guard"
+                  "agl"
                 ],
                 "arm_budget_tokens": null,
                 "heartbeat_s": 30.0,
@@ -1113,19 +1149,19 @@
               "ignored_overrides": {},
               "estimate": {
                 "formula": "(aa_repeats + rounds * arms) * cases * k",
-                "cases": 26,
+                "cases": 15,
                 "k": 1,
                 "arms": 2,
                 "rounds": 1,
                 "aa_repeats": 5,
-                "evaluations": 182,
+                "evaluations": 105,
                 "breakdown": {
-                  "aa_calibration": 130,
-                  "arms": 52,
-                  "incumbent_reevaluation": 26
+                  "aa_calibration": 75,
+                  "arms": 30,
+                  "incumbent_reevaluation": 15
                 },
-                "evaluations_with_incumbent": 208,
-                "heldout_confirm_per_look": 22,
+                "evaluations_with_incumbent": 120,
+                "heldout_confirm_per_look": 30,
                 "notes": [
                   "cases = evolve-split cases of the frozen ASSERT sets",
                   "each evaluation is one agent rollout plus judging; guard arms run paired guard-off/on trials and may cost more",
@@ -1145,6 +1181,8 @@
                   "chat-demo",
                   "--profile",
                   "fake",
+                  "--domain",
+                  "harness",
                   "--run-dir",
                   "<tmp>/runs",
                   "--dry-run-publish"
@@ -1158,6 +1196,8 @@
                   "chat-demo",
                   "--profile",
                   "fake",
+                  "--domain",
+                  "harness",
                   "--run-dir",
                   "<tmp>/runs",
                   "--dry-run-publish"
@@ -1171,6 +1211,8 @@
                   "chat-demo",
                   "--profile",
                   "fake",
+                  "--domain",
+                  "harness",
                   "--run-dir",
                   "<tmp>/runs",
                   "--dry-run-publish",
@@ -1225,7 +1267,7 @@
                   "type": "function",
                   "function": {
                     "name": "draft_campaign",
-                    "arguments": "{\"cid\": \"chat-demo\", \"hyper\": {\"arms\": 2}, \"rounds\": 1, \"target\": \"local\", \"rationale\": \"scripted fake-profile draft\"}"
+                    "arguments": "{\"cid\": \"chat-demo\", \"hyper\": {\"arms\": 2}, \"rounds\": 1, \"target\": \"local\", \"rationale\": \"improve the harness (fake profile)\"}"
                   }
                 }
               ]
@@ -1233,25 +1275,25 @@
             {
               "id": "<uuid-2>",
               "role": "tool",
-              "content": "{\"draft\": {\"cid\": \"chat-demo\", \"commands\": [[\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"new\", \"chat-demo\", \"--profile\", \"fake\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\"], [\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"calibrate\", \"chat-demo\", \"--profile\", \"fake\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\"], [\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"run\", \"chat-demo\", \"--profile\", \"fake\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\", \"--rounds\", \"1\"]], \"created\": 0, \"estimate\": {\"aa_repeats\": 5, \"arms\": 2, \"breakdown\": {\"aa_calibration\": 130, \"arms\": 52, \"incumbent_reevaluation\": 26}, \"cases\": 26, \"evaluations\": 182, \"evaluations_with_incumbent\": 208, \"formula\": \"(aa_repeats + rounds * arms) * cases * k\", \"heldout_confirm_per_look\": 22, \"k\": 1, \"notes\": [\"cases = evolve-split cases of the frozen ASSERT sets\", \"each evaluation is one agent rollout plus judging; guard arms run paired guard-off/on trials and may cost more\", \"the held-out confirm look (`campaign confirm`) is not part of the launch chain\"], \"rounds\": 1}, \"hyper\": {\"aa_repeats\": 5, \"arm_budget_tokens\": null, \"arms\": 2, \"b_max\": null, \"b_min\": null, \"budget\": null, \"budget_tokens\": null, \"bus\": true, \"challenger\": \"det\", \"draft_prs\": true, \"guard_margin\": 0.0, \"guard_stochastic\": null, \"guard_trials\": null, \"heartbeat_s\": 30.0, \"holdout_looks\": 1, \"k\": 1, \"max_arm_attempts\": 2, \"max_parallel_arms\": 2, \"max_rounds\": 8, \"rrsi\": {}, \"rrsi_profile\": \"local\", \"seed\": 0, \"strategies\": [\"agent\", \"gepa\", \"skillopt\", \"guard\"]}, \"ignored_overrides\": {}, \"overrides\": {}, \"profile\": \"fake\", \"rationale\": \"scripted fake-profile draft\", \"rounds\": 1, \"target\": \"local\", \"warnings\": []}, \"ok\": true, \"path\": \"<tmp>/chat/drafts/chat-demo.json\", \"warnings\": []}",
+              "content": "{\"draft\": {\"cid\": \"chat-demo\", \"commands\": [[\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"new\", \"chat-demo\", \"--profile\", \"fake\", \"--domain\", \"harness\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\"], [\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"calibrate\", \"chat-demo\", \"--profile\", \"fake\", \"--domain\", \"harness\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\"], [\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"run\", \"chat-demo\", \"--profile\", \"fake\", \"--domain\", \"harness\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\", \"--rounds\", \"1\"]], \"created\": 0, \"domain\": \"harness\", \"estimate\": {\"aa_repeats\": 5, \"arms\": 2, \"breakdown\": {\"aa_calibration\": 75, \"arms\": 30, \"incumbent_reevaluation\": 15}, \"cases\": 15, \"evaluations\": 105, \"evaluations_with_incumbent\": 120, \"formula\": \"(aa_repeats + rounds * arms) * cases * k\", \"heldout_confirm_per_look\": 30, \"k\": 1, \"notes\": [\"cases = evolve-split cases of the frozen ASSERT sets\", \"each evaluation is one agent rollout plus judging; guard arms run paired guard-off/on trials and may cost more\", \"the held-out confirm look (`campaign confirm`) is not part of the launch chain\"], \"rounds\": 1}, \"hyper\": {\"aa_repeats\": 5, \"arm_budget_tokens\": null, \"arms\": 2, \"b_max\": null, \"b_min\": null, \"budget\": null, \"budget_tokens\": null, \"bus\": true, \"challenger\": \"det\", \"draft_prs\": true, \"guard_margin\": 0.0, \"guard_stochastic\": null, \"guard_trials\": null, \"heartbeat_s\": 30.0, \"holdout_looks\": 1, \"k\": 1, \"max_arm_attempts\": 2, \"max_parallel_arms\": 2, \"max_rounds\": 8, \"rrsi\": {}, \"rrsi_profile\": \"harness\", \"seed\": 0, \"strategies\": [\"agent\", \"gepa\", \"skillopt\", \"agl\"]}, \"ignored_overrides\": {}, \"overrides\": {}, \"profile\": \"fake\", \"rationale\": \"improve the harness (fake profile)\", \"rounds\": 1, \"target\": \"local\", \"warnings\": []}, \"ok\": true, \"path\": \"<tmp>/chat/drafts/chat-demo.json\", \"warnings\": []}",
               "toolCallId": "<call-1>"
             },
             {
               "id": "<uuid-2>",
               "role": "tool",
-              "content": "{\"draft\": {\"cid\": \"chat-demo\", \"commands\": [[\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"new\", \"chat-demo\", \"--profile\", \"fake\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\"], [\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"calibrate\", \"chat-demo\", \"--profile\", \"fake\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\"], [\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"run\", \"chat-demo\", \"--profile\", \"fake\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\", \"--rounds\", \"1\"]], \"created\": 0, \"estimate\": {\"aa_repeats\": 5, \"arms\": 2, \"breakdown\": {\"aa_calibration\": 130, \"arms\": 52, \"incumbent_reevaluation\": 26}, \"cases\": 26, \"evaluations\": 182, \"evaluations_with_incumbent\": 208, \"formula\": \"(aa_repeats + rounds * arms) * cases * k\", \"heldout_confirm_per_look\": 22, \"k\": 1, \"notes\": [\"cases = evolve-split cases of the frozen ASSERT sets\", \"each evaluation is one agent rollout plus judging; guard arms run paired guard-off/on trials and may cost more\", \"the held-out confirm look (`campaign confirm`) is not part of the launch chain\"], \"rounds\": 1}, \"hyper\": {\"aa_repeats\": 5, \"arm_budget_tokens\": null, \"arms\": 2, \"b_max\": null, \"b_min\": null, \"budget\": null, \"budget_tokens\": null, \"bus\": true, \"challenger\": \"det\", \"draft_prs\": true, \"guard_margin\": 0.0, \"guard_stochastic\": null, \"guard_trials\": null, \"heartbeat_s\": 30.0, \"holdout_looks\": 1, \"k\": 1, \"max_arm_attempts\": 2, \"max_parallel_arms\": 2, \"max_rounds\": 8, \"rrsi\": {}, \"rrsi_profile\": \"local\", \"seed\": 0, \"strategies\": [\"agent\", \"gepa\", \"skillopt\", \"guard\"]}, \"ignored_overrides\": {}, \"overrides\": {}, \"profile\": \"fake\", \"rationale\": \"scripted fake-profile draft\", \"rounds\": 1, \"target\": \"local\", \"warnings\": []}, \"ok\": true, \"path\": \"<tmp>/chat/drafts/chat-demo.json\", \"warnings\": []}",
+              "content": "{\"draft\": {\"cid\": \"chat-demo\", \"commands\": [[\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"new\", \"chat-demo\", \"--profile\", \"fake\", \"--domain\", \"harness\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\"], [\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"calibrate\", \"chat-demo\", \"--profile\", \"fake\", \"--domain\", \"harness\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\"], [\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"run\", \"chat-demo\", \"--profile\", \"fake\", \"--domain\", \"harness\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\", \"--rounds\", \"1\"]], \"created\": 0, \"domain\": \"harness\", \"estimate\": {\"aa_repeats\": 5, \"arms\": 2, \"breakdown\": {\"aa_calibration\": 75, \"arms\": 30, \"incumbent_reevaluation\": 15}, \"cases\": 15, \"evaluations\": 105, \"evaluations_with_incumbent\": 120, \"formula\": \"(aa_repeats + rounds * arms) * cases * k\", \"heldout_confirm_per_look\": 30, \"k\": 1, \"notes\": [\"cases = evolve-split cases of the frozen ASSERT sets\", \"each evaluation is one agent rollout plus judging; guard arms run paired guard-off/on trials and may cost more\", \"the held-out confirm look (`campaign confirm`) is not part of the launch chain\"], \"rounds\": 1}, \"hyper\": {\"aa_repeats\": 5, \"arm_budget_tokens\": null, \"arms\": 2, \"b_max\": null, \"b_min\": null, \"budget\": null, \"budget_tokens\": null, \"bus\": true, \"challenger\": \"det\", \"draft_prs\": true, \"guard_margin\": 0.0, \"guard_stochastic\": null, \"guard_trials\": null, \"heartbeat_s\": 30.0, \"holdout_looks\": 1, \"k\": 1, \"max_arm_attempts\": 2, \"max_parallel_arms\": 2, \"max_rounds\": 8, \"rrsi\": {}, \"rrsi_profile\": \"harness\", \"seed\": 0, \"strategies\": [\"agent\", \"gepa\", \"skillopt\", \"agl\"]}, \"ignored_overrides\": {}, \"overrides\": {}, \"profile\": \"fake\", \"rationale\": \"improve the harness (fake profile)\", \"rounds\": 1, \"target\": \"local\", \"warnings\": []}, \"ok\": true, \"path\": \"<tmp>/chat/drafts/chat-demo.json\", \"warnings\": []}",
               "toolCallId": "<call-1>"
             },
             {
               "id": "<uuid-2>",
               "role": "tool",
-              "content": "{\"draft\": {\"cid\": \"chat-demo\", \"commands\": [[\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"new\", \"chat-demo\", \"--profile\", \"fake\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\"], [\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"calibrate\", \"chat-demo\", \"--profile\", \"fake\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\"], [\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"run\", \"chat-demo\", \"--profile\", \"fake\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\", \"--rounds\", \"1\"]], \"created\": 0, \"estimate\": {\"aa_repeats\": 5, \"arms\": 2, \"breakdown\": {\"aa_calibration\": 130, \"arms\": 52, \"incumbent_reevaluation\": 26}, \"cases\": 26, \"evaluations\": 182, \"evaluations_with_incumbent\": 208, \"formula\": \"(aa_repeats + rounds * arms) * cases * k\", \"heldout_confirm_per_look\": 22, \"k\": 1, \"notes\": [\"cases = evolve-split cases of the frozen ASSERT sets\", \"each evaluation is one agent rollout plus judging; guard arms run paired guard-off/on trials and may cost more\", \"the held-out confirm look (`campaign confirm`) is not part of the launch chain\"], \"rounds\": 1}, \"hyper\": {\"aa_repeats\": 5, \"arm_budget_tokens\": null, \"arms\": 2, \"b_max\": null, \"b_min\": null, \"budget\": null, \"budget_tokens\": null, \"bus\": true, \"challenger\": \"det\", \"draft_prs\": true, \"guard_margin\": 0.0, \"guard_stochastic\": null, \"guard_trials\": null, \"heartbeat_s\": 30.0, \"holdout_looks\": 1, \"k\": 1, \"max_arm_attempts\": 2, \"max_parallel_arms\": 2, \"max_rounds\": 8, \"rrsi\": {}, \"rrsi_profile\": \"local\", \"seed\": 0, \"strategies\": [\"agent\", \"gepa\", \"skillopt\", \"guard\"]}, \"ignored_overrides\": {}, \"overrides\": {}, \"profile\": \"fake\", \"rationale\": \"scripted fake-profile draft\", \"rounds\": 1, \"target\": \"local\", \"warnings\": []}, \"ok\": true, \"path\": \"<tmp>/chat/drafts/chat-demo.json\", \"warnings\": []}",
+              "content": "{\"draft\": {\"cid\": \"chat-demo\", \"commands\": [[\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"new\", \"chat-demo\", \"--profile\", \"fake\", \"--domain\", \"harness\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\"], [\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"calibrate\", \"chat-demo\", \"--profile\", \"fake\", \"--domain\", \"harness\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\"], [\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"run\", \"chat-demo\", \"--profile\", \"fake\", \"--domain\", \"harness\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\", \"--rounds\", \"1\"]], \"created\": 0, \"domain\": \"harness\", \"estimate\": {\"aa_repeats\": 5, \"arms\": 2, \"breakdown\": {\"aa_calibration\": 75, \"arms\": 30, \"incumbent_reevaluation\": 15}, \"cases\": 15, \"evaluations\": 105, \"evaluations_with_incumbent\": 120, \"formula\": \"(aa_repeats + rounds * arms) * cases * k\", \"heldout_confirm_per_look\": 30, \"k\": 1, \"notes\": [\"cases = evolve-split cases of the frozen ASSERT sets\", \"each evaluation is one agent rollout plus judging; guard arms run paired guard-off/on trials and may cost more\", \"the held-out confirm look (`campaign confirm`) is not part of the launch chain\"], \"rounds\": 1}, \"hyper\": {\"aa_repeats\": 5, \"arm_budget_tokens\": null, \"arms\": 2, \"b_max\": null, \"b_min\": null, \"budget\": null, \"budget_tokens\": null, \"bus\": true, \"challenger\": \"det\", \"draft_prs\": true, \"guard_margin\": 0.0, \"guard_stochastic\": null, \"guard_trials\": null, \"heartbeat_s\": 30.0, \"holdout_looks\": 1, \"k\": 1, \"max_arm_attempts\": 2, \"max_parallel_arms\": 2, \"max_rounds\": 8, \"rrsi\": {}, \"rrsi_profile\": \"harness\", \"seed\": 0, \"strategies\": [\"agent\", \"gepa\", \"skillopt\", \"agl\"]}, \"ignored_overrides\": {}, \"overrides\": {}, \"profile\": \"fake\", \"rationale\": \"improve the harness (fake profile)\", \"rounds\": 1, \"target\": \"local\", \"warnings\": []}, \"ok\": true, \"path\": \"<tmp>/chat/drafts/chat-demo.json\", \"warnings\": []}",
               "toolCallId": "<call-1>"
             },
             {
               "id": "<uuid-3>",
               "role": "assistant",
-              "content": "Drafted chat-demo: 1 round(s), target local, about 182 evaluations. Say \"launch chat-demo\" to start it."
+              "content": "Drafted chat-demo: 1 round(s), target local, about 105 evaluations. Say \"launch chat-demo\" to start it."
             },
             {
               "id": "user-2",
@@ -1276,7 +1318,7 @@
             {
               "id": "approval-response-<interrupt-1>",
               "role": "tool",
-              "content": "{\"argv\": [\"<python>\", \"-m\", \"ci_lab.chat.launch\", \"<tmp>/chat/drafts/chat-demo.json\"], \"cid\": \"chat-demo\", \"commands\": [[\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"new\", \"chat-demo\", \"--profile\", \"fake\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\"], [\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"calibrate\", \"chat-demo\", \"--profile\", \"fake\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\"], [\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"run\", \"chat-demo\", \"--profile\", \"fake\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\", \"--rounds\", \"1\"]], \"dry_run\": true, \"launched\": false, \"message\": \"dry-run: recorded the command; nothing was executed\", \"ok\": true, \"status\": \"dry_run\", \"target\": \"local\", \"warnings\": []}",
+              "content": "{\"argv\": [\"<python>\", \"-m\", \"ci_lab.chat.launch\", \"<tmp>/chat/drafts/chat-demo.json\"], \"cid\": \"chat-demo\", \"commands\": [[\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"new\", \"chat-demo\", \"--profile\", \"fake\", \"--domain\", \"harness\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\"], [\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"calibrate\", \"chat-demo\", \"--profile\", \"fake\", \"--domain\", \"harness\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\"], [\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"run\", \"chat-demo\", \"--profile\", \"fake\", \"--domain\", \"harness\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\", \"--rounds\", \"1\"]], \"dry_run\": true, \"launched\": false, \"message\": \"dry-run: recorded the command; nothing was executed\", \"ok\": true, \"status\": \"dry_run\", \"target\": \"local\", \"warnings\": []}",
               "toolCallId": "<call-2>"
             },
             {
@@ -1320,7 +1362,7 @@
                   "type": "function",
                   "function": {
                     "name": "draft_campaign",
-                    "arguments": "{\"cid\": \"chat-demo\", \"hyper\": {\"arms\": 2}, \"rounds\": 1, \"target\": \"local\", \"rationale\": \"scripted fake-profile draft\"}"
+                    "arguments": "{\"cid\": \"chat-demo\", \"hyper\": {\"arms\": 2}, \"rounds\": 1, \"target\": \"local\", \"rationale\": \"improve the harness (fake profile)\"}"
                   }
                 }
               ]
@@ -1328,13 +1370,13 @@
             {
               "id": "<uuid-2>",
               "role": "tool",
-              "content": "{\"draft\": {\"cid\": \"chat-demo\", \"commands\": [[\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"new\", \"chat-demo\", \"--profile\", \"fake\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\"], [\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"calibrate\", \"chat-demo\", \"--profile\", \"fake\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\"], [\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"run\", \"chat-demo\", \"--profile\", \"fake\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\", \"--rounds\", \"1\"]], \"created\": 0, \"estimate\": {\"aa_repeats\": 5, \"arms\": 2, \"breakdown\": {\"aa_calibration\": 130, \"arms\": 52, \"incumbent_reevaluation\": 26}, \"cases\": 26, \"evaluations\": 182, \"evaluations_with_incumbent\": 208, \"formula\": \"(aa_repeats + rounds * arms) * cases * k\", \"heldout_confirm_per_look\": 22, \"k\": 1, \"notes\": [\"cases = evolve-split cases of the frozen ASSERT sets\", \"each evaluation is one agent rollout plus judging; guard arms run paired guard-off/on trials and may cost more\", \"the held-out confirm look (`campaign confirm`) is not part of the launch chain\"], \"rounds\": 1}, \"hyper\": {\"aa_repeats\": 5, \"arm_budget_tokens\": null, \"arms\": 2, \"b_max\": null, \"b_min\": null, \"budget\": null, \"budget_tokens\": null, \"bus\": true, \"challenger\": \"det\", \"draft_prs\": true, \"guard_margin\": 0.0, \"guard_stochastic\": null, \"guard_trials\": null, \"heartbeat_s\": 30.0, \"holdout_looks\": 1, \"k\": 1, \"max_arm_attempts\": 2, \"max_parallel_arms\": 2, \"max_rounds\": 8, \"rrsi\": {}, \"rrsi_profile\": \"local\", \"seed\": 0, \"strategies\": [\"agent\", \"gepa\", \"skillopt\", \"guard\"]}, \"ignored_overrides\": {}, \"overrides\": {}, \"profile\": \"fake\", \"rationale\": \"scripted fake-profile draft\", \"rounds\": 1, \"target\": \"local\", \"warnings\": []}, \"ok\": true, \"path\": \"<tmp>/chat/drafts/chat-demo.json\", \"warnings\": []}",
+              "content": "{\"draft\": {\"cid\": \"chat-demo\", \"commands\": [[\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"new\", \"chat-demo\", \"--profile\", \"fake\", \"--domain\", \"harness\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\"], [\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"calibrate\", \"chat-demo\", \"--profile\", \"fake\", \"--domain\", \"harness\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\"], [\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"run\", \"chat-demo\", \"--profile\", \"fake\", \"--domain\", \"harness\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\", \"--rounds\", \"1\"]], \"created\": 0, \"domain\": \"harness\", \"estimate\": {\"aa_repeats\": 5, \"arms\": 2, \"breakdown\": {\"aa_calibration\": 75, \"arms\": 30, \"incumbent_reevaluation\": 15}, \"cases\": 15, \"evaluations\": 105, \"evaluations_with_incumbent\": 120, \"formula\": \"(aa_repeats + rounds * arms) * cases * k\", \"heldout_confirm_per_look\": 30, \"k\": 1, \"notes\": [\"cases = evolve-split cases of the frozen ASSERT sets\", \"each evaluation is one agent rollout plus judging; guard arms run paired guard-off/on trials and may cost more\", \"the held-out confirm look (`campaign confirm`) is not part of the launch chain\"], \"rounds\": 1}, \"hyper\": {\"aa_repeats\": 5, \"arm_budget_tokens\": null, \"arms\": 2, \"b_max\": null, \"b_min\": null, \"budget\": null, \"budget_tokens\": null, \"bus\": true, \"challenger\": \"det\", \"draft_prs\": true, \"guard_margin\": 0.0, \"guard_stochastic\": null, \"guard_trials\": null, \"heartbeat_s\": 30.0, \"holdout_looks\": 1, \"k\": 1, \"max_arm_attempts\": 2, \"max_parallel_arms\": 2, \"max_rounds\": 8, \"rrsi\": {}, \"rrsi_profile\": \"harness\", \"seed\": 0, \"strategies\": [\"agent\", \"gepa\", \"skillopt\", \"agl\"]}, \"ignored_overrides\": {}, \"overrides\": {}, \"profile\": \"fake\", \"rationale\": \"improve the harness (fake profile)\", \"rounds\": 1, \"target\": \"local\", \"warnings\": []}, \"ok\": true, \"path\": \"<tmp>/chat/drafts/chat-demo.json\", \"warnings\": []}",
               "toolCallId": "<call-1>"
             },
             {
               "id": "<uuid-3>",
               "role": "assistant",
-              "content": "Drafted chat-demo: 1 round(s), target local, about 182 evaluations. Say \"launch chat-demo\" to start it."
+              "content": "Drafted chat-demo: 1 round(s), target local, about 105 evaluations. Say \"launch chat-demo\" to start it."
             },
             {
               "id": "user-2",
@@ -1347,7 +1389,8 @@
               "cid": "chat-demo",
               "target": "local",
               "rounds": 1,
-              "rationale": "scripted fake-profile draft",
+              "rationale": "improve the harness (fake profile)",
+              "domain": "harness",
               "hyper": {
                 "arms": 2,
                 "k": 1,
@@ -1358,7 +1401,7 @@
                 "budget": null,
                 "b_min": null,
                 "b_max": null,
-                "rrsi_profile": "local",
+                "rrsi_profile": "harness",
                 "rrsi": {},
                 "budget_tokens": null,
                 "max_arm_attempts": 2,
@@ -1368,7 +1411,7 @@
                   "agent",
                   "gepa",
                   "skillopt",
-                  "guard"
+                  "agl"
                 ],
                 "arm_budget_tokens": null,
                 "heartbeat_s": 30.0,
@@ -1382,19 +1425,19 @@
               "ignored_overrides": {},
               "estimate": {
                 "formula": "(aa_repeats + rounds * arms) * cases * k",
-                "cases": 26,
+                "cases": 15,
                 "k": 1,
                 "arms": 2,
                 "rounds": 1,
                 "aa_repeats": 5,
-                "evaluations": 182,
+                "evaluations": 105,
                 "breakdown": {
-                  "aa_calibration": 130,
-                  "arms": 52,
-                  "incumbent_reevaluation": 26
+                  "aa_calibration": 75,
+                  "arms": 30,
+                  "incumbent_reevaluation": 15
                 },
-                "evaluations_with_incumbent": 208,
-                "heldout_confirm_per_look": 22,
+                "evaluations_with_incumbent": 120,
+                "heldout_confirm_per_look": 30,
                 "notes": [
                   "cases = evolve-split cases of the frozen ASSERT sets",
                   "each evaluation is one agent rollout plus judging; guard arms run paired guard-off/on trials and may cost more",
@@ -1414,6 +1457,8 @@
                   "chat-demo",
                   "--profile",
                   "fake",
+                  "--domain",
+                  "harness",
                   "--run-dir",
                   "<tmp>/runs",
                   "--dry-run-publish"
@@ -1427,6 +1472,8 @@
                   "chat-demo",
                   "--profile",
                   "fake",
+                  "--domain",
+                  "harness",
                   "--run-dir",
                   "<tmp>/runs",
                   "--dry-run-publish"
@@ -1440,6 +1487,8 @@
                   "chat-demo",
                   "--profile",
                   "fake",
+                  "--domain",
+                  "harness",
                   "--run-dir",
                   "<tmp>/runs",
                   "--dry-run-publish",
@@ -1468,7 +1517,8 @@
               "cid": "chat-demo",
               "target": "local",
               "rounds": 1,
-              "rationale": "scripted fake-profile draft",
+              "rationale": "improve the harness (fake profile)",
+              "domain": "harness",
               "hyper": {
                 "arms": 2,
                 "k": 1,
@@ -1479,7 +1529,7 @@
                 "budget": null,
                 "b_min": null,
                 "b_max": null,
-                "rrsi_profile": "local",
+                "rrsi_profile": "harness",
                 "rrsi": {},
                 "budget_tokens": null,
                 "max_arm_attempts": 2,
@@ -1489,7 +1539,7 @@
                   "agent",
                   "gepa",
                   "skillopt",
-                  "guard"
+                  "agl"
                 ],
                 "arm_budget_tokens": null,
                 "heartbeat_s": 30.0,
@@ -1503,19 +1553,19 @@
               "ignored_overrides": {},
               "estimate": {
                 "formula": "(aa_repeats + rounds * arms) * cases * k",
-                "cases": 26,
+                "cases": 15,
                 "k": 1,
                 "arms": 2,
                 "rounds": 1,
                 "aa_repeats": 5,
-                "evaluations": 182,
+                "evaluations": 105,
                 "breakdown": {
-                  "aa_calibration": 130,
-                  "arms": 52,
-                  "incumbent_reevaluation": 26
+                  "aa_calibration": 75,
+                  "arms": 30,
+                  "incumbent_reevaluation": 15
                 },
-                "evaluations_with_incumbent": 208,
-                "heldout_confirm_per_look": 22,
+                "evaluations_with_incumbent": 120,
+                "heldout_confirm_per_look": 30,
                 "notes": [
                   "cases = evolve-split cases of the frozen ASSERT sets",
                   "each evaluation is one agent rollout plus judging; guard arms run paired guard-off/on trials and may cost more",
@@ -1535,6 +1585,8 @@
                   "chat-demo",
                   "--profile",
                   "fake",
+                  "--domain",
+                  "harness",
                   "--run-dir",
                   "<tmp>/runs",
                   "--dry-run-publish"
@@ -1548,6 +1600,8 @@
                   "chat-demo",
                   "--profile",
                   "fake",
+                  "--domain",
+                  "harness",
                   "--run-dir",
                   "<tmp>/runs",
                   "--dry-run-publish"
@@ -1561,6 +1615,8 @@
                   "chat-demo",
                   "--profile",
                   "fake",
+                  "--domain",
+                  "harness",
                   "--run-dir",
                   "<tmp>/runs",
                   "--dry-run-publish",
@@ -1628,7 +1684,7 @@
                   "type": "function",
                   "function": {
                     "name": "draft_campaign",
-                    "arguments": "{\"cid\": \"chat-demo\", \"hyper\": {\"arms\": 2}, \"rounds\": 1, \"target\": \"local\", \"rationale\": \"scripted fake-profile draft\"}"
+                    "arguments": "{\"cid\": \"chat-demo\", \"hyper\": {\"arms\": 2}, \"rounds\": 1, \"target\": \"local\", \"rationale\": \"improve the harness (fake profile)\"}"
                   }
                 }
               ]
@@ -1636,13 +1692,13 @@
             {
               "id": "<uuid-2>",
               "role": "tool",
-              "content": "{\"draft\": {\"cid\": \"chat-demo\", \"commands\": [[\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"new\", \"chat-demo\", \"--profile\", \"fake\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\"], [\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"calibrate\", \"chat-demo\", \"--profile\", \"fake\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\"], [\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"run\", \"chat-demo\", \"--profile\", \"fake\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\", \"--rounds\", \"1\"]], \"created\": 0, \"estimate\": {\"aa_repeats\": 5, \"arms\": 2, \"breakdown\": {\"aa_calibration\": 130, \"arms\": 52, \"incumbent_reevaluation\": 26}, \"cases\": 26, \"evaluations\": 182, \"evaluations_with_incumbent\": 208, \"formula\": \"(aa_repeats + rounds * arms) * cases * k\", \"heldout_confirm_per_look\": 22, \"k\": 1, \"notes\": [\"cases = evolve-split cases of the frozen ASSERT sets\", \"each evaluation is one agent rollout plus judging; guard arms run paired guard-off/on trials and may cost more\", \"the held-out confirm look (`campaign confirm`) is not part of the launch chain\"], \"rounds\": 1}, \"hyper\": {\"aa_repeats\": 5, \"arm_budget_tokens\": null, \"arms\": 2, \"b_max\": null, \"b_min\": null, \"budget\": null, \"budget_tokens\": null, \"bus\": true, \"challenger\": \"det\", \"draft_prs\": true, \"guard_margin\": 0.0, \"guard_stochastic\": null, \"guard_trials\": null, \"heartbeat_s\": 30.0, \"holdout_looks\": 1, \"k\": 1, \"max_arm_attempts\": 2, \"max_parallel_arms\": 2, \"max_rounds\": 8, \"rrsi\": {}, \"rrsi_profile\": \"local\", \"seed\": 0, \"strategies\": [\"agent\", \"gepa\", \"skillopt\", \"guard\"]}, \"ignored_overrides\": {}, \"overrides\": {}, \"profile\": \"fake\", \"rationale\": \"scripted fake-profile draft\", \"rounds\": 1, \"target\": \"local\", \"warnings\": []}, \"ok\": true, \"path\": \"<tmp>/chat/drafts/chat-demo.json\", \"warnings\": []}",
+              "content": "{\"draft\": {\"cid\": \"chat-demo\", \"commands\": [[\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"new\", \"chat-demo\", \"--profile\", \"fake\", \"--domain\", \"harness\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\"], [\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"calibrate\", \"chat-demo\", \"--profile\", \"fake\", \"--domain\", \"harness\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\"], [\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"run\", \"chat-demo\", \"--profile\", \"fake\", \"--domain\", \"harness\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\", \"--rounds\", \"1\"]], \"created\": 0, \"domain\": \"harness\", \"estimate\": {\"aa_repeats\": 5, \"arms\": 2, \"breakdown\": {\"aa_calibration\": 75, \"arms\": 30, \"incumbent_reevaluation\": 15}, \"cases\": 15, \"evaluations\": 105, \"evaluations_with_incumbent\": 120, \"formula\": \"(aa_repeats + rounds * arms) * cases * k\", \"heldout_confirm_per_look\": 30, \"k\": 1, \"notes\": [\"cases = evolve-split cases of the frozen ASSERT sets\", \"each evaluation is one agent rollout plus judging; guard arms run paired guard-off/on trials and may cost more\", \"the held-out confirm look (`campaign confirm`) is not part of the launch chain\"], \"rounds\": 1}, \"hyper\": {\"aa_repeats\": 5, \"arm_budget_tokens\": null, \"arms\": 2, \"b_max\": null, \"b_min\": null, \"budget\": null, \"budget_tokens\": null, \"bus\": true, \"challenger\": \"det\", \"draft_prs\": true, \"guard_margin\": 0.0, \"guard_stochastic\": null, \"guard_trials\": null, \"heartbeat_s\": 30.0, \"holdout_looks\": 1, \"k\": 1, \"max_arm_attempts\": 2, \"max_parallel_arms\": 2, \"max_rounds\": 8, \"rrsi\": {}, \"rrsi_profile\": \"harness\", \"seed\": 0, \"strategies\": [\"agent\", \"gepa\", \"skillopt\", \"agl\"]}, \"ignored_overrides\": {}, \"overrides\": {}, \"profile\": \"fake\", \"rationale\": \"improve the harness (fake profile)\", \"rounds\": 1, \"target\": \"local\", \"warnings\": []}, \"ok\": true, \"path\": \"<tmp>/chat/drafts/chat-demo.json\", \"warnings\": []}",
               "toolCallId": "<call-1>"
             },
             {
               "id": "<uuid-3>",
               "role": "assistant",
-              "content": "Drafted chat-demo: 1 round(s), target local, about 182 evaluations. Say \"launch chat-demo\" to start it."
+              "content": "Drafted chat-demo: 1 round(s), target local, about 105 evaluations. Say \"launch chat-demo\" to start it."
             },
             {
               "id": "user-2",
@@ -1776,7 +1832,7 @@
                   "type": "function",
                   "function": {
                     "name": "draft_campaign",
-                    "arguments": "{\"cid\": \"chat-demo\", \"hyper\": {\"arms\": 2}, \"rounds\": 1, \"target\": \"local\", \"rationale\": \"scripted fake-profile draft\"}"
+                    "arguments": "{\"cid\": \"chat-demo\", \"hyper\": {\"arms\": 2}, \"rounds\": 1, \"target\": \"local\", \"rationale\": \"improve the harness (fake profile)\"}"
                   }
                 }
               ]
@@ -1784,13 +1840,13 @@
             {
               "id": "<uuid-2>",
               "role": "tool",
-              "content": "{\"draft\": {\"cid\": \"chat-demo\", \"commands\": [[\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"new\", \"chat-demo\", \"--profile\", \"fake\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\"], [\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"calibrate\", \"chat-demo\", \"--profile\", \"fake\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\"], [\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"run\", \"chat-demo\", \"--profile\", \"fake\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\", \"--rounds\", \"1\"]], \"created\": 0, \"estimate\": {\"aa_repeats\": 5, \"arms\": 2, \"breakdown\": {\"aa_calibration\": 130, \"arms\": 52, \"incumbent_reevaluation\": 26}, \"cases\": 26, \"evaluations\": 182, \"evaluations_with_incumbent\": 208, \"formula\": \"(aa_repeats + rounds * arms) * cases * k\", \"heldout_confirm_per_look\": 22, \"k\": 1, \"notes\": [\"cases = evolve-split cases of the frozen ASSERT sets\", \"each evaluation is one agent rollout plus judging; guard arms run paired guard-off/on trials and may cost more\", \"the held-out confirm look (`campaign confirm`) is not part of the launch chain\"], \"rounds\": 1}, \"hyper\": {\"aa_repeats\": 5, \"arm_budget_tokens\": null, \"arms\": 2, \"b_max\": null, \"b_min\": null, \"budget\": null, \"budget_tokens\": null, \"bus\": true, \"challenger\": \"det\", \"draft_prs\": true, \"guard_margin\": 0.0, \"guard_stochastic\": null, \"guard_trials\": null, \"heartbeat_s\": 30.0, \"holdout_looks\": 1, \"k\": 1, \"max_arm_attempts\": 2, \"max_parallel_arms\": 2, \"max_rounds\": 8, \"rrsi\": {}, \"rrsi_profile\": \"local\", \"seed\": 0, \"strategies\": [\"agent\", \"gepa\", \"skillopt\", \"guard\"]}, \"ignored_overrides\": {}, \"overrides\": {}, \"profile\": \"fake\", \"rationale\": \"scripted fake-profile draft\", \"rounds\": 1, \"target\": \"local\", \"warnings\": []}, \"ok\": true, \"path\": \"<tmp>/chat/drafts/chat-demo.json\", \"warnings\": []}",
+              "content": "{\"draft\": {\"cid\": \"chat-demo\", \"commands\": [[\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"new\", \"chat-demo\", \"--profile\", \"fake\", \"--domain\", \"harness\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\"], [\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"calibrate\", \"chat-demo\", \"--profile\", \"fake\", \"--domain\", \"harness\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\"], [\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"run\", \"chat-demo\", \"--profile\", \"fake\", \"--domain\", \"harness\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\", \"--rounds\", \"1\"]], \"created\": 0, \"domain\": \"harness\", \"estimate\": {\"aa_repeats\": 5, \"arms\": 2, \"breakdown\": {\"aa_calibration\": 75, \"arms\": 30, \"incumbent_reevaluation\": 15}, \"cases\": 15, \"evaluations\": 105, \"evaluations_with_incumbent\": 120, \"formula\": \"(aa_repeats + rounds * arms) * cases * k\", \"heldout_confirm_per_look\": 30, \"k\": 1, \"notes\": [\"cases = evolve-split cases of the frozen ASSERT sets\", \"each evaluation is one agent rollout plus judging; guard arms run paired guard-off/on trials and may cost more\", \"the held-out confirm look (`campaign confirm`) is not part of the launch chain\"], \"rounds\": 1}, \"hyper\": {\"aa_repeats\": 5, \"arm_budget_tokens\": null, \"arms\": 2, \"b_max\": null, \"b_min\": null, \"budget\": null, \"budget_tokens\": null, \"bus\": true, \"challenger\": \"det\", \"draft_prs\": true, \"guard_margin\": 0.0, \"guard_stochastic\": null, \"guard_trials\": null, \"heartbeat_s\": 30.0, \"holdout_looks\": 1, \"k\": 1, \"max_arm_attempts\": 2, \"max_parallel_arms\": 2, \"max_rounds\": 8, \"rrsi\": {}, \"rrsi_profile\": \"harness\", \"seed\": 0, \"strategies\": [\"agent\", \"gepa\", \"skillopt\", \"agl\"]}, \"ignored_overrides\": {}, \"overrides\": {}, \"profile\": \"fake\", \"rationale\": \"improve the harness (fake profile)\", \"rounds\": 1, \"target\": \"local\", \"warnings\": []}, \"ok\": true, \"path\": \"<tmp>/chat/drafts/chat-demo.json\", \"warnings\": []}",
               "toolCallId": "<call-1>"
             },
             {
               "id": "<uuid-3>",
               "role": "assistant",
-              "content": "Drafted chat-demo: 1 round(s), target local, about 182 evaluations. Say \"launch chat-demo\" to start it."
+              "content": "Drafted chat-demo: 1 round(s), target local, about 105 evaluations. Say \"launch chat-demo\" to start it."
             },
             {
               "id": "user-2",
@@ -1817,7 +1873,8 @@
               "cid": "chat-demo",
               "target": "local",
               "rounds": 1,
-              "rationale": "scripted fake-profile draft",
+              "rationale": "improve the harness (fake profile)",
+              "domain": "harness",
               "hyper": {
                 "arms": 2,
                 "k": 1,
@@ -1828,7 +1885,7 @@
                 "budget": null,
                 "b_min": null,
                 "b_max": null,
-                "rrsi_profile": "local",
+                "rrsi_profile": "harness",
                 "rrsi": {},
                 "budget_tokens": null,
                 "max_arm_attempts": 2,
@@ -1838,7 +1895,7 @@
                   "agent",
                   "gepa",
                   "skillopt",
-                  "guard"
+                  "agl"
                 ],
                 "arm_budget_tokens": null,
                 "heartbeat_s": 30.0,
@@ -1852,19 +1909,19 @@
               "ignored_overrides": {},
               "estimate": {
                 "formula": "(aa_repeats + rounds * arms) * cases * k",
-                "cases": 26,
+                "cases": 15,
                 "k": 1,
                 "arms": 2,
                 "rounds": 1,
                 "aa_repeats": 5,
-                "evaluations": 182,
+                "evaluations": 105,
                 "breakdown": {
-                  "aa_calibration": 130,
-                  "arms": 52,
-                  "incumbent_reevaluation": 26
+                  "aa_calibration": 75,
+                  "arms": 30,
+                  "incumbent_reevaluation": 15
                 },
-                "evaluations_with_incumbent": 208,
-                "heldout_confirm_per_look": 22,
+                "evaluations_with_incumbent": 120,
+                "heldout_confirm_per_look": 30,
                 "notes": [
                   "cases = evolve-split cases of the frozen ASSERT sets",
                   "each evaluation is one agent rollout plus judging; guard arms run paired guard-off/on trials and may cost more",
@@ -1884,6 +1941,8 @@
                   "chat-demo",
                   "--profile",
                   "fake",
+                  "--domain",
+                  "harness",
                   "--run-dir",
                   "<tmp>/runs",
                   "--dry-run-publish"
@@ -1897,6 +1956,8 @@
                   "chat-demo",
                   "--profile",
                   "fake",
+                  "--domain",
+                  "harness",
                   "--run-dir",
                   "<tmp>/runs",
                   "--dry-run-publish"
@@ -1910,6 +1971,8 @@
                   "chat-demo",
                   "--profile",
                   "fake",
+                  "--domain",
+                  "harness",
                   "--run-dir",
                   "<tmp>/runs",
                   "--dry-run-publish",
@@ -1947,7 +2010,8 @@
               "cid": "chat-demo",
               "target": "local",
               "rounds": 1,
-              "rationale": "scripted fake-profile draft",
+              "rationale": "improve the harness (fake profile)",
+              "domain": "harness",
               "hyper": {
                 "arms": 2,
                 "k": 1,
@@ -1958,7 +2022,7 @@
                 "budget": null,
                 "b_min": null,
                 "b_max": null,
-                "rrsi_profile": "local",
+                "rrsi_profile": "harness",
                 "rrsi": {},
                 "budget_tokens": null,
                 "max_arm_attempts": 2,
@@ -1968,7 +2032,7 @@
                   "agent",
                   "gepa",
                   "skillopt",
-                  "guard"
+                  "agl"
                 ],
                 "arm_budget_tokens": null,
                 "heartbeat_s": 30.0,
@@ -1982,19 +2046,19 @@
               "ignored_overrides": {},
               "estimate": {
                 "formula": "(aa_repeats + rounds * arms) * cases * k",
-                "cases": 26,
+                "cases": 15,
                 "k": 1,
                 "arms": 2,
                 "rounds": 1,
                 "aa_repeats": 5,
-                "evaluations": 182,
+                "evaluations": 105,
                 "breakdown": {
-                  "aa_calibration": 130,
-                  "arms": 52,
-                  "incumbent_reevaluation": 26
+                  "aa_calibration": 75,
+                  "arms": 30,
+                  "incumbent_reevaluation": 15
                 },
-                "evaluations_with_incumbent": 208,
-                "heldout_confirm_per_look": 22,
+                "evaluations_with_incumbent": 120,
+                "heldout_confirm_per_look": 30,
                 "notes": [
                   "cases = evolve-split cases of the frozen ASSERT sets",
                   "each evaluation is one agent rollout plus judging; guard arms run paired guard-off/on trials and may cost more",
@@ -2014,6 +2078,8 @@
                   "chat-demo",
                   "--profile",
                   "fake",
+                  "--domain",
+                  "harness",
                   "--run-dir",
                   "<tmp>/runs",
                   "--dry-run-publish"
@@ -2027,6 +2093,8 @@
                   "chat-demo",
                   "--profile",
                   "fake",
+                  "--domain",
+                  "harness",
                   "--run-dir",
                   "<tmp>/runs",
                   "--dry-run-publish"
@@ -2040,6 +2108,8 @@
                   "chat-demo",
                   "--profile",
                   "fake",
+                  "--domain",
+                  "harness",
                   "--run-dir",
                   "<tmp>/runs",
                   "--dry-run-publish",
@@ -2088,7 +2158,7 @@
                   "type": "function",
                   "function": {
                     "name": "draft_campaign",
-                    "arguments": "{\"cid\": \"chat-demo\", \"hyper\": {\"arms\": 2}, \"rounds\": 1, \"target\": \"local\", \"rationale\": \"scripted fake-profile draft\"}"
+                    "arguments": "{\"cid\": \"chat-demo\", \"hyper\": {\"arms\": 2}, \"rounds\": 1, \"target\": \"local\", \"rationale\": \"improve the harness (fake profile)\"}"
                   }
                 }
               ]
@@ -2096,19 +2166,19 @@
             {
               "id": "<uuid-2>",
               "role": "tool",
-              "content": "{\"draft\": {\"cid\": \"chat-demo\", \"commands\": [[\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"new\", \"chat-demo\", \"--profile\", \"fake\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\"], [\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"calibrate\", \"chat-demo\", \"--profile\", \"fake\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\"], [\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"run\", \"chat-demo\", \"--profile\", \"fake\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\", \"--rounds\", \"1\"]], \"created\": 0, \"estimate\": {\"aa_repeats\": 5, \"arms\": 2, \"breakdown\": {\"aa_calibration\": 130, \"arms\": 52, \"incumbent_reevaluation\": 26}, \"cases\": 26, \"evaluations\": 182, \"evaluations_with_incumbent\": 208, \"formula\": \"(aa_repeats + rounds * arms) * cases * k\", \"heldout_confirm_per_look\": 22, \"k\": 1, \"notes\": [\"cases = evolve-split cases of the frozen ASSERT sets\", \"each evaluation is one agent rollout plus judging; guard arms run paired guard-off/on trials and may cost more\", \"the held-out confirm look (`campaign confirm`) is not part of the launch chain\"], \"rounds\": 1}, \"hyper\": {\"aa_repeats\": 5, \"arm_budget_tokens\": null, \"arms\": 2, \"b_max\": null, \"b_min\": null, \"budget\": null, \"budget_tokens\": null, \"bus\": true, \"challenger\": \"det\", \"draft_prs\": true, \"guard_margin\": 0.0, \"guard_stochastic\": null, \"guard_trials\": null, \"heartbeat_s\": 30.0, \"holdout_looks\": 1, \"k\": 1, \"max_arm_attempts\": 2, \"max_parallel_arms\": 2, \"max_rounds\": 8, \"rrsi\": {}, \"rrsi_profile\": \"local\", \"seed\": 0, \"strategies\": [\"agent\", \"gepa\", \"skillopt\", \"guard\"]}, \"ignored_overrides\": {}, \"overrides\": {}, \"profile\": \"fake\", \"rationale\": \"scripted fake-profile draft\", \"rounds\": 1, \"target\": \"local\", \"warnings\": []}, \"ok\": true, \"path\": \"<tmp>/chat/drafts/chat-demo.json\", \"warnings\": []}",
+              "content": "{\"draft\": {\"cid\": \"chat-demo\", \"commands\": [[\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"new\", \"chat-demo\", \"--profile\", \"fake\", \"--domain\", \"harness\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\"], [\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"calibrate\", \"chat-demo\", \"--profile\", \"fake\", \"--domain\", \"harness\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\"], [\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"run\", \"chat-demo\", \"--profile\", \"fake\", \"--domain\", \"harness\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\", \"--rounds\", \"1\"]], \"created\": 0, \"domain\": \"harness\", \"estimate\": {\"aa_repeats\": 5, \"arms\": 2, \"breakdown\": {\"aa_calibration\": 75, \"arms\": 30, \"incumbent_reevaluation\": 15}, \"cases\": 15, \"evaluations\": 105, \"evaluations_with_incumbent\": 120, \"formula\": \"(aa_repeats + rounds * arms) * cases * k\", \"heldout_confirm_per_look\": 30, \"k\": 1, \"notes\": [\"cases = evolve-split cases of the frozen ASSERT sets\", \"each evaluation is one agent rollout plus judging; guard arms run paired guard-off/on trials and may cost more\", \"the held-out confirm look (`campaign confirm`) is not part of the launch chain\"], \"rounds\": 1}, \"hyper\": {\"aa_repeats\": 5, \"arm_budget_tokens\": null, \"arms\": 2, \"b_max\": null, \"b_min\": null, \"budget\": null, \"budget_tokens\": null, \"bus\": true, \"challenger\": \"det\", \"draft_prs\": true, \"guard_margin\": 0.0, \"guard_stochastic\": null, \"guard_trials\": null, \"heartbeat_s\": 30.0, \"holdout_looks\": 1, \"k\": 1, \"max_arm_attempts\": 2, \"max_parallel_arms\": 2, \"max_rounds\": 8, \"rrsi\": {}, \"rrsi_profile\": \"harness\", \"seed\": 0, \"strategies\": [\"agent\", \"gepa\", \"skillopt\", \"agl\"]}, \"ignored_overrides\": {}, \"overrides\": {}, \"profile\": \"fake\", \"rationale\": \"improve the harness (fake profile)\", \"rounds\": 1, \"target\": \"local\", \"warnings\": []}, \"ok\": true, \"path\": \"<tmp>/chat/drafts/chat-demo.json\", \"warnings\": []}",
               "toolCallId": "<call-1>"
             },
             {
               "id": "<uuid-2>",
               "role": "tool",
-              "content": "{\"draft\": {\"cid\": \"chat-demo\", \"commands\": [[\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"new\", \"chat-demo\", \"--profile\", \"fake\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\"], [\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"calibrate\", \"chat-demo\", \"--profile\", \"fake\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\"], [\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"run\", \"chat-demo\", \"--profile\", \"fake\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\", \"--rounds\", \"1\"]], \"created\": 0, \"estimate\": {\"aa_repeats\": 5, \"arms\": 2, \"breakdown\": {\"aa_calibration\": 130, \"arms\": 52, \"incumbent_reevaluation\": 26}, \"cases\": 26, \"evaluations\": 182, \"evaluations_with_incumbent\": 208, \"formula\": \"(aa_repeats + rounds * arms) * cases * k\", \"heldout_confirm_per_look\": 22, \"k\": 1, \"notes\": [\"cases = evolve-split cases of the frozen ASSERT sets\", \"each evaluation is one agent rollout plus judging; guard arms run paired guard-off/on trials and may cost more\", \"the held-out confirm look (`campaign confirm`) is not part of the launch chain\"], \"rounds\": 1}, \"hyper\": {\"aa_repeats\": 5, \"arm_budget_tokens\": null, \"arms\": 2, \"b_max\": null, \"b_min\": null, \"budget\": null, \"budget_tokens\": null, \"bus\": true, \"challenger\": \"det\", \"draft_prs\": true, \"guard_margin\": 0.0, \"guard_stochastic\": null, \"guard_trials\": null, \"heartbeat_s\": 30.0, \"holdout_looks\": 1, \"k\": 1, \"max_arm_attempts\": 2, \"max_parallel_arms\": 2, \"max_rounds\": 8, \"rrsi\": {}, \"rrsi_profile\": \"local\", \"seed\": 0, \"strategies\": [\"agent\", \"gepa\", \"skillopt\", \"guard\"]}, \"ignored_overrides\": {}, \"overrides\": {}, \"profile\": \"fake\", \"rationale\": \"scripted fake-profile draft\", \"rounds\": 1, \"target\": \"local\", \"warnings\": []}, \"ok\": true, \"path\": \"<tmp>/chat/drafts/chat-demo.json\", \"warnings\": []}",
+              "content": "{\"draft\": {\"cid\": \"chat-demo\", \"commands\": [[\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"new\", \"chat-demo\", \"--profile\", \"fake\", \"--domain\", \"harness\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\"], [\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"calibrate\", \"chat-demo\", \"--profile\", \"fake\", \"--domain\", \"harness\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\"], [\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"run\", \"chat-demo\", \"--profile\", \"fake\", \"--domain\", \"harness\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\", \"--rounds\", \"1\"]], \"created\": 0, \"domain\": \"harness\", \"estimate\": {\"aa_repeats\": 5, \"arms\": 2, \"breakdown\": {\"aa_calibration\": 75, \"arms\": 30, \"incumbent_reevaluation\": 15}, \"cases\": 15, \"evaluations\": 105, \"evaluations_with_incumbent\": 120, \"formula\": \"(aa_repeats + rounds * arms) * cases * k\", \"heldout_confirm_per_look\": 30, \"k\": 1, \"notes\": [\"cases = evolve-split cases of the frozen ASSERT sets\", \"each evaluation is one agent rollout plus judging; guard arms run paired guard-off/on trials and may cost more\", \"the held-out confirm look (`campaign confirm`) is not part of the launch chain\"], \"rounds\": 1}, \"hyper\": {\"aa_repeats\": 5, \"arm_budget_tokens\": null, \"arms\": 2, \"b_max\": null, \"b_min\": null, \"budget\": null, \"budget_tokens\": null, \"bus\": true, \"challenger\": \"det\", \"draft_prs\": true, \"guard_margin\": 0.0, \"guard_stochastic\": null, \"guard_trials\": null, \"heartbeat_s\": 30.0, \"holdout_looks\": 1, \"k\": 1, \"max_arm_attempts\": 2, \"max_parallel_arms\": 2, \"max_rounds\": 8, \"rrsi\": {}, \"rrsi_profile\": \"harness\", \"seed\": 0, \"strategies\": [\"agent\", \"gepa\", \"skillopt\", \"agl\"]}, \"ignored_overrides\": {}, \"overrides\": {}, \"profile\": \"fake\", \"rationale\": \"improve the harness (fake profile)\", \"rounds\": 1, \"target\": \"local\", \"warnings\": []}, \"ok\": true, \"path\": \"<tmp>/chat/drafts/chat-demo.json\", \"warnings\": []}",
               "toolCallId": "<call-1>"
             },
             {
               "id": "<uuid-3>",
               "role": "assistant",
-              "content": "Drafted chat-demo: 1 round(s), target local, about 182 evaluations. Say \"launch chat-demo\" to start it."
+              "content": "Drafted chat-demo: 1 round(s), target local, about 105 evaluations. Say \"launch chat-demo\" to start it."
             },
             {
               "id": "user-2",
@@ -2177,7 +2247,7 @@
                   "type": "function",
                   "function": {
                     "name": "draft_campaign",
-                    "arguments": "{\"cid\": \"chat-demo\", \"hyper\": {\"arms\": 2}, \"rounds\": 1, \"target\": \"local\", \"rationale\": \"scripted fake-profile draft\"}"
+                    "arguments": "{\"cid\": \"chat-demo\", \"hyper\": {\"arms\": 2}, \"rounds\": 1, \"target\": \"local\", \"rationale\": \"improve the harness (fake profile)\"}"
                   }
                 }
               ]
@@ -2185,13 +2255,13 @@
             {
               "id": "<uuid-2>",
               "role": "tool",
-              "content": "{\"draft\": {\"cid\": \"chat-demo\", \"commands\": [[\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"new\", \"chat-demo\", \"--profile\", \"fake\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\"], [\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"calibrate\", \"chat-demo\", \"--profile\", \"fake\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\"], [\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"run\", \"chat-demo\", \"--profile\", \"fake\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\", \"--rounds\", \"1\"]], \"created\": 0, \"estimate\": {\"aa_repeats\": 5, \"arms\": 2, \"breakdown\": {\"aa_calibration\": 130, \"arms\": 52, \"incumbent_reevaluation\": 26}, \"cases\": 26, \"evaluations\": 182, \"evaluations_with_incumbent\": 208, \"formula\": \"(aa_repeats + rounds * arms) * cases * k\", \"heldout_confirm_per_look\": 22, \"k\": 1, \"notes\": [\"cases = evolve-split cases of the frozen ASSERT sets\", \"each evaluation is one agent rollout plus judging; guard arms run paired guard-off/on trials and may cost more\", \"the held-out confirm look (`campaign confirm`) is not part of the launch chain\"], \"rounds\": 1}, \"hyper\": {\"aa_repeats\": 5, \"arm_budget_tokens\": null, \"arms\": 2, \"b_max\": null, \"b_min\": null, \"budget\": null, \"budget_tokens\": null, \"bus\": true, \"challenger\": \"det\", \"draft_prs\": true, \"guard_margin\": 0.0, \"guard_stochastic\": null, \"guard_trials\": null, \"heartbeat_s\": 30.0, \"holdout_looks\": 1, \"k\": 1, \"max_arm_attempts\": 2, \"max_parallel_arms\": 2, \"max_rounds\": 8, \"rrsi\": {}, \"rrsi_profile\": \"local\", \"seed\": 0, \"strategies\": [\"agent\", \"gepa\", \"skillopt\", \"guard\"]}, \"ignored_overrides\": {}, \"overrides\": {}, \"profile\": \"fake\", \"rationale\": \"scripted fake-profile draft\", \"rounds\": 1, \"target\": \"local\", \"warnings\": []}, \"ok\": true, \"path\": \"<tmp>/chat/drafts/chat-demo.json\", \"warnings\": []}",
+              "content": "{\"draft\": {\"cid\": \"chat-demo\", \"commands\": [[\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"new\", \"chat-demo\", \"--profile\", \"fake\", \"--domain\", \"harness\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\"], [\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"calibrate\", \"chat-demo\", \"--profile\", \"fake\", \"--domain\", \"harness\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\"], [\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"run\", \"chat-demo\", \"--profile\", \"fake\", \"--domain\", \"harness\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\", \"--rounds\", \"1\"]], \"created\": 0, \"domain\": \"harness\", \"estimate\": {\"aa_repeats\": 5, \"arms\": 2, \"breakdown\": {\"aa_calibration\": 75, \"arms\": 30, \"incumbent_reevaluation\": 15}, \"cases\": 15, \"evaluations\": 105, \"evaluations_with_incumbent\": 120, \"formula\": \"(aa_repeats + rounds * arms) * cases * k\", \"heldout_confirm_per_look\": 30, \"k\": 1, \"notes\": [\"cases = evolve-split cases of the frozen ASSERT sets\", \"each evaluation is one agent rollout plus judging; guard arms run paired guard-off/on trials and may cost more\", \"the held-out confirm look (`campaign confirm`) is not part of the launch chain\"], \"rounds\": 1}, \"hyper\": {\"aa_repeats\": 5, \"arm_budget_tokens\": null, \"arms\": 2, \"b_max\": null, \"b_min\": null, \"budget\": null, \"budget_tokens\": null, \"bus\": true, \"challenger\": \"det\", \"draft_prs\": true, \"guard_margin\": 0.0, \"guard_stochastic\": null, \"guard_trials\": null, \"heartbeat_s\": 30.0, \"holdout_looks\": 1, \"k\": 1, \"max_arm_attempts\": 2, \"max_parallel_arms\": 2, \"max_rounds\": 8, \"rrsi\": {}, \"rrsi_profile\": \"harness\", \"seed\": 0, \"strategies\": [\"agent\", \"gepa\", \"skillopt\", \"agl\"]}, \"ignored_overrides\": {}, \"overrides\": {}, \"profile\": \"fake\", \"rationale\": \"improve the harness (fake profile)\", \"rounds\": 1, \"target\": \"local\", \"warnings\": []}, \"ok\": true, \"path\": \"<tmp>/chat/drafts/chat-demo.json\", \"warnings\": []}",
               "toolCallId": "<call-1>"
             },
             {
               "id": "<uuid-3>",
               "role": "assistant",
-              "content": "Drafted chat-demo: 1 round(s), target local, about 182 evaluations. Say \"launch chat-demo\" to start it."
+              "content": "Drafted chat-demo: 1 round(s), target local, about 105 evaluations. Say \"launch chat-demo\" to start it."
             },
             {
               "id": "user-2",
@@ -2204,7 +2274,8 @@
               "cid": "chat-demo",
               "target": "local",
               "rounds": 1,
-              "rationale": "scripted fake-profile draft",
+              "rationale": "improve the harness (fake profile)",
+              "domain": "harness",
               "hyper": {
                 "arms": 2,
                 "k": 1,
@@ -2215,7 +2286,7 @@
                 "budget": null,
                 "b_min": null,
                 "b_max": null,
-                "rrsi_profile": "local",
+                "rrsi_profile": "harness",
                 "rrsi": {},
                 "budget_tokens": null,
                 "max_arm_attempts": 2,
@@ -2225,7 +2296,7 @@
                   "agent",
                   "gepa",
                   "skillopt",
-                  "guard"
+                  "agl"
                 ],
                 "arm_budget_tokens": null,
                 "heartbeat_s": 30.0,
@@ -2239,19 +2310,19 @@
               "ignored_overrides": {},
               "estimate": {
                 "formula": "(aa_repeats + rounds * arms) * cases * k",
-                "cases": 26,
+                "cases": 15,
                 "k": 1,
                 "arms": 2,
                 "rounds": 1,
                 "aa_repeats": 5,
-                "evaluations": 182,
+                "evaluations": 105,
                 "breakdown": {
-                  "aa_calibration": 130,
-                  "arms": 52,
-                  "incumbent_reevaluation": 26
+                  "aa_calibration": 75,
+                  "arms": 30,
+                  "incumbent_reevaluation": 15
                 },
-                "evaluations_with_incumbent": 208,
-                "heldout_confirm_per_look": 22,
+                "evaluations_with_incumbent": 120,
+                "heldout_confirm_per_look": 30,
                 "notes": [
                   "cases = evolve-split cases of the frozen ASSERT sets",
                   "each evaluation is one agent rollout plus judging; guard arms run paired guard-off/on trials and may cost more",
@@ -2271,6 +2342,8 @@
                   "chat-demo",
                   "--profile",
                   "fake",
+                  "--domain",
+                  "harness",
                   "--run-dir",
                   "<tmp>/runs",
                   "--dry-run-publish"
@@ -2284,6 +2357,8 @@
                   "chat-demo",
                   "--profile",
                   "fake",
+                  "--domain",
+                  "harness",
                   "--run-dir",
                   "<tmp>/runs",
                   "--dry-run-publish"
@@ -2297,6 +2372,8 @@
                   "chat-demo",
                   "--profile",
                   "fake",
+                  "--domain",
+                  "harness",
                   "--run-dir",
                   "<tmp>/runs",
                   "--dry-run-publish",
@@ -2325,7 +2402,8 @@
               "cid": "chat-demo",
               "target": "local",
               "rounds": 1,
-              "rationale": "scripted fake-profile draft",
+              "rationale": "improve the harness (fake profile)",
+              "domain": "harness",
               "hyper": {
                 "arms": 2,
                 "k": 1,
@@ -2336,7 +2414,7 @@
                 "budget": null,
                 "b_min": null,
                 "b_max": null,
-                "rrsi_profile": "local",
+                "rrsi_profile": "harness",
                 "rrsi": {},
                 "budget_tokens": null,
                 "max_arm_attempts": 2,
@@ -2346,7 +2424,7 @@
                   "agent",
                   "gepa",
                   "skillopt",
-                  "guard"
+                  "agl"
                 ],
                 "arm_budget_tokens": null,
                 "heartbeat_s": 30.0,
@@ -2360,19 +2438,19 @@
               "ignored_overrides": {},
               "estimate": {
                 "formula": "(aa_repeats + rounds * arms) * cases * k",
-                "cases": 26,
+                "cases": 15,
                 "k": 1,
                 "arms": 2,
                 "rounds": 1,
                 "aa_repeats": 5,
-                "evaluations": 182,
+                "evaluations": 105,
                 "breakdown": {
-                  "aa_calibration": 130,
-                  "arms": 52,
-                  "incumbent_reevaluation": 26
+                  "aa_calibration": 75,
+                  "arms": 30,
+                  "incumbent_reevaluation": 15
                 },
-                "evaluations_with_incumbent": 208,
-                "heldout_confirm_per_look": 22,
+                "evaluations_with_incumbent": 120,
+                "heldout_confirm_per_look": 30,
                 "notes": [
                   "cases = evolve-split cases of the frozen ASSERT sets",
                   "each evaluation is one agent rollout plus judging; guard arms run paired guard-off/on trials and may cost more",
@@ -2392,6 +2470,8 @@
                   "chat-demo",
                   "--profile",
                   "fake",
+                  "--domain",
+                  "harness",
                   "--run-dir",
                   "<tmp>/runs",
                   "--dry-run-publish"
@@ -2405,6 +2485,8 @@
                   "chat-demo",
                   "--profile",
                   "fake",
+                  "--domain",
+                  "harness",
                   "--run-dir",
                   "<tmp>/runs",
                   "--dry-run-publish"
@@ -2418,6 +2500,8 @@
                   "chat-demo",
                   "--profile",
                   "fake",
+                  "--domain",
+                  "harness",
                   "--run-dir",
                   "<tmp>/runs",
                   "--dry-run-publish",
@@ -2485,7 +2569,7 @@
                   "type": "function",
                   "function": {
                     "name": "draft_campaign",
-                    "arguments": "{\"cid\": \"chat-demo\", \"hyper\": {\"arms\": 2}, \"rounds\": 1, \"target\": \"local\", \"rationale\": \"scripted fake-profile draft\"}"
+                    "arguments": "{\"cid\": \"chat-demo\", \"hyper\": {\"arms\": 2}, \"rounds\": 1, \"target\": \"local\", \"rationale\": \"improve the harness (fake profile)\"}"
                   }
                 }
               ]
@@ -2493,13 +2577,13 @@
             {
               "id": "<uuid-2>",
               "role": "tool",
-              "content": "{\"draft\": {\"cid\": \"chat-demo\", \"commands\": [[\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"new\", \"chat-demo\", \"--profile\", \"fake\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\"], [\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"calibrate\", \"chat-demo\", \"--profile\", \"fake\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\"], [\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"run\", \"chat-demo\", \"--profile\", \"fake\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\", \"--rounds\", \"1\"]], \"created\": 0, \"estimate\": {\"aa_repeats\": 5, \"arms\": 2, \"breakdown\": {\"aa_calibration\": 130, \"arms\": 52, \"incumbent_reevaluation\": 26}, \"cases\": 26, \"evaluations\": 182, \"evaluations_with_incumbent\": 208, \"formula\": \"(aa_repeats + rounds * arms) * cases * k\", \"heldout_confirm_per_look\": 22, \"k\": 1, \"notes\": [\"cases = evolve-split cases of the frozen ASSERT sets\", \"each evaluation is one agent rollout plus judging; guard arms run paired guard-off/on trials and may cost more\", \"the held-out confirm look (`campaign confirm`) is not part of the launch chain\"], \"rounds\": 1}, \"hyper\": {\"aa_repeats\": 5, \"arm_budget_tokens\": null, \"arms\": 2, \"b_max\": null, \"b_min\": null, \"budget\": null, \"budget_tokens\": null, \"bus\": true, \"challenger\": \"det\", \"draft_prs\": true, \"guard_margin\": 0.0, \"guard_stochastic\": null, \"guard_trials\": null, \"heartbeat_s\": 30.0, \"holdout_looks\": 1, \"k\": 1, \"max_arm_attempts\": 2, \"max_parallel_arms\": 2, \"max_rounds\": 8, \"rrsi\": {}, \"rrsi_profile\": \"local\", \"seed\": 0, \"strategies\": [\"agent\", \"gepa\", \"skillopt\", \"guard\"]}, \"ignored_overrides\": {}, \"overrides\": {}, \"profile\": \"fake\", \"rationale\": \"scripted fake-profile draft\", \"rounds\": 1, \"target\": \"local\", \"warnings\": []}, \"ok\": true, \"path\": \"<tmp>/chat/drafts/chat-demo.json\", \"warnings\": []}",
+              "content": "{\"draft\": {\"cid\": \"chat-demo\", \"commands\": [[\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"new\", \"chat-demo\", \"--profile\", \"fake\", \"--domain\", \"harness\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\"], [\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"calibrate\", \"chat-demo\", \"--profile\", \"fake\", \"--domain\", \"harness\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\"], [\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"run\", \"chat-demo\", \"--profile\", \"fake\", \"--domain\", \"harness\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\", \"--rounds\", \"1\"]], \"created\": 0, \"domain\": \"harness\", \"estimate\": {\"aa_repeats\": 5, \"arms\": 2, \"breakdown\": {\"aa_calibration\": 75, \"arms\": 30, \"incumbent_reevaluation\": 15}, \"cases\": 15, \"evaluations\": 105, \"evaluations_with_incumbent\": 120, \"formula\": \"(aa_repeats + rounds * arms) * cases * k\", \"heldout_confirm_per_look\": 30, \"k\": 1, \"notes\": [\"cases = evolve-split cases of the frozen ASSERT sets\", \"each evaluation is one agent rollout plus judging; guard arms run paired guard-off/on trials and may cost more\", \"the held-out confirm look (`campaign confirm`) is not part of the launch chain\"], \"rounds\": 1}, \"hyper\": {\"aa_repeats\": 5, \"arm_budget_tokens\": null, \"arms\": 2, \"b_max\": null, \"b_min\": null, \"budget\": null, \"budget_tokens\": null, \"bus\": true, \"challenger\": \"det\", \"draft_prs\": true, \"guard_margin\": 0.0, \"guard_stochastic\": null, \"guard_trials\": null, \"heartbeat_s\": 30.0, \"holdout_looks\": 1, \"k\": 1, \"max_arm_attempts\": 2, \"max_parallel_arms\": 2, \"max_rounds\": 8, \"rrsi\": {}, \"rrsi_profile\": \"harness\", \"seed\": 0, \"strategies\": [\"agent\", \"gepa\", \"skillopt\", \"agl\"]}, \"ignored_overrides\": {}, \"overrides\": {}, \"profile\": \"fake\", \"rationale\": \"improve the harness (fake profile)\", \"rounds\": 1, \"target\": \"local\", \"warnings\": []}, \"ok\": true, \"path\": \"<tmp>/chat/drafts/chat-demo.json\", \"warnings\": []}",
               "toolCallId": "<call-1>"
             },
             {
               "id": "<uuid-3>",
               "role": "assistant",
-              "content": "Drafted chat-demo: 1 round(s), target local, about 182 evaluations. Say \"launch chat-demo\" to start it."
+              "content": "Drafted chat-demo: 1 round(s), target local, about 105 evaluations. Say \"launch chat-demo\" to start it."
             },
             {
               "id": "user-2",
@@ -2633,7 +2717,7 @@
                   "type": "function",
                   "function": {
                     "name": "draft_campaign",
-                    "arguments": "{\"cid\": \"chat-demo\", \"hyper\": {\"arms\": 2}, \"rounds\": 1, \"target\": \"local\", \"rationale\": \"scripted fake-profile draft\"}"
+                    "arguments": "{\"cid\": \"chat-demo\", \"hyper\": {\"arms\": 2}, \"rounds\": 1, \"target\": \"local\", \"rationale\": \"improve the harness (fake profile)\"}"
                   }
                 }
               ]
@@ -2641,13 +2725,13 @@
             {
               "id": "<uuid-2>",
               "role": "tool",
-              "content": "{\"draft\": {\"cid\": \"chat-demo\", \"commands\": [[\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"new\", \"chat-demo\", \"--profile\", \"fake\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\"], [\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"calibrate\", \"chat-demo\", \"--profile\", \"fake\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\"], [\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"run\", \"chat-demo\", \"--profile\", \"fake\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\", \"--rounds\", \"1\"]], \"created\": 0, \"estimate\": {\"aa_repeats\": 5, \"arms\": 2, \"breakdown\": {\"aa_calibration\": 130, \"arms\": 52, \"incumbent_reevaluation\": 26}, \"cases\": 26, \"evaluations\": 182, \"evaluations_with_incumbent\": 208, \"formula\": \"(aa_repeats + rounds * arms) * cases * k\", \"heldout_confirm_per_look\": 22, \"k\": 1, \"notes\": [\"cases = evolve-split cases of the frozen ASSERT sets\", \"each evaluation is one agent rollout plus judging; guard arms run paired guard-off/on trials and may cost more\", \"the held-out confirm look (`campaign confirm`) is not part of the launch chain\"], \"rounds\": 1}, \"hyper\": {\"aa_repeats\": 5, \"arm_budget_tokens\": null, \"arms\": 2, \"b_max\": null, \"b_min\": null, \"budget\": null, \"budget_tokens\": null, \"bus\": true, \"challenger\": \"det\", \"draft_prs\": true, \"guard_margin\": 0.0, \"guard_stochastic\": null, \"guard_trials\": null, \"heartbeat_s\": 30.0, \"holdout_looks\": 1, \"k\": 1, \"max_arm_attempts\": 2, \"max_parallel_arms\": 2, \"max_rounds\": 8, \"rrsi\": {}, \"rrsi_profile\": \"local\", \"seed\": 0, \"strategies\": [\"agent\", \"gepa\", \"skillopt\", \"guard\"]}, \"ignored_overrides\": {}, \"overrides\": {}, \"profile\": \"fake\", \"rationale\": \"scripted fake-profile draft\", \"rounds\": 1, \"target\": \"local\", \"warnings\": []}, \"ok\": true, \"path\": \"<tmp>/chat/drafts/chat-demo.json\", \"warnings\": []}",
+              "content": "{\"draft\": {\"cid\": \"chat-demo\", \"commands\": [[\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"new\", \"chat-demo\", \"--profile\", \"fake\", \"--domain\", \"harness\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\"], [\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"calibrate\", \"chat-demo\", \"--profile\", \"fake\", \"--domain\", \"harness\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\"], [\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"run\", \"chat-demo\", \"--profile\", \"fake\", \"--domain\", \"harness\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\", \"--rounds\", \"1\"]], \"created\": 0, \"domain\": \"harness\", \"estimate\": {\"aa_repeats\": 5, \"arms\": 2, \"breakdown\": {\"aa_calibration\": 75, \"arms\": 30, \"incumbent_reevaluation\": 15}, \"cases\": 15, \"evaluations\": 105, \"evaluations_with_incumbent\": 120, \"formula\": \"(aa_repeats + rounds * arms) * cases * k\", \"heldout_confirm_per_look\": 30, \"k\": 1, \"notes\": [\"cases = evolve-split cases of the frozen ASSERT sets\", \"each evaluation is one agent rollout plus judging; guard arms run paired guard-off/on trials and may cost more\", \"the held-out confirm look (`campaign confirm`) is not part of the launch chain\"], \"rounds\": 1}, \"hyper\": {\"aa_repeats\": 5, \"arm_budget_tokens\": null, \"arms\": 2, \"b_max\": null, \"b_min\": null, \"budget\": null, \"budget_tokens\": null, \"bus\": true, \"challenger\": \"det\", \"draft_prs\": true, \"guard_margin\": 0.0, \"guard_stochastic\": null, \"guard_trials\": null, \"heartbeat_s\": 30.0, \"holdout_looks\": 1, \"k\": 1, \"max_arm_attempts\": 2, \"max_parallel_arms\": 2, \"max_rounds\": 8, \"rrsi\": {}, \"rrsi_profile\": \"harness\", \"seed\": 0, \"strategies\": [\"agent\", \"gepa\", \"skillopt\", \"agl\"]}, \"ignored_overrides\": {}, \"overrides\": {}, \"profile\": \"fake\", \"rationale\": \"improve the harness (fake profile)\", \"rounds\": 1, \"target\": \"local\", \"warnings\": []}, \"ok\": true, \"path\": \"<tmp>/chat/drafts/chat-demo.json\", \"warnings\": []}",
               "toolCallId": "<call-1>"
             },
             {
               "id": "<uuid-3>",
               "role": "assistant",
-              "content": "Drafted chat-demo: 1 round(s), target local, about 182 evaluations. Say \"launch chat-demo\" to start it."
+              "content": "Drafted chat-demo: 1 round(s), target local, about 105 evaluations. Say \"launch chat-demo\" to start it."
             },
             {
               "id": "user-2",
@@ -2674,7 +2758,8 @@
               "cid": "chat-demo",
               "target": "local",
               "rounds": 1,
-              "rationale": "scripted fake-profile draft",
+              "rationale": "improve the harness (fake profile)",
+              "domain": "harness",
               "hyper": {
                 "arms": 2,
                 "k": 1,
@@ -2685,7 +2770,7 @@
                 "budget": null,
                 "b_min": null,
                 "b_max": null,
-                "rrsi_profile": "local",
+                "rrsi_profile": "harness",
                 "rrsi": {},
                 "budget_tokens": null,
                 "max_arm_attempts": 2,
@@ -2695,7 +2780,7 @@
                   "agent",
                   "gepa",
                   "skillopt",
-                  "guard"
+                  "agl"
                 ],
                 "arm_budget_tokens": null,
                 "heartbeat_s": 30.0,
@@ -2709,19 +2794,19 @@
               "ignored_overrides": {},
               "estimate": {
                 "formula": "(aa_repeats + rounds * arms) * cases * k",
-                "cases": 26,
+                "cases": 15,
                 "k": 1,
                 "arms": 2,
                 "rounds": 1,
                 "aa_repeats": 5,
-                "evaluations": 182,
+                "evaluations": 105,
                 "breakdown": {
-                  "aa_calibration": 130,
-                  "arms": 52,
-                  "incumbent_reevaluation": 26
+                  "aa_calibration": 75,
+                  "arms": 30,
+                  "incumbent_reevaluation": 15
                 },
-                "evaluations_with_incumbent": 208,
-                "heldout_confirm_per_look": 22,
+                "evaluations_with_incumbent": 120,
+                "heldout_confirm_per_look": 30,
                 "notes": [
                   "cases = evolve-split cases of the frozen ASSERT sets",
                   "each evaluation is one agent rollout plus judging; guard arms run paired guard-off/on trials and may cost more",
@@ -2741,6 +2826,8 @@
                   "chat-demo",
                   "--profile",
                   "fake",
+                  "--domain",
+                  "harness",
                   "--run-dir",
                   "<tmp>/runs",
                   "--dry-run-publish"
@@ -2754,6 +2841,8 @@
                   "chat-demo",
                   "--profile",
                   "fake",
+                  "--domain",
+                  "harness",
                   "--run-dir",
                   "<tmp>/runs",
                   "--dry-run-publish"
@@ -2767,6 +2856,8 @@
                   "chat-demo",
                   "--profile",
                   "fake",
+                  "--domain",
+                  "harness",
                   "--run-dir",
                   "<tmp>/runs",
                   "--dry-run-publish",
@@ -2801,7 +2892,8 @@
               "cid": "chat-demo",
               "target": "local",
               "rounds": 1,
-              "rationale": "scripted fake-profile draft",
+              "rationale": "improve the harness (fake profile)",
+              "domain": "harness",
               "hyper": {
                 "arms": 2,
                 "k": 1,
@@ -2812,7 +2904,7 @@
                 "budget": null,
                 "b_min": null,
                 "b_max": null,
-                "rrsi_profile": "local",
+                "rrsi_profile": "harness",
                 "rrsi": {},
                 "budget_tokens": null,
                 "max_arm_attempts": 2,
@@ -2822,7 +2914,7 @@
                   "agent",
                   "gepa",
                   "skillopt",
-                  "guard"
+                  "agl"
                 ],
                 "arm_budget_tokens": null,
                 "heartbeat_s": 30.0,
@@ -2836,19 +2928,19 @@
               "ignored_overrides": {},
               "estimate": {
                 "formula": "(aa_repeats + rounds * arms) * cases * k",
-                "cases": 26,
+                "cases": 15,
                 "k": 1,
                 "arms": 2,
                 "rounds": 1,
                 "aa_repeats": 5,
-                "evaluations": 182,
+                "evaluations": 105,
                 "breakdown": {
-                  "aa_calibration": 130,
-                  "arms": 52,
-                  "incumbent_reevaluation": 26
+                  "aa_calibration": 75,
+                  "arms": 30,
+                  "incumbent_reevaluation": 15
                 },
-                "evaluations_with_incumbent": 208,
-                "heldout_confirm_per_look": 22,
+                "evaluations_with_incumbent": 120,
+                "heldout_confirm_per_look": 30,
                 "notes": [
                   "cases = evolve-split cases of the frozen ASSERT sets",
                   "each evaluation is one agent rollout plus judging; guard arms run paired guard-off/on trials and may cost more",
@@ -2868,6 +2960,8 @@
                   "chat-demo",
                   "--profile",
                   "fake",
+                  "--domain",
+                  "harness",
                   "--run-dir",
                   "<tmp>/runs",
                   "--dry-run-publish"
@@ -2881,6 +2975,8 @@
                   "chat-demo",
                   "--profile",
                   "fake",
+                  "--domain",
+                  "harness",
                   "--run-dir",
                   "<tmp>/runs",
                   "--dry-run-publish"
@@ -2894,6 +2990,8 @@
                   "chat-demo",
                   "--profile",
                   "fake",
+                  "--domain",
+                  "harness",
                   "--run-dir",
                   "<tmp>/runs",
                   "--dry-run-publish",
@@ -2909,7 +3007,7 @@
           "type": "TOOL_CALL_RESULT",
           "messageId": "<uuid-10>",
           "toolCallId": "<call-4>",
-          "content": "{\"argv\": [\"<python>\", \"-m\", \"ci_lab.chat.launch\", \"<tmp>/chat/drafts/chat-demo.json\"], \"cid\": \"chat-demo\", \"commands\": [[\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"new\", \"chat-demo\", \"--profile\", \"fake\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\"], [\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"calibrate\", \"chat-demo\", \"--profile\", \"fake\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\"], [\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"run\", \"chat-demo\", \"--profile\", \"fake\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\", \"--rounds\", \"1\"]], \"dry_run\": true, \"launched\": false, \"message\": \"dry-run: recorded the command; nothing was executed\", \"ok\": true, \"status\": \"dry_run\", \"target\": \"local\", \"warnings\": []}",
+          "content": "{\"argv\": [\"<python>\", \"-m\", \"ci_lab.chat.launch\", \"<tmp>/chat/drafts/chat-demo.json\"], \"cid\": \"chat-demo\", \"commands\": [[\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"new\", \"chat-demo\", \"--profile\", \"fake\", \"--domain\", \"harness\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\"], [\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"calibrate\", \"chat-demo\", \"--profile\", \"fake\", \"--domain\", \"harness\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\"], [\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"run\", \"chat-demo\", \"--profile\", \"fake\", \"--domain\", \"harness\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\", \"--rounds\", \"1\"]], \"dry_run\": true, \"launched\": false, \"message\": \"dry-run: recorded the command; nothing was executed\", \"ok\": true, \"status\": \"dry_run\", \"target\": \"local\", \"warnings\": []}",
           "role": "tool"
         },
         {
@@ -2919,7 +3017,8 @@
               "cid": "chat-demo",
               "target": "local",
               "rounds": 1,
-              "rationale": "scripted fake-profile draft",
+              "rationale": "improve the harness (fake profile)",
+              "domain": "harness",
               "hyper": {
                 "arms": 2,
                 "k": 1,
@@ -2930,7 +3029,7 @@
                 "budget": null,
                 "b_min": null,
                 "b_max": null,
-                "rrsi_profile": "local",
+                "rrsi_profile": "harness",
                 "rrsi": {},
                 "budget_tokens": null,
                 "max_arm_attempts": 2,
@@ -2940,7 +3039,7 @@
                   "agent",
                   "gepa",
                   "skillopt",
-                  "guard"
+                  "agl"
                 ],
                 "arm_budget_tokens": null,
                 "heartbeat_s": 30.0,
@@ -2954,19 +3053,19 @@
               "ignored_overrides": {},
               "estimate": {
                 "formula": "(aa_repeats + rounds * arms) * cases * k",
-                "cases": 26,
+                "cases": 15,
                 "k": 1,
                 "arms": 2,
                 "rounds": 1,
                 "aa_repeats": 5,
-                "evaluations": 182,
+                "evaluations": 105,
                 "breakdown": {
-                  "aa_calibration": 130,
-                  "arms": 52,
-                  "incumbent_reevaluation": 26
+                  "aa_calibration": 75,
+                  "arms": 30,
+                  "incumbent_reevaluation": 15
                 },
-                "evaluations_with_incumbent": 208,
-                "heldout_confirm_per_look": 22,
+                "evaluations_with_incumbent": 120,
+                "heldout_confirm_per_look": 30,
                 "notes": [
                   "cases = evolve-split cases of the frozen ASSERT sets",
                   "each evaluation is one agent rollout plus judging; guard arms run paired guard-off/on trials and may cost more",
@@ -2986,6 +3085,8 @@
                   "chat-demo",
                   "--profile",
                   "fake",
+                  "--domain",
+                  "harness",
                   "--run-dir",
                   "<tmp>/runs",
                   "--dry-run-publish"
@@ -2999,6 +3100,8 @@
                   "chat-demo",
                   "--profile",
                   "fake",
+                  "--domain",
+                  "harness",
                   "--run-dir",
                   "<tmp>/runs",
                   "--dry-run-publish"
@@ -3012,6 +3115,8 @@
                   "chat-demo",
                   "--profile",
                   "fake",
+                  "--domain",
+                  "harness",
                   "--run-dir",
                   "<tmp>/runs",
                   "--dry-run-publish",
@@ -3066,7 +3171,7 @@
                   "type": "function",
                   "function": {
                     "name": "draft_campaign",
-                    "arguments": "{\"cid\": \"chat-demo\", \"hyper\": {\"arms\": 2}, \"rounds\": 1, \"target\": \"local\", \"rationale\": \"scripted fake-profile draft\"}"
+                    "arguments": "{\"cid\": \"chat-demo\", \"hyper\": {\"arms\": 2}, \"rounds\": 1, \"target\": \"local\", \"rationale\": \"improve the harness (fake profile)\"}"
                   }
                 }
               ]
@@ -3074,25 +3179,25 @@
             {
               "id": "<uuid-2>",
               "role": "tool",
-              "content": "{\"draft\": {\"cid\": \"chat-demo\", \"commands\": [[\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"new\", \"chat-demo\", \"--profile\", \"fake\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\"], [\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"calibrate\", \"chat-demo\", \"--profile\", \"fake\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\"], [\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"run\", \"chat-demo\", \"--profile\", \"fake\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\", \"--rounds\", \"1\"]], \"created\": 0, \"estimate\": {\"aa_repeats\": 5, \"arms\": 2, \"breakdown\": {\"aa_calibration\": 130, \"arms\": 52, \"incumbent_reevaluation\": 26}, \"cases\": 26, \"evaluations\": 182, \"evaluations_with_incumbent\": 208, \"formula\": \"(aa_repeats + rounds * arms) * cases * k\", \"heldout_confirm_per_look\": 22, \"k\": 1, \"notes\": [\"cases = evolve-split cases of the frozen ASSERT sets\", \"each evaluation is one agent rollout plus judging; guard arms run paired guard-off/on trials and may cost more\", \"the held-out confirm look (`campaign confirm`) is not part of the launch chain\"], \"rounds\": 1}, \"hyper\": {\"aa_repeats\": 5, \"arm_budget_tokens\": null, \"arms\": 2, \"b_max\": null, \"b_min\": null, \"budget\": null, \"budget_tokens\": null, \"bus\": true, \"challenger\": \"det\", \"draft_prs\": true, \"guard_margin\": 0.0, \"guard_stochastic\": null, \"guard_trials\": null, \"heartbeat_s\": 30.0, \"holdout_looks\": 1, \"k\": 1, \"max_arm_attempts\": 2, \"max_parallel_arms\": 2, \"max_rounds\": 8, \"rrsi\": {}, \"rrsi_profile\": \"local\", \"seed\": 0, \"strategies\": [\"agent\", \"gepa\", \"skillopt\", \"guard\"]}, \"ignored_overrides\": {}, \"overrides\": {}, \"profile\": \"fake\", \"rationale\": \"scripted fake-profile draft\", \"rounds\": 1, \"target\": \"local\", \"warnings\": []}, \"ok\": true, \"path\": \"<tmp>/chat/drafts/chat-demo.json\", \"warnings\": []}",
+              "content": "{\"draft\": {\"cid\": \"chat-demo\", \"commands\": [[\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"new\", \"chat-demo\", \"--profile\", \"fake\", \"--domain\", \"harness\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\"], [\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"calibrate\", \"chat-demo\", \"--profile\", \"fake\", \"--domain\", \"harness\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\"], [\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"run\", \"chat-demo\", \"--profile\", \"fake\", \"--domain\", \"harness\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\", \"--rounds\", \"1\"]], \"created\": 0, \"domain\": \"harness\", \"estimate\": {\"aa_repeats\": 5, \"arms\": 2, \"breakdown\": {\"aa_calibration\": 75, \"arms\": 30, \"incumbent_reevaluation\": 15}, \"cases\": 15, \"evaluations\": 105, \"evaluations_with_incumbent\": 120, \"formula\": \"(aa_repeats + rounds * arms) * cases * k\", \"heldout_confirm_per_look\": 30, \"k\": 1, \"notes\": [\"cases = evolve-split cases of the frozen ASSERT sets\", \"each evaluation is one agent rollout plus judging; guard arms run paired guard-off/on trials and may cost more\", \"the held-out confirm look (`campaign confirm`) is not part of the launch chain\"], \"rounds\": 1}, \"hyper\": {\"aa_repeats\": 5, \"arm_budget_tokens\": null, \"arms\": 2, \"b_max\": null, \"b_min\": null, \"budget\": null, \"budget_tokens\": null, \"bus\": true, \"challenger\": \"det\", \"draft_prs\": true, \"guard_margin\": 0.0, \"guard_stochastic\": null, \"guard_trials\": null, \"heartbeat_s\": 30.0, \"holdout_looks\": 1, \"k\": 1, \"max_arm_attempts\": 2, \"max_parallel_arms\": 2, \"max_rounds\": 8, \"rrsi\": {}, \"rrsi_profile\": \"harness\", \"seed\": 0, \"strategies\": [\"agent\", \"gepa\", \"skillopt\", \"agl\"]}, \"ignored_overrides\": {}, \"overrides\": {}, \"profile\": \"fake\", \"rationale\": \"improve the harness (fake profile)\", \"rounds\": 1, \"target\": \"local\", \"warnings\": []}, \"ok\": true, \"path\": \"<tmp>/chat/drafts/chat-demo.json\", \"warnings\": []}",
               "toolCallId": "<call-1>"
             },
             {
               "id": "<uuid-2>",
               "role": "tool",
-              "content": "{\"draft\": {\"cid\": \"chat-demo\", \"commands\": [[\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"new\", \"chat-demo\", \"--profile\", \"fake\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\"], [\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"calibrate\", \"chat-demo\", \"--profile\", \"fake\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\"], [\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"run\", \"chat-demo\", \"--profile\", \"fake\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\", \"--rounds\", \"1\"]], \"created\": 0, \"estimate\": {\"aa_repeats\": 5, \"arms\": 2, \"breakdown\": {\"aa_calibration\": 130, \"arms\": 52, \"incumbent_reevaluation\": 26}, \"cases\": 26, \"evaluations\": 182, \"evaluations_with_incumbent\": 208, \"formula\": \"(aa_repeats + rounds * arms) * cases * k\", \"heldout_confirm_per_look\": 22, \"k\": 1, \"notes\": [\"cases = evolve-split cases of the frozen ASSERT sets\", \"each evaluation is one agent rollout plus judging; guard arms run paired guard-off/on trials and may cost more\", \"the held-out confirm look (`campaign confirm`) is not part of the launch chain\"], \"rounds\": 1}, \"hyper\": {\"aa_repeats\": 5, \"arm_budget_tokens\": null, \"arms\": 2, \"b_max\": null, \"b_min\": null, \"budget\": null, \"budget_tokens\": null, \"bus\": true, \"challenger\": \"det\", \"draft_prs\": true, \"guard_margin\": 0.0, \"guard_stochastic\": null, \"guard_trials\": null, \"heartbeat_s\": 30.0, \"holdout_looks\": 1, \"k\": 1, \"max_arm_attempts\": 2, \"max_parallel_arms\": 2, \"max_rounds\": 8, \"rrsi\": {}, \"rrsi_profile\": \"local\", \"seed\": 0, \"strategies\": [\"agent\", \"gepa\", \"skillopt\", \"guard\"]}, \"ignored_overrides\": {}, \"overrides\": {}, \"profile\": \"fake\", \"rationale\": \"scripted fake-profile draft\", \"rounds\": 1, \"target\": \"local\", \"warnings\": []}, \"ok\": true, \"path\": \"<tmp>/chat/drafts/chat-demo.json\", \"warnings\": []}",
+              "content": "{\"draft\": {\"cid\": \"chat-demo\", \"commands\": [[\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"new\", \"chat-demo\", \"--profile\", \"fake\", \"--domain\", \"harness\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\"], [\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"calibrate\", \"chat-demo\", \"--profile\", \"fake\", \"--domain\", \"harness\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\"], [\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"run\", \"chat-demo\", \"--profile\", \"fake\", \"--domain\", \"harness\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\", \"--rounds\", \"1\"]], \"created\": 0, \"domain\": \"harness\", \"estimate\": {\"aa_repeats\": 5, \"arms\": 2, \"breakdown\": {\"aa_calibration\": 75, \"arms\": 30, \"incumbent_reevaluation\": 15}, \"cases\": 15, \"evaluations\": 105, \"evaluations_with_incumbent\": 120, \"formula\": \"(aa_repeats + rounds * arms) * cases * k\", \"heldout_confirm_per_look\": 30, \"k\": 1, \"notes\": [\"cases = evolve-split cases of the frozen ASSERT sets\", \"each evaluation is one agent rollout plus judging; guard arms run paired guard-off/on trials and may cost more\", \"the held-out confirm look (`campaign confirm`) is not part of the launch chain\"], \"rounds\": 1}, \"hyper\": {\"aa_repeats\": 5, \"arm_budget_tokens\": null, \"arms\": 2, \"b_max\": null, \"b_min\": null, \"budget\": null, \"budget_tokens\": null, \"bus\": true, \"challenger\": \"det\", \"draft_prs\": true, \"guard_margin\": 0.0, \"guard_stochastic\": null, \"guard_trials\": null, \"heartbeat_s\": 30.0, \"holdout_looks\": 1, \"k\": 1, \"max_arm_attempts\": 2, \"max_parallel_arms\": 2, \"max_rounds\": 8, \"rrsi\": {}, \"rrsi_profile\": \"harness\", \"seed\": 0, \"strategies\": [\"agent\", \"gepa\", \"skillopt\", \"agl\"]}, \"ignored_overrides\": {}, \"overrides\": {}, \"profile\": \"fake\", \"rationale\": \"improve the harness (fake profile)\", \"rounds\": 1, \"target\": \"local\", \"warnings\": []}, \"ok\": true, \"path\": \"<tmp>/chat/drafts/chat-demo.json\", \"warnings\": []}",
               "toolCallId": "<call-1>"
             },
             {
               "id": "<uuid-2>",
               "role": "tool",
-              "content": "{\"draft\": {\"cid\": \"chat-demo\", \"commands\": [[\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"new\", \"chat-demo\", \"--profile\", \"fake\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\"], [\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"calibrate\", \"chat-demo\", \"--profile\", \"fake\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\"], [\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"run\", \"chat-demo\", \"--profile\", \"fake\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\", \"--rounds\", \"1\"]], \"created\": 0, \"estimate\": {\"aa_repeats\": 5, \"arms\": 2, \"breakdown\": {\"aa_calibration\": 130, \"arms\": 52, \"incumbent_reevaluation\": 26}, \"cases\": 26, \"evaluations\": 182, \"evaluations_with_incumbent\": 208, \"formula\": \"(aa_repeats + rounds * arms) * cases * k\", \"heldout_confirm_per_look\": 22, \"k\": 1, \"notes\": [\"cases = evolve-split cases of the frozen ASSERT sets\", \"each evaluation is one agent rollout plus judging; guard arms run paired guard-off/on trials and may cost more\", \"the held-out confirm look (`campaign confirm`) is not part of the launch chain\"], \"rounds\": 1}, \"hyper\": {\"aa_repeats\": 5, \"arm_budget_tokens\": null, \"arms\": 2, \"b_max\": null, \"b_min\": null, \"budget\": null, \"budget_tokens\": null, \"bus\": true, \"challenger\": \"det\", \"draft_prs\": true, \"guard_margin\": 0.0, \"guard_stochastic\": null, \"guard_trials\": null, \"heartbeat_s\": 30.0, \"holdout_looks\": 1, \"k\": 1, \"max_arm_attempts\": 2, \"max_parallel_arms\": 2, \"max_rounds\": 8, \"rrsi\": {}, \"rrsi_profile\": \"local\", \"seed\": 0, \"strategies\": [\"agent\", \"gepa\", \"skillopt\", \"guard\"]}, \"ignored_overrides\": {}, \"overrides\": {}, \"profile\": \"fake\", \"rationale\": \"scripted fake-profile draft\", \"rounds\": 1, \"target\": \"local\", \"warnings\": []}, \"ok\": true, \"path\": \"<tmp>/chat/drafts/chat-demo.json\", \"warnings\": []}",
+              "content": "{\"draft\": {\"cid\": \"chat-demo\", \"commands\": [[\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"new\", \"chat-demo\", \"--profile\", \"fake\", \"--domain\", \"harness\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\"], [\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"calibrate\", \"chat-demo\", \"--profile\", \"fake\", \"--domain\", \"harness\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\"], [\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"run\", \"chat-demo\", \"--profile\", \"fake\", \"--domain\", \"harness\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\", \"--rounds\", \"1\"]], \"created\": 0, \"domain\": \"harness\", \"estimate\": {\"aa_repeats\": 5, \"arms\": 2, \"breakdown\": {\"aa_calibration\": 75, \"arms\": 30, \"incumbent_reevaluation\": 15}, \"cases\": 15, \"evaluations\": 105, \"evaluations_with_incumbent\": 120, \"formula\": \"(aa_repeats + rounds * arms) * cases * k\", \"heldout_confirm_per_look\": 30, \"k\": 1, \"notes\": [\"cases = evolve-split cases of the frozen ASSERT sets\", \"each evaluation is one agent rollout plus judging; guard arms run paired guard-off/on trials and may cost more\", \"the held-out confirm look (`campaign confirm`) is not part of the launch chain\"], \"rounds\": 1}, \"hyper\": {\"aa_repeats\": 5, \"arm_budget_tokens\": null, \"arms\": 2, \"b_max\": null, \"b_min\": null, \"budget\": null, \"budget_tokens\": null, \"bus\": true, \"challenger\": \"det\", \"draft_prs\": true, \"guard_margin\": 0.0, \"guard_stochastic\": null, \"guard_trials\": null, \"heartbeat_s\": 30.0, \"holdout_looks\": 1, \"k\": 1, \"max_arm_attempts\": 2, \"max_parallel_arms\": 2, \"max_rounds\": 8, \"rrsi\": {}, \"rrsi_profile\": \"harness\", \"seed\": 0, \"strategies\": [\"agent\", \"gepa\", \"skillopt\", \"agl\"]}, \"ignored_overrides\": {}, \"overrides\": {}, \"profile\": \"fake\", \"rationale\": \"improve the harness (fake profile)\", \"rounds\": 1, \"target\": \"local\", \"warnings\": []}, \"ok\": true, \"path\": \"<tmp>/chat/drafts/chat-demo.json\", \"warnings\": []}",
               "toolCallId": "<call-1>"
             },
             {
               "id": "<uuid-3>",
               "role": "assistant",
-              "content": "Drafted chat-demo: 1 round(s), target local, about 182 evaluations. Say \"launch chat-demo\" to start it."
+              "content": "Drafted chat-demo: 1 round(s), target local, about 105 evaluations. Say \"launch chat-demo\" to start it."
             },
             {
               "id": "user-2",
@@ -3117,7 +3222,7 @@
             {
               "id": "approval-response-<interrupt-3>",
               "role": "tool",
-              "content": "{\"argv\": [\"<python>\", \"-m\", \"ci_lab.chat.launch\", \"<tmp>/chat/drafts/chat-demo.json\"], \"cid\": \"chat-demo\", \"commands\": [[\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"new\", \"chat-demo\", \"--profile\", \"fake\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\"], [\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"calibrate\", \"chat-demo\", \"--profile\", \"fake\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\"], [\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"run\", \"chat-demo\", \"--profile\", \"fake\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\", \"--rounds\", \"1\"]], \"dry_run\": true, \"launched\": false, \"message\": \"dry-run: recorded the command; nothing was executed\", \"ok\": true, \"status\": \"dry_run\", \"target\": \"local\", \"warnings\": []}",
+              "content": "{\"argv\": [\"<python>\", \"-m\", \"ci_lab.chat.launch\", \"<tmp>/chat/drafts/chat-demo.json\"], \"cid\": \"chat-demo\", \"commands\": [[\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"new\", \"chat-demo\", \"--profile\", \"fake\", \"--domain\", \"harness\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\"], [\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"calibrate\", \"chat-demo\", \"--profile\", \"fake\", \"--domain\", \"harness\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\"], [\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"run\", \"chat-demo\", \"--profile\", \"fake\", \"--domain\", \"harness\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\", \"--rounds\", \"1\"]], \"dry_run\": true, \"launched\": false, \"message\": \"dry-run: recorded the command; nothing was executed\", \"ok\": true, \"status\": \"dry_run\", \"target\": \"local\", \"warnings\": []}",
               "toolCallId": "<call-4>"
             },
             {
