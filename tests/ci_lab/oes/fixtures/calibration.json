@@ -139,8 +139,8 @@
       "aggregation": "mean"
     },
     {
-      "id": "suite_score.identity",
-      "name": "identity suite score",
+      "id": "suite_score.change",
+      "name": "change suite score",
       "role": "diagnostic",
       "direction": "increase_is_good",
       "type": "ratio",
@@ -148,8 +148,8 @@
       "aggregation": "mean"
     },
     {
-      "id": "suite_score.refund",
-      "name": "refund suite score",
+      "id": "suite_score.identity",
+      "name": "identity suite score",
       "role": "diagnostic",
       "direction": "increase_is_good",
       "type": "ratio",
@@ -258,6 +258,19 @@
         "decisionImpact": "informational"
       },
       {
+        "metricId": "suite_score.change",
+        "comparison": {
+          "baselineVariantId": "rep0",
+          "variantId": "rep1"
+        },
+        "role": "diagnostic",
+        "baselineValue": 0.5,
+        "variantValue": 0.51,
+        "absoluteDifference": 0.01,
+        "relativeDifference": 0.02,
+        "decisionImpact": "informational"
+      },
+      {
         "metricId": "suite_score.identity",
         "comparison": {
           "baselineVariantId": "rep0",
@@ -268,19 +281,6 @@
         "variantValue": 0.61,
         "absoluteDifference": 0.01,
         "relativeDifference": 0.016667,
-        "decisionImpact": "informational"
-      },
-      {
-        "metricId": "suite_score.refund",
-        "comparison": {
-          "baselineVariantId": "rep0",
-          "variantId": "rep1"
-        },
-        "role": "diagnostic",
-        "baselineValue": 0.5,
-        "variantValue": 0.51,
-        "absoluteDifference": 0.01,
-        "relativeDifference": 0.02,
         "decisionImpact": "informational"
       },
       {
@@ -375,6 +375,19 @@
         "decisionImpact": "informational"
       },
       {
+        "metricId": "suite_score.change",
+        "comparison": {
+          "baselineVariantId": "rep0",
+          "variantId": "rep2"
+        },
+        "role": "diagnostic",
+        "baselineValue": 0.5,
+        "variantValue": 0.505,
+        "absoluteDifference": 0.005,
+        "relativeDifference": 0.01,
+        "decisionImpact": "informational"
+      },
+      {
         "metricId": "suite_score.identity",
         "comparison": {
           "baselineVariantId": "rep0",
@@ -385,19 +398,6 @@
         "variantValue": 0.605,
         "absoluteDifference": 0.005,
         "relativeDifference": 0.008333,
-        "decisionImpact": "informational"
-      },
-      {
-        "metricId": "suite_score.refund",
-        "comparison": {
-          "baselineVariantId": "rep0",
-          "variantId": "rep2"
-        },
-        "role": "diagnostic",
-        "baselineValue": 0.5,
-        "variantValue": 0.505,
-        "absoluteDifference": 0.005,
-        "relativeDifference": 0.01,
         "decisionImpact": "informational"
       },
       {
@@ -573,7 +573,7 @@
     ],
     "codeVersion": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     "metricDefinitionVersion": "ci-lab-metrics/0.1.0",
-    "resultHash": "sha256:8e4a9ab44a6a88004aa9e91019b827af3e29977cad4dfb736891dc215f52261d"
+    "resultHash": "sha256:44a5e84e483f8c523d362c161948529dd25a4845645986e6eeb1b9a873c8321a"
   },
   "extensions": {
     "com.microsoft.ci.rrsi": {
@@ -602,5 +602,5 @@
       "supersedes": null
     }
   },
-  "contentHash": "sha256:042c2f946d0d695ae8d9050bdd3b68321f51b04e590dfe5c40fe919f4a75fac9"
+  "contentHash": "sha256:632ae37ab8f6e76431574734ac73b1c58b34ec0695d8034e70f1093cb6518274"
 }

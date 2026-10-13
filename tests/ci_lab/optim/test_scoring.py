@@ -109,7 +109,7 @@ def test_resolve_async_from_worker_thread_uses_main_loop():
 
 def test_domain_scorer_evolve_only_and_cached(worktree, domain, tmp_path):
     s = DomainEvolveScorer(domain, worktree, tmp_path / "scratch", experiment_id="e", variant="a1")
-    cand = {PROMPT: "Offer a refund and tracking."}
+    cand = {PROMPT: "Offer a change and tracking."}
 
     async def run():
         r1 = await s(cand, ["c1", "c2", "c3"])

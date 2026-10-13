@@ -18,7 +18,7 @@ from ci_lab.optim.scoring import (
 )
 
 PROMPT = "harness/prompts/system.md"
-KW = {"c1": "refund", "c2": "tracking", "c3": "escalate", "c4": "polite", "c5": "verify", "c6": "apologise"}
+KW = {"c1": "change", "c2": "tracking", "c3": "escalate", "c4": "polite", "c5": "verify", "c6": "apologise"}
 
 
 class RecordingScorer:
@@ -100,12 +100,12 @@ def test_only_evolve_cases_reach_domain(worktree, domain, tmp_path):
 
     async def go():
         return await optimize_texts({PROMPT: "hi"}, scorer, scorer.evolve_cases(),
-                                    reflection_lm=fake_lm("refund tracking escalate polite"),
+                                    reflection_lm=fake_lm("change tracking escalate polite"),
                                     config=GepaConfig(max_metric_calls=24))
 
     res = run(go())
     assert set(domain.splits_called) == {"evolve"}
-    assert res.changed[PROMPT] == "refund tracking escalate polite"
+    assert res.changed[PROMPT] == "change tracking escalate polite"
     assert res.cost.scorer_tokens == scorer.tokens_spent > 0
 
 
@@ -132,7 +132,7 @@ def test_async_scorer_runs_on_caller_loop():
         return RecordingScorer()(cand, cases)
 
     async def go():
-        res = await optimize_texts({PROMPT: "x"}, scorer, list(KW), reflection_lm=fake_lm("refund"),
+        res = await optimize_texts({PROMPT: "x"}, scorer, list(KW), reflection_lm=fake_lm("change"),
                                    config=GepaConfig(max_metric_calls=12))
         return res, asyncio.get_running_loop()
 

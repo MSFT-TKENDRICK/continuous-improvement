@@ -13,7 +13,7 @@ from ci_lab.optim.skillopt import (
 
 SKILL = "harness/skills/harness-editing/SKILL.md"
 MEMORY = "harness/skills/harness-editing/memory.md"
-KW = {"c1": "refund", "c2": "tracking", "c3": "escalate", "c4": "polite", "c5": "verify", "c6": "apologise"}
+KW = {"c1": "change", "c2": "tracking", "c3": "escalate", "c4": "polite", "c5": "verify", "c6": "apologise"}
 GOOD_RULE = "Always: " + ", ".join(KW.values()) + "."
 
 
@@ -92,7 +92,7 @@ def test_budget_too_small_is_noop():
 
 def test_memory_and_evolve_only_domain(worktree, domain, tmp_path):
     scorer = DomainEvolveScorer(domain, worktree, tmp_path / "scratch", experiment_id="e", variant="a")
-    lm = edits_lm("Offer a refund, share tracking, escalate when stuck, stay polite.")
+    lm = edits_lm("Offer a change, share tracking, escalate when stuck, stay polite.")
     skill = (SKILL, (worktree / SKILL).read_text())
     memory = (MEMORY, (worktree / MEMORY).read_text())
 

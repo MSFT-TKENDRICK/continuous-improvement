@@ -1,6 +1,6 @@
 """Every committed OES envelope validates against the vendored schemas; tampering is caught.
 
-Also builds a sleep envelope from the real order-support evaluator pin (a ``sha256:``-prefixed
+Also builds a sleep envelope from the real harness evaluator pin (a ``sha256:``-prefixed
 tree digest), which the OES ``evaluatorTree`` pattern only accepts as bare hex.
 """
 
@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from ci_lab.domain.order_support import OrderSupportDomain
+from ci_lab.domain.harness import HarnessDomain
 from ci_lab.oes import validate_envelope
 from ci_lab.oes.build import sleep_envelope
 from ci_lab.oes.validate import iter_rule_ids, validate_file
@@ -55,8 +55,8 @@ def test_tampered_envelope_is_rejected(path):
     assert iter_rule_ids(errors)
 
 
-def test_sleep_envelope_from_real_order_support_pin_validates(fx):
-    pin = OrderSupportDomain(cases=[]).pin()
+def test_sleep_envelope_from_real_harness_pin_validates(fx):
+    pin = HarnessDomain(cases=[]).pin()
     assert pin.evaluator_tree.startswith("sha256:") and pin.judge_provider == "s1"
     doc = sleep_envelope(
         "2026-10-08", incumbent=fx.make_eval(fx.T0, pin=pin), candidate=fx.make_eval(fx.T1, base=0.65, pin=pin),
@@ -66,7 +66,7 @@ def test_sleep_envelope_from_real_order_support_pin_validates(fx):
         assert_gate={"passed": True, "ciLowerBound": 0.01}, delta=0.02, budget_used={"tasks": 9},
         budget_limits={"tasks": 50}, candidate_digest="sha256:" + "3" * 64,
         incumbent_digest="sha256:" + "4" * 64, night_index=1,
-        skill_path="src/order_support/harness/skills/order-support/SKILL.md",
+        skill_path="harness/skills/harness-editing/SKILL.md",
         exported_at=fx.AT, source_version=fx.VERSION)
     assert validate_envelope(doc) == []
     ext_pin = doc["extensions"]["com.microsoft.ci.sleep"]["evaluatorPin"]

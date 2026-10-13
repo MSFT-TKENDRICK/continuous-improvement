@@ -7,12 +7,19 @@ from types import SimpleNamespace
 
 import pytest
 
-from ci_lab.contracts import ArmResult, Edit, EvalResult, EvaluatorPin, TaskScore, Violation
+from ci_lab.contracts import (
+    ArmResult,
+    Edit,
+    EvalResult,
+    EvaluatorPin,
+    TaskScore,
+    Violation,
+)
 from ci_lab.rrsi.history import HistoryRecord
 from ci_lab.rrsi.params import profile
 
 PIN = EvaluatorPin(evaluator_tree="evaltree", judge_model="judge", judge_provider="prov")
-CRIT = Violation(rule_id="refund.unverified_identity", severity="critical", detail="x")
+CRIT = Violation(rule_id="change.unverified_identity", severity="critical", detail="x")
 MAJOR = Violation(rule_id="pii.early", severity="major", detail="y")
 
 
@@ -52,7 +59,8 @@ def rec(round_no: int, arm_name: str, components: Sequence[str], delta_s: float 
 
 def hp(**kw):
     """Smoke profile with dyadic, hand-computable cost knobs (beta0=0.25, beta1=1)."""
-    base = dict(k=1, n_bootstrap=400, w_s=0.0, w_c=15.0, w_n=0.5, beta0=0.25, beta1=1.0)
+    base = {"k": 1, "n_bootstrap": 400, "w_s": 0.0, "w_c": 15.0, "w_n": 0.5,
+            "beta0": 0.25, "beta1": 1.0}
     base.update(kw)
     return profile("smoke", **base)
 

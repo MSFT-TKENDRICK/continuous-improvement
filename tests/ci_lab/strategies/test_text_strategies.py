@@ -7,19 +7,25 @@ from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
 from ci_lab import obs
-from ci_lab.contracts import ATTR_STRATEGY, SPAN_OPTIMIZER, ArmContext, ArmDirective, Edit, Profile
+from ci_lab.contracts import (
+    ATTR_STRATEGY,
+    SPAN_OPTIMIZER,
+    ArmContext,
+    ArmDirective,
+    Edit,
+    Profile,
+)
 from ci_lab.optim.gepa import GepaConfig
 from ci_lab.optim.lm import make_lm
 from ci_lab.optim.skillopt import SkillOptConfig
 from ci_lab.optim.targets import TargetError
 from ci_lab.strategies import GepaStrategy, SkillOptStrategy, get_strategy
-
 from ci_lab.strategies.base import COMMIT_TRAILER
 
-PROMPT = "src/order_support/harness/prompts/system.md"
-SKILL = "src/order_support/harness/skills/order-support/SKILL.md"
-MEMORY = "src/order_support/harness/skills/order-support/memory.md"
-ALL_KW = "refund tracking escalate polite"
+PROMPT = "harness/prompts/system.md"
+SKILL = "harness/skills/harness-editing/SKILL.md"
+MEMORY = "harness/skills/harness-editing/memory.md"
+ALL_KW = "change tracking escalate polite"
 
 
 def git(cwd, *args):
@@ -87,16 +93,16 @@ def test_gepa_edit_budget_caps_targets(worktree, domain, tmp_path):
     edits = asyncio.run(s.propose(c))
     assert len(edits) == 1 and edits[0].files == (PROMPT,)
     assert sorted(s.last[0].seed) == [PROMPT]  # only budgeted components entered the optimizer
-    assert (worktree / SKILL).read_text() == "# Order support\nBe helpful.\n"
+    assert (worktree / SKILL).read_text() == "# Harness editing\nMake bounded harness changes.\n"
 
 
 def test_gepa_rejects_off_surface_focus(worktree, domain, tmp_path):
     (worktree / "README.md").write_text("x")
-    guards = worktree / "src/order_support/harness/guards/rules.yaml"
+    guards = worktree / "harness/guards/rules.yaml"
     guards.parent.mkdir(parents=True)
     guards.write_text("rules: []\n")
     s = GepaStrategy(domain=domain, lm=gepa_lm())
-    for focus in ("README.md", "src/order_support/harness/guards/rules.yaml"):
+    for focus in ("README.md", "harness/guards/rules.yaml"):
         with pytest.raises(TargetError):
             asyncio.run(s.propose(mkctx(worktree, tmp_path, "gepa", focus=(focus,))))
 
@@ -122,20 +128,20 @@ def test_gepa_uses_make_lm_for_profile_when_no_lm_injected(worktree, domain, tmp
     assert seen == [(Profile.FAKE, "optimizer")]
 
 
-def test_skillopt_strategy_skill_and_memory(worktree, domain, tmp_path, spans):
+def test_skillopt_strategy_ignores_agl_owned_memory(worktree, domain, tmp_path, spans):
     s = SkillOptStrategy(domain=domain, lm=skill_lm(), config=SkillOptConfig(max_metric_calls=60))
     c = mkctx(worktree, tmp_path, "skillopt", focus=("skill", "memory"), budget=2)
     edits = asyncio.run(s.propose(c))
-    assert [e.files for e in edits][0] == (SKILL,) and len(edits) <= 2
-    assert all(e.component in ("skill", "memory") for e in edits)
+    assert [e.files for e in edits] == [(SKILL,)]
+    assert (worktree / MEMORY).read_text() == "- remember harness lessons\n"
     assert f"Always {ALL_KW}." in (worktree / SKILL).read_text()
     assert set(domain.splits_called) == {"evolve"}
-    art = tmp_path / "run" / "optimizer" / "arm-2-skillopt" / "order-support"
+    art = tmp_path / "run" / "optimizer" / "arm-2-skillopt" / "harness-editing"
     assert (art / "best_skill.md").read_text() == (worktree / SKILL).read_text()
-    assert (art / "best_memory.md").exists()
+    assert not (art / "best_memory.md").exists()
     rep = json.loads((tmp_path / "run" / "optimizer" / "arm-2-skillopt.json").read_text())
     assert rep["runs"][0]["diagnostics"]["accepted"] is True
-    assert sorted(rep["runs"][0]["targets"]) == sorted([MEMORY, SKILL])
+    assert rep["runs"][0]["targets"] == [SKILL]
     (sp,) = spans.get_finished_spans()
     assert sp.attributes[ATTR_STRATEGY] == "skillopt" and sp.attributes["ci.edits"] == len(edits)
 
@@ -146,7 +152,7 @@ def test_skillopt_budget_one_skips_memory(worktree, domain, tmp_path):
     edits = asyncio.run(s.propose(c))
     assert [e.files for e in edits] == [(SKILL,)]
     assert s.last[0].seed.keys() == {SKILL}
-    assert (worktree / MEMORY).read_text() == "- remember things\n"
+    assert (worktree / MEMORY).read_text() == "- remember harness lessons\n"
 
 
 def test_skillopt_gate_rejection_gives_no_edit(worktree, domain, tmp_path):

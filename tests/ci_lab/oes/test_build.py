@@ -82,8 +82,8 @@ def test_round_envelope_ship(envelopes, fx):
     assert ext["multipleTesting"] == "exploratory" and ext["selection"]["winner"] == "v1"
     assert ext["ciLowerBound"] == 0.04 and ext["lineage"]["parentExperimentId"] == "tone-a1-cal"
     assert ext["variants"]["v1"]["edits"][0] == {
-        "component": "prompt", "hypothesis": "v1: clarify refund policy", "commit": fx.H1,
-        "files": ["src/order_support/harness/prompts/system.md"]}
+        "component": "prompt", "hypothesis": "v1: clarify change policy", "commit": fx.H1,
+        "files": ["harness/prompts/system.md"]}
     assert ext["variants"]["v3"]["critic"]["passed"] is False and ext["variants"]["v3"]["status"] == "rejected"
     assert ext["evaluatorPin"]["servedJudgeModels"] == ["gpt-judge-2026-09"]
     # v2 has a critical violation the incumbent lacks: its safety guardrail blocks ship
