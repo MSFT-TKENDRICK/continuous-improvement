@@ -68,6 +68,17 @@ class EditBudgetExceeded(ValueError):
     """A strategy produced more Edits than ``ArmDirective.edit_budget``."""
 
 
+def optimizer_commit_message(arm: str, strategy: str, component: str, hypothesis: str) -> str:
+    """Commit message with the trailers required by the frozen critic."""
+    clean = " ".join(hypothesis.split())
+    subject = f"{arm}: {strategy} {clean}"[:200].rstrip()
+    return (
+        f"{subject}\n\n"
+        f"RRSI-Component: {component}\n"
+        f"RRSI-Hypothesis: {clean}"
+    )
+
+
 @contextmanager
 def optimizer_span(strategy: str, ctx: ArmContext) -> Iterator[Any]:
     """``ci.optimizer`` span around one strategy's proposal work."""
@@ -101,7 +112,9 @@ def git_commit(worktree: Path, files: Sequence[str], message: str) -> str:
     except subprocess.CalledProcessError:
         ident = ["-c", f"user.name={FALLBACK_IDENTITY[0]}", "-c", f"user.email={FALLBACK_IDENTITY[1]}"]
     _git(worktree, "add", "--", *files)
-    _git(worktree, *ident, "commit", "-q", "-m", message, "-m", COMMIT_TRAILER, "--", *files)
+    body = message.rstrip()
+    separator = "\n" if body.splitlines()[-1].startswith("RRSI-") else "\n\n"
+    _git(worktree, *ident, "commit", "-q", "-m", f"{body}{separator}{COMMIT_TRAILER}", "--", *files)
     return _git(worktree, "rev-parse", "HEAD")
 
 

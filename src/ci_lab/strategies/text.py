@@ -22,6 +22,7 @@ from ci_lab.strategies.base import (
     check_edit_budget,
     evolve_cases_for,
     git_commit,
+    optimizer_commit_message,
     optimizer_dir,
     optimizer_span,
     write_report,
@@ -106,7 +107,8 @@ class TextOptimizerStrategy:
                 continue
             t.write(ctx.worktree, opt.changed[t.id])
             hyp = self._hypothesis(t, opt)
-            sha = self.committer(Path(ctx.worktree), [t.path], f"{ctx.directive.arm}: {hyp}"[:200])
+            message = optimizer_commit_message(ctx.directive.arm, self.name, comp, hyp)
+            sha = self.committer(Path(ctx.worktree), [t.path], message)
             edits.append(Edit(component=comp, hypothesis=hyp, files=(t.path,), commit=sha))
         for opt in opts:
             if opt.changed:

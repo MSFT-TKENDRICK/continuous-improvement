@@ -88,7 +88,13 @@ def test_agl_commits_one_contained_structural_edit(
     edits = asyncio.run(algorithm.propose(context(worktree, tmp_path, ("loop",))))
     assert edits == [Edit("loop", "tighten proposer nudges", (path,), "abc123")]
     assert "proposer: {max_nudges: 1" in (worktree / path).read_text(encoding="utf-8")
-    assert committed == [(worktree, (path,), "v1: agl tighten proposer nudges")]
+    expected_message = "\n".join((
+        "v1: agl tighten proposer nudges",
+        "",
+        "RRSI-Component: loop",
+        "RRSI-Hypothesis: tighten proposer nudges",
+    ))
+    assert committed == [(worktree, (path,), expected_message)]
     assert HarnessTree(worktree / "harness").validate() == []
     assert "Prefer deletion or tightening" in "\n".join(m.text for m in client.requests[1][0])
     report = json.loads((tmp_path / "run" / "optimizer" / "v1-agl.json").read_text(encoding="utf-8"))
