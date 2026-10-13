@@ -36,7 +36,7 @@ def _decision(i: int, decision: str = "allow") -> dict:
 def test_doctor_healthy_then_kill_switch_and_bad_mode(iso, capsys, monkeypatch):
     code, rep = _run(capsys, "doctor")
     assert code == 0 and rep["ok"], rep
-    assert set(rep["policies"]) == {"order_support", "meta_agents", "campaign"}
+    assert set(rep["policies"]) == {"order_support", "meta_agents", "campaign", "harness"}
     assert all(p["points"] and not p["missing_policies"] for p in rep["policies"].values())
     assert rep["mode"]["value"] == "enforce" and all(rep["agt_modules"].values())
     assert rep["audit"]["ok"] and rep["audit"]["entries"] == 0 and not rep["kill_switch"]["engaged"]

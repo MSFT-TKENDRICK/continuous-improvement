@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from importlib import resources
+from pathlib import Path
 
 import pytest
 import yaml
@@ -116,6 +117,52 @@ def test_meta_write_tools_cannot_touch_protected_paths(path, decision):
 def test_meta_kill_switch_blocks_tools():
     snap = {"call": {"name": "read_file", "arguments": {}}, "governance": {"kill_switch": True}}
     assert _eval("meta_agents", "pre_tool_call", snap).verdict.reason == "kill_switch_engaged"
+
+
+@pytest.mark.parametrize(("name", "args", "decision", "reason"), [
+    ("read_file", {"path": "prompts/analyst.md"}, "allow", None),
+    ("harness.list_components", {}, "allow", None),
+    ("read_file", {"path": "../secrets.txt"}, "deny", "path_outside_root"),
+    ("read_file", {"path": "C:\\secrets.txt"}, "deny", "path_outside_root"),
+    ("unknown_tool", {}, "deny", "tool_not_allowed"),
+    ("run_code", {"code": "import socket\nsocket.create_connection(('example.com', 443))"},
+     "deny", "network_import_forbidden"),
+    ("run_code", {"code": "open('secrets.txt').read()"}, "deny", "unsafe_call_forbidden"),
+    ("run_code", {"code": "import json\nprint(json.dumps({'ok': True}))"}, "allow", None),
+])
+def test_harness_tool_policy(name, args, decision, reason):
+    snap = {"agent": {"name": "CiFailureAnalyst"},
+            "call": {"name": name, "arguments": args}}
+    verdict = _eval("harness", "pre_tool_call", snap).verdict
+    assert (verdict.decision, verdict.reason) == (decision, reason)
+
+
+def test_harness_policy_rejects_oversized_arguments_and_cross_agent_tools():
+    huge = {"agent": {"name": "CiFailureAnalyst"},
+            "call": {"name": "read_file", "arguments": {"path": "x", "padding": "x" * 32768}}}
+    assert _eval("harness", "pre_tool_call", huge).verdict.reason == "arguments_too_large"
+    wrong_agent = {"agent": {"name": "CiAnalyst"},
+                   "call": {"name": "write_file", "arguments": {"path": "prompts/x.md"}}}
+    assert _eval("harness", "pre_tool_call", wrong_agent).verdict.reason == "tool_not_allowed"
+
+
+def test_harness_policy_matches_frozen_agents_and_mcp_caps():
+    policy = load_manifest(
+        resources.files("ci_lab.governance.policies").joinpath("harness.acs.yaml").read_text()
+    ).policies["tools"]
+    registry = yaml.safe_load(
+        resources.files("ci_lab.mcp").joinpath("servers.yaml").read_text()
+    )
+    caps = registry["code_mode"]
+    assert policy["timeout_s_max"] == caps["timeout_s_max"]
+    assert policy["max_output_chars_max"] == caps["max_output_chars_max"]
+    assert policy["allowed_imports"] == caps["allowed_imports"]
+    for path in Path("harness/agents").iterdir():
+        if path.suffix != ".yaml":
+            continue
+        spec = yaml.safe_load(path.read_text())
+        assert {tool["name"] for tool in spec["tools"]} <= set(
+            policy["agent_tools"][spec["name"]])
 
 
 def test_model_allowlist(monkeypatch):

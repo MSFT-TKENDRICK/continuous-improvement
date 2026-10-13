@@ -1,6 +1,6 @@
 """MAF host for the packaged ACS policies and the single governed agent factory.
 
-:class:`Governance` binds one policy (``order_support`` / ``meta_agents``) to one agent and
+:class:`Governance` binds one packaged policy to one agent and
 yields MAF middleware for six ACS intervention points: agent ``input``/``output``, chat
 ``pre_model_call``/``post_model_call`` and function ``pre_tool_call``/``post_tool_call`` (points
 absent from the manifest are skipped). In ``enforce`` a deny sets a refusal result and raises
@@ -43,7 +43,8 @@ from ci_lab.governance.hypervisor import KillSwitchAdapter
 from ci_lab.governance.policies import governance_mode, load_policy
 from ci_lab.guards.recorder import json_args, structured_result
 
-__all__ = ["Governance", "default_did", "govern", "governed_agent", "governed_declarative", "governed_harness_agent"]
+__all__ = ["Governance", "default_did", "govern", "governed_agent", "governed_declarative",
+           "governed_harness_agent", "harness_mcp_before_call"]
 
 GOVERNED_KEY = "ci_lab.governance"
 HISTORY_KEY = "ci_lab.governance.history"
@@ -128,6 +129,31 @@ class Governance:
 
     def middleware(self) -> list[Any]:
         return [_AgentGate(self), _ChatGate(self), _ToolGate(self)]
+
+
+def harness_mcp_before_call(
+    *,
+    agent_name: str,
+    allowed_tools: Collection[str] | None = None,
+    audit: AuditTrail | Path | str | None = None,
+) -> Callable[[str, str, dict[str, Any]], Awaitable[str | None]]:
+    """Build the fail-closed ACS hook used by harness MCP calls."""
+    gov = Governance("harness", agent_name=agent_name, audit=audit)
+    case_allow = None if allowed_tools is None else frozenset(allowed_tools)
+
+    async def before_call(server: str, tool: str, args: dict[str, Any]) -> str | None:
+        if case_allow is not None and tool not in case_allow:
+            return "tool is outside the frozen case exposure"
+        name = f"{server}.{tool}"
+        try:
+            await gov.check("pre_tool_call", {"call": {"name": name, "arguments": args}})
+        except AgentControlInterruption as exc:
+            return _refusal(exc)
+        except Exception:  # noqa: BLE001 - MCP governance must fail closed
+            return "harness governance adapter failure"
+        return None
+
+    return before_call
 
 
 def _last_user(messages: list[Message]) -> int | None:
@@ -260,7 +286,7 @@ def governed_declarative(factory: Any, doc: Mapping[str, Any], *, policy: str = 
     return govern(factory.create_agent_from_dict(doc), policy, **dict(governance or {}))
 
 
-def governed_harness_agent(*args: Any, policy: str = "meta_agents",
+def governed_harness_agent(*args: Any, policy: str = "harness",
                            governance: Mapping[str, Any] | None = None, **kwargs: Any) -> Any:
     """``agent_framework.create_harness_agent(*args, **kwargs)`` under ``policy``."""
     from agent_framework import create_harness_agent
