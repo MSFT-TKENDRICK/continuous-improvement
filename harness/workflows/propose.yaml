@@ -1,0 +1,19 @@
+# Target-agent proposal (evolvable): the proposer edits and commits, then the frozen self_check
+# step (manifest workflow_functions, bound by the evaluator) re-checks the commit. Expression-free:
+# literal messages and arguments only; agents by their spec name in this tree's agents/*.yaml.
+kind: Workflow
+trigger:
+  kind: OnConversationStart
+  id: harness_propose
+  actions:
+    - kind: InvokeAzureAgent
+      id: proposer
+      agent:
+        name: CiProposer
+      input:
+        messages: "Read your brief with your tools, make and commit your edit, then call submit_proposal_done."
+    - kind: InvokeFunctionTool
+      id: self_check
+      functionName: self_check
+      arguments:
+        step: self_check

@@ -1,0 +1,22 @@
+# Target-agent triage (evolvable): the failure analyst drills into the failing cases, then the
+# analyst groups them into patterns. Expression-free (ci_lab.workflows.assert_expression_free):
+# literal messages only, agents by their spec name in this tree's agents/*.yaml. Built and run by
+# ci_lab.workflows.runtime.build_workflow / run_or_resume. The campaign arm workflows stay frozen
+# in src/ci_lab/workflows.
+kind: Workflow
+trigger:
+  kind: OnConversationStart
+  id: harness_triage
+  actions:
+    - kind: InvokeAzureAgent
+      id: failure_analyst
+      agent:
+        name: CiFailureAnalyst
+      input:
+        messages: "Read the failures with your tools. Report root causes and the harness files involved."
+    - kind: InvokeAzureAgent
+      id: analyst
+      agent:
+        name: CiAnalyst
+      input:
+        messages: "Read your brief with your tools, then call submit_analysis."

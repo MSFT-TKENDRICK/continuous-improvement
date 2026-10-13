@@ -53,9 +53,10 @@ def test_specs_load(key):
 
 def test_proposer_gets_agent_lightning_skill():
     spec = load_spec("proposer")
-    [skills] = spec.skills_paths
+    skills, own = spec.skills_paths
     skill_md = skills / "agent-lightning" / "SKILL.md"
     assert skill_md.is_file() and skill_md.read_text(encoding="utf-8").startswith("---")
+    assert own == repo_harness_dir().resolve() / "skills" and (own / "harness-editing" / "SKILL.md").is_file()
     assert all(not load_spec(k).skills_paths for k in ("analyst", "critic", "reflector"))
 
 
