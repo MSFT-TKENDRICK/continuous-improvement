@@ -74,8 +74,7 @@ async def _consume(
     seed = row.get("seed") or {}
     case_prompt = f"# Case\n{seed.get('title', '')}\n{seed.get('description', '')}"
     if profile != "fake":
-        from agent_framework import create_harness_agent
-
+        from ci_lab.governance.maf import governed_harness_agent
         from ci_lab.metrics.maf import metering_middleware
 
         client = make_chat_client(profile=profile, model=target_model, purpose="target")
@@ -92,7 +91,7 @@ async def _consume(
 
         names = tuple(dict.fromkeys((*spec.tools, *(tools or {}))))
         bound = {name: bind(name, (tools or {}).get(name)) for name in names}
-        agent = create_harness_agent(
+        agent = governed_harness_agent(
             client,
             name=spec.name,
             description=spec.description,
@@ -101,6 +100,7 @@ async def _consume(
             middleware=metering_middleware(meter),
             loop_max_iterations=spec.max_turns or 8,
             skills_paths=[str(path) for path in spec.skills_paths] or None,
+            governance={"agent_name": spec.name, "model": target_model},
         )
         response = await agent.run(case_prompt)
         served = (getattr(client, "last_served_model", None)

@@ -33,6 +33,7 @@ rules:
     include: ["src/**/*.py"]
     exclude:
       # one-shot child entrypoints only (they run exactly one unit of work, then exit)
+      - "src/ci_lab/domain/harness_assert_wrapper.py"
       - "src/order_support/assert_wrapper.py"
       - "src/order_support/cli.py"
     message: TRACEPARENT attached from the environment outside an allowlisted one-shot entrypoint (mis-parents later requests in long-lived services).
