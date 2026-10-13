@@ -46,7 +46,7 @@ def test_components_and_owners() -> None:
     assert COMPONENT_OWNERS["guard"] == "guard"
     for c in ("agent", "loop", "workflow", "mcp", "client_tool", "config", "context_mgmt", "memory"):
         assert COMPONENT_OWNERS[c] == "agl"
-    assert "agl" not in STRATEGIES
+    assert "agl" in STRATEGIES
 
 
 @pytest.mark.parametrize(("strategy", "component", "ok"), [
