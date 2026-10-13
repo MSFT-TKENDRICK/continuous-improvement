@@ -1,0 +1,86 @@
+# Native ACS parity (docs/governance.md). Weekly + dispatch, informational: build the upstream
+# Rust/PyO3 `agent-control-specification` (sdist only, no wheels) with the runner's Rust toolchain
+# and run the native-vs-pure-Python parity test over the vendored conformance corpus. The job is
+# continue-on-error and only reports to the step summary; it never blocks anything.
+# Opt-in: the `opt_in` job makes it a no-op (with a notice) unless repo variable CI_HARNESS_ENABLED is 'true'.
+name: governance-native
+
+on:
+  schedule:
+    - cron: '17 6 * * 2'
+  workflow_dispatch:
+    inputs:
+      acs_requirement:
+        description: 'pip requirement for the native ACS runtime (e.g. a git+https URL)'
+        required: false
+        default: 'agent-control-specification'
+
+concurrency:
+  group: governance-native
+  cancel-in-progress: true
+
+permissions: {}
+
+jobs:
+  # Opt-in (docs/template.md): the template and every repository created from it run nothing
+  # (scheduled or dispatched) until the repository variable CI_HARNESS_ENABLED is 'true'.
+  opt_in:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    permissions: {}
+    outputs:
+      enabled: ${{ steps.opt_in.outputs.enabled }}
+    steps:
+      - id: opt_in
+        env:
+          CI_HARNESS_ENABLED: ${{ vars.CI_HARNESS_ENABLED }}
+        run: |
+          if [ "$CI_HARNESS_ENABLED" = "true" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice title=CI harness not enabled::$GITHUB_WORKFLOW did nothing. Set the repository variable CI_HARNESS_ENABLED=true to opt in (docs/template.md)."
+          fi
+
+  native:
+    needs: opt_in
+    if: needs.opt_in.outputs.enabled == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    continue-on-error: true
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+      - name: uv sync
+        run: uv sync
+      - name: build native ACS runtime (maturin, runner Rust toolchain)
+        id: build
+        env:
+          ACS_REQUIREMENT: ${{ inputs.acs_requirement || 'agent-control-specification' }}
+        run: |
+          rustc --version && cargo --version
+          if uv pip install --prerelease=allow "$ACS_REQUIREMENT"; then
+            echo "built=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "built=false" >> "$GITHUB_OUTPUT"
+            echo "::warning title=native ACS build failed::$ACS_REQUIREMENT did not build; parity not run"
+          fi
+      - name: native parity
+        if: steps.build.outputs.built == 'true'
+        run: |
+          set -o pipefail
+          uv run --no-sync pytest -q -rs -p no:cacheprovider \
+            tests/ci_lab/governance/acs/test_conformance.py -k native_runtime_parity | tee parity.txt
+      - name: report
+        if: always()
+        env:
+          BUILT: ${{ steps.build.outputs.built }}
+        run: |
+          {
+            echo "## Native ACS parity"
+            echo "- native build: ${BUILT:-unknown}"
+            if [ -f parity.txt ]; then echo '```'; tail -n 20 parity.txt; echo '```'; fi
+          } >> "$GITHUB_STEP_SUMMARY"
