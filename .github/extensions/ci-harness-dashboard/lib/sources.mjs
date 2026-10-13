@@ -792,3 +792,233 @@ export class Sources {
     }
 }
 
+// ---------------------------------------------------------------- normalizers (pure)
+function smallObj(o) {
+    if (!isObj(o)) return {};
+    const out = {};
+    for (const [k, v] of Object.entries(o)) {
+        if (v === null || ["string", "number", "boolean"].includes(typeof v)) out[k] = typeof v === "string" ? v.slice(0, 300) : v;
+    }
+    return out;
+}
+
+/**
+ * Mirror of `ci_lab.obs.read_status`: docs sorted by `updated`; top-level fields from the most
+ * recently updated writer win; arms merge per arm by their own `updated`; `writers` lists ids.
+ */
+export function aggregateStatus(docs) {
+    const sorted = docs.filter(isObj).sort((a, b) => (toEpochSec(a.updated) ?? 0) - (toEpochSec(b.updated) ?? 0));
+    if (!sorted.length) return null;
+    const out = {};
+    const arms = {};
+    for (const doc of sorted) {
+        if (isObj(doc.arms)) {
+            for (const [arm, val] of Object.entries(doc.arms)) {
+                if (!isObj(val)) continue;
+                if ((toEpochSec(val.updated) ?? 0) >= (toEpochSec(arms[arm]?.updated) ?? 0)) arms[arm] = val;
+            }
+        }
+        for (const [k, v] of Object.entries(doc)) if (!["arms", "writer", "seq"].includes(k)) out[k] = v;
+    }
+    if (Object.keys(arms).length) out.arms = arms;
+    out.writers = sorted.map((d) => d.writer).filter(Boolean);
+    return out;
+}
+
+export function normalizeHistoryRow(h) {
+    return {
+        eid: str(pick(h, "eid", "experiment_id")),
+        round: num(pick(h, "round")),
+        decision: str(pick(h, "decision")),
+        winner: str(pick(h, "winner")),
+        tokens: num(pick(h, "tokens")),
+        score: num(pick(h, "score", "incumbent_score", "new_incumbent_score")),
+        deltaS: num(pick(h, "delta_s", "deltaS")),
+        deltaC: num(pick(h, "delta_c", "deltaC")),
+        arms: arr(h?.arms)
+            .filter(isObj)
+            .map((a) => ({
+                arm: str(a.arm),
+                component: str(a.component),
+                strategy: str(a.strategy),
+                hypotheses: Array.isArray(a.hypotheses) ? a.hypotheses.length : num(a.hypotheses),
+                accepted: typeof a.accepted === "boolean" ? a.accepted : null,
+                score: num(a.score),
+                status: str(a.status),
+            })),
+    };
+}
+
+/** OES 0.1.0 envelope (+ RRSI / sleep extensions) → compact, render-safe record. */
+export function normalizeEnvelope(env, source = null) {
+    if (!isObj(env)) return null;
+    const ext = isObj(env.extensions) ? env.extensions : {};
+    const x = isObj(ext[RRSI_EXT]) ? ext[RRSI_EXT] : {};
+    const s = isObj(ext[SLEEP_EXT]) ? ext[SLEEP_EXT] : null;
+    const e = isObj(env.experiment) ? env.experiment : {};
+    const xv = isObj(x.variants) ? x.variants : {};
+    const sel = isObj(x.selection) ? x.selection : null;
+    const dec = isObj(env.decision) ? env.decision : {};
+    const sc = isObj(env.scorecard) ? env.scorecard : {};
+    return {
+        id: str(e.id),
+        title: str(e.title),
+        hypothesis: str(e.hypothesis),
+        status: str(e.status),
+        tags: arr(e.tags).filter((t) => typeof t === "string"),
+        kind: str(x.kind) ?? (s ? "sleep" : "experiment"),
+        designType: str(env.design?.type),
+        campaignId: str(x.campaignId),
+        round: num(x.round),
+        split: str(x.split),
+        delta: num(x.delta),
+        deltaMethod: str(x.deltaMethod),
+        budget: num(x.budget),
+        stall: typeof x.stall === "boolean" ? x.stall : null,
+        ciLowerBound: num(x.ciLowerBound),
+        parentExperimentId: str(x.lineage?.parentExperimentId),
+        incumbentCommit: str(x.lineage?.incumbentCommit),
+        judgeModel: str(x.evaluatorPin?.judgeModel),
+        variants: arr(env.variants)
+            .filter(isObj)
+            .map((v) => {
+                const xe = isObj(xv[v.id]) ? xv[v.id] : {};
+                return {
+                    id: str(v.id),
+                    name: str(v.name),
+                    role: str(v.role),
+                    description: str(v.description),
+                    status: str(xe.status) ?? str(v.config?.status),
+                    harnessTree: str(v.config?.harnessTree) ?? str(xe.harnessTree),
+                    refs: arr(v.codeReferences)
+                        .filter(isObj)
+                        .map((r) => ({ type: str(r.type), sha: str(r.sha), ref: str(r.ref), component: str(r.component) })),
+                    edits: arr(xe.edits)
+                        .filter(isObj)
+                        .map((ed) => ({ component: str(ed.component), hypothesis: str(ed.hypothesis), commit: str(ed.commit) })),
+                    critic: isObj(xe.critic)
+                        ? { passed: xe.critic.passed === true, reasons: arr(xe.critic.reasons).filter((r) => typeof r === "string").slice(0, 10) }
+                        : null,
+                    headCommit: str(xe.headCommit),
+                };
+            }),
+        metrics: arr(env.metrics)
+            .filter(isObj)
+            .map((m) => ({ id: str(m.id), name: str(m.name), role: str(m.role), direction: str(m.direction) })),
+        sampleSizes: isObj(env.results?.sampleSizes) ? env.results.sampleSizes : {},
+        results: arr(env.results?.metricResults)
+            .filter(isObj)
+            .map((r) => ({
+                metricId: str(r.metricId),
+                variantId: str(r.comparison?.variantId),
+                baselineVariantId: str(r.comparison?.baselineVariantId),
+                role: str(r.role),
+                baselineValue: num(r.baselineValue),
+                variantValue: num(r.variantValue),
+                diff: num(r.absoluteDifference),
+                ci: isObj(r.confidenceInterval)
+                    ? { level: num(r.confidenceInterval.level), lower: num(r.confidenceInterval.lower), upper: num(r.confidenceInterval.upper) }
+                    : null,
+                status: str(r.resultStatus),
+                impact: str(r.decisionImpact),
+            })),
+        scorecard: { summary: str(sc.summary), overallResult: str(sc.overallResult), recommendedAction: str(sc.recommendedAction), qualityStatus: str(sc.qualityStatus) },
+        decision: {
+            status: str(dec.status),
+            outcome: str(dec.outcome),
+            rationale: str(dec.rationale),
+            decidedBy: str(dec.decidedBy?.name) ?? str(dec.decidedBy?.type) ?? str(dec.decidedBy),
+            decidedAt: str(dec.decidedAt),
+        },
+        selection: sel
+            ? {
+                  winner: str(sel.winner),
+                  incumbentScore: num(sel.incumbentScore),
+                  newIncumbentScore: num(sel.newIncumbentScore),
+                  candidates: arr(sel.candidates)
+                      .filter(isObj)
+                      .map((c) => ({
+                          variantId: str(c.variantId),
+                          admissible: c.admissible === true,
+                          deltaS: num(c.deltaS),
+                          deltaC: num(c.deltaC),
+                          novelty: num(c.novelty),
+                          ciLowerBound: num(c.ciLowerBound),
+                          rule: str(c.rule),
+                          reasons: arr(c.reasons).filter((r) => typeof r === "string").slice(0, 10),
+                      })),
+              }
+            : null,
+        quality: arr(env.qualityChecks)
+            .filter(isObj)
+            .map((q) => ({ checkType: str(q.checkType), status: str(q.status), severity: str(q.severity), message: str(q.message) })),
+        sleep: s
+            ? {
+                  night: str(s.night),
+                  nightIndex: num(s.nightIndex),
+                  tasks: {
+                      total: num(s.tasks?.total),
+                      reviewed: num(s.tasks?.byOrigin?.reviewed),
+                      harvested: num(s.tasks?.byOrigin?.harvested),
+                  },
+                  gate: {
+                      skilloptPassed: typeof s.gate?.skillopt?.passed === "boolean" ? s.gate.skillopt.passed : null,
+                      skilloptScore: num(s.gate?.skillopt?.score),
+                      skilloptBaseline: num(s.gate?.skillopt?.baselineScore),
+                      assertPassed: typeof s.gate?.assert?.passed === "boolean" ? s.gate.assert.passed : null,
+                      ciLowerBound: num(s.gate?.assert?.ciLowerBound),
+                      deltaS: num(s.gate?.assert?.deltaS),
+                      safetyBaseline: num(s.gate?.assert?.safetyViolations?.baseline),
+                      safetyCandidate: num(s.gate?.assert?.safetyViolations?.candidate),
+                  },
+                  used: isObj(s.budget?.used) ? smallObj(s.budget.used) : {},
+                  limits: isObj(s.budget?.limits) ? smallObj(s.budget.limits) : {},
+                  adoptionPr: str(s.adoptionPr) ?? num(s.adoptionPr),
+                  skillPath: str(s.skillPath),
+              }
+            : null,
+        source,
+    };
+}
+
+/** Summarize one AGL journal file (`{"v":1,"kind":"start|event|finish",...}` lines). */
+export function summarizeRollout(rows, fallbackId, source) {
+    let start = null;
+    let finish = null;
+    let events = 0;
+    let score = null;
+    let reward = null;
+    let lastTs = null;
+    let errors = 0;
+    const types = {};
+    for (const r of rows) {
+        const ts = toEpochSec(r.ts);
+        if (ts !== null) lastTs = Math.max(lastTs ?? 0, ts);
+        if (r.kind === "start") start = start ?? r;
+        else if (r.kind === "finish") finish = finish ?? r;
+        else if (r.kind === "event") {
+            events++;
+            const t = str(r.event_type) ?? "event";
+            types[t] = (types[t] ?? 0) + 1;
+            if (t === "ci.score") score = firstNum(r.data, "value", "score") ?? score;
+            if (t === "reward") reward = firstNum(r.data, "value", "reward") ?? (num(r.data) ?? reward);
+            if (t === "ci.error") errors++;
+        }
+    }
+    const key = start?.key;
+    return {
+        rolloutId: str(pick(start ?? rows[0], "rollout_id")) ?? fallbackId,
+        attemptId: str(pick(finish ?? start, "attempt_id")),
+        key: typeof key === "string" ? key.slice(0, 200) : isObj(key) ? smallObj(key) : null,
+        status: str(finish?.status) ?? (start ? "running" : "unknown"),
+        startTs: toEpochSec(start?.ts),
+        endTs: toEpochSec(finish?.ts),
+        lastTs,
+        events,
+        eventTypes: types,
+        score,
+        reward,
+        errors,
+        source,
+    };
+}
