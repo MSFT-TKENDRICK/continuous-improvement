@@ -112,6 +112,8 @@ safe["__import__"] = guarded_import
 with open(os.path.join(os.path.dirname(STUB_DIR), "user_code.py"), encoding="utf-8") as f:
     src = f.read()
 linecache.cache["<run_code>"] = (len(src), None, src.splitlines(True), "<run_code>")
+rpc_out.write(json.dumps({{"rpc": {{"method": "ready"}}}}) + "\\n")
+rpc_out.flush()
 error = None
 try:
     exec(compile(src, "<run_code>", "exec"), {{"__builtins__": safe, "__name__": "__main__", "tools": tools}})

@@ -48,8 +48,7 @@ async with McpHub(registry, exposure, roots={"harness_root": cand_dir}, before_c
 `tools.harness.list_components() -> dict`. A snippet can chain several tool calls and `print()` only what
 it needs, which keeps large intermediate results out of the model context.
 
-`on_tool_call("server.tool")` fires once for each call made inside a snippet. L7 connects it to
-`RunMeter`. `.tool_calls` keeps a local count of the same calls.
+`on_tool_call("server.tool")` fires once per call inside a snippet (L7 wires it to `RunMeter`); `.tool_calls` counts them too.
 
 ### This is an isolation layer, not an OS sandbox
 
@@ -74,6 +73,8 @@ security against a determined attacker. Its layers are:
      RPC frames.
    - Tool calls go back through `McpHub.call_tool`, so exposure filtering and `before_call` still apply.
 4. **Limits**. Output is truncated at `max_output_chars`. At `timeout_s`, the whole process tree is killed
-   through a Win32 Job Object (pywin32) or a POSIX process group, falling back to `proc.kill()`.
+   through a Win32 Job Object (pywin32) or a POSIX process group, falling back to `proc.kill()`. The clock
+   starts at the child's `ready` RPC, so slow interpreter startup on a loaded host doesn't count against it.
+   Startup has a separate budget, `STARTUP_TIMEOUT_S` (60 s).
 
 Errors from tools are raised inside the snippet as `tools.ToolError`. Rejected code is never executed.
