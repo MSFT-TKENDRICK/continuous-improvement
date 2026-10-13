@@ -8,20 +8,20 @@ from types import SimpleNamespace
 import pytest
 
 SKILL = """---
-name: order-support
-description: Northwind order-support procedures.
+name: harness-editing
+description: Safe self-hosted harness editing procedures.
 ---
-# Order support
+# Harness editing
 
-Follow the support policy. Be concise.
+Keep harness changes bounded and validate the frozen manifest.
 """
 
 
 def task_row(i: int, rule: str = "verify_identity", **extra) -> dict:
     row = {
-        "id": f"t{i:02d}", "project": "order-support",
-        "intent": f"Please help with order NW-1000{i % 8 + 1} (case {i}).",
-        "reference": "I verified your order and can help.",
+        "id": f"t{i:02d}", "project": "harness-editing",
+        "intent": f"Please propose a bounded harness improvement for failing case {i}.",
+        "reference": "I inspected the harness and proposed a bounded edit.",
         "reference_kind": "rule",
         "judge": {"kind": "rule", "checks": [{"op": "tool_called", "arg": "lookup_order"},
                                              {"op": "contains", "arg": "verified"}]},
@@ -33,7 +33,7 @@ def task_row(i: int, rule: str = "verify_identity", **extra) -> dict:
 
 def write_tasks(path: Path, rows: list[dict], *, header: dict | None = None) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
-    head = header or {"format": "skillopt_sleep.tasks.v1", "project": "order-support", "reviewed": True}
+    head = header or {"format": "skillopt_sleep.tasks.v1", "project": "harness-editing", "reviewed": True}
     path.write_text("".join(json.dumps(r) + "\n" for r in [head, *rows]), encoding="utf-8", newline="\n")
     return path
 
@@ -60,13 +60,25 @@ def h() -> SimpleNamespace:
 def sleep_repo(tmp_path: Path) -> Path:
     """A tiny git repo with the incumbent skill, night-0 state and 6 reviewed tasks."""
     repo = tmp_path / "repo"
-    skill = repo / "src/order_support/harness/skills/order-support/SKILL.md"
+    skill = repo / "harness/skills/harness-editing/SKILL.md"
     skill.parent.mkdir(parents=True)
     skill.write_text(SKILL, encoding="utf-8", newline="\n")
+    triage = repo / "harness/skills/trace-triage/SKILL.md"
+    triage.parent.mkdir(parents=True, exist_ok=True)
+    triage.write_text(SKILL.replace("harness-editing", "trace-triage"), encoding="utf-8", newline="\n")
+    legacy = repo / "src/order_support/harness/skills/order-support/SKILL.md"
+    legacy.parent.mkdir(parents=True)
+    legacy.write_text(SKILL.replace("harness-editing", "order-support"), encoding="utf-8", newline="\n")
     state = repo / "experiments/sleep/state.json"
     state.parent.mkdir(parents=True)
     state.write_text(json.dumps({"format": "ci_lab.sleep.state.v1", "night": 0, "history": []}, indent=2) + "\n",
                      encoding="utf-8", newline="\n")
-    write_tasks(repo / "experiments/sleep/tasks.jsonl", [task_row(i) for i in range(6)])
+    write_tasks(repo / "experiments/sleep/harness-editing.jsonl", [task_row(i) for i in range(6)])
+    write_tasks(repo / "experiments/sleep/trace-triage.jsonl",
+                [task_row(i, id=f"r{i:02d}", project="trace-triage") for i in range(6)],
+                header={"format": "skillopt_sleep.tasks.v1", "project": "trace-triage", "reviewed": True})
+    write_tasks(repo / "experiments/sleep/tasks.jsonl",
+                [task_row(i, project="order-support") for i in range(6)],
+                header={"format": "skillopt_sleep.tasks.v1", "project": "order-support", "reviewed": True})
     init_repo(repo)
     return repo
