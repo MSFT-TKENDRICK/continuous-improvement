@@ -22,6 +22,7 @@ __all__ = [
     "Budget",
     "ContextRef",
     "Criterion",
+    "CriterionRole",
     "Deliverable",
     "Measure",
     "OutputSpec",
@@ -34,12 +35,17 @@ __all__ = [
     "load_graph",
 ]
 
-Measure = Literal["deterministic", "assert", "s1", "llm"]
+Measure = Literal["deterministic", "assert", "s1", "llm", "metric"]
+CriterionRole = Literal["quality", "resource"]
 OutputKind = Literal["file", "text", "json", "patch"]
 ContextKind = Literal["file", "deliverable", "text"]
 MEASURES: tuple[str, ...] = get_args(Measure)
-ORACLE_MEASURES = ("deterministic", "assert")
+CRITERION_ROLES: tuple[str, ...] = get_args(CriterionRole)
+# "metric" is deterministic (evaluator-measured runtime/surface numbers scored by ci_lab.metrics.rubric).
+ORACLE_MEASURES = ("deterministic", "assert", "metric")
 SOFT_MEASURES = ("s1", "llm")
+# Measures whose criteria are always resource criteria (cost/simplicity, never deliverable quality).
+RESOURCE_MEASURES = ("metric",)
 
 
 class SpecError(ValueError):
@@ -220,20 +226,36 @@ class Criterion:
     threshold: float
     weight: float = 1.0
     required: bool = False
+    # "quality" counts toward the deliverable score; "resource" (cost/simplicity) is scored separately into
+    # subscores. "" resolves to "resource" for metric criteria and "quality" otherwise.
+    role: str = ""
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "check", _freeze(self.check))
         object.__setattr__(self, "threshold", float(self.threshold))
         object.__setattr__(self, "weight", float(self.weight))
+        role = self.role or ("resource" if self.measure in RESOURCE_MEASURES else "quality")
+        if role not in CRITERION_ROLES:
+            raise SpecError(f"role: {role!r} not in {CRITERION_ROLES}")
+        if self.measure in RESOURCE_MEASURES and role != "resource":
+            raise SpecError(f"role: {self.measure} criteria are always resource criteria, got {role!r}")
+        object.__setattr__(self, "role", role)
 
     @property
     def oracle(self) -> bool:
         return self.measure in ORACLE_MEASURES
 
+    @property
+    def resource(self) -> bool:
+        return self.role == "resource"
+
     def to_json(self) -> dict[str, Any]:
-        return {"id": self.id, "description": self.description, "measure": self.measure,
-                "check": _thaw(self.check), "threshold": self.threshold, "weight": self.weight,
-                "required": self.required}
+        out = {"id": self.id, "description": self.description, "measure": self.measure,
+               "check": _thaw(self.check), "threshold": self.threshold, "weight": self.weight,
+               "required": self.required}
+        if self.resource:  # quality is the default; omitting it keeps pre-role rubric commitments stable
+            out["role"] = self.role
+        return out
 
     @classmethod
     def from_json(cls, data: Any) -> Criterion:
@@ -241,9 +263,10 @@ class Criterion:
         required = d.get("required", False)
         if not isinstance(required, bool):
             raise SpecError("required: expected a boolean")
+        role = _str(d, "role", choices=CRITERION_ROLES) if "role" in d else ""
         return cls(_str(d, "id"), _str(d, "description"), _str(d, "measure", choices=MEASURES),  # type: ignore[arg-type]
                    _obj(d["check"], "check"), _num(d["threshold"], "threshold"),
-                   _num(d.get("weight", 1.0), "weight"), required)
+                   _num(d.get("weight", 1.0), "weight"), required, role)
 
 
 @dataclass(frozen=True)
@@ -264,6 +287,31 @@ class Rubric:
 
     def soft(self) -> tuple[Criterion, ...]:
         return tuple(c for c in self.criteria if c.measure in SOFT_MEASURES)
+
+    def quality(self) -> tuple[Criterion, ...]:
+        """Criteria that make up the deliverable-quality score."""
+        return tuple(c for c in self.criteria if not c.resource)
+
+    def resources(self) -> tuple[Criterion, ...]:
+        """Resource (cost/simplicity) criteria, reported as subscores and never folded into quality."""
+        return tuple(c for c in self.criteria if c.resource)
+
+    def quality_score(self, scores: Mapping[str, float | None]) -> float:
+        """Weighted mean of the scored quality criteria in ``scores`` (criterion id -> score); 0.0 if none."""
+        scored = [(c.weight, float(s)) for c in self.quality() if (s := scores.get(c.id)) is not None]
+        weight = sum(w for w, _ in scored)
+        return sum(w * s for w, s in scored) / weight if weight else 0.0
+
+    def resource_subscores(self, scores: Mapping[str, float | None]) -> dict[str, float]:
+        """``resource.<id>`` per resource criterion (unscored counts as 0.0, fail closed) plus their weighted
+        mean ``resource_score``; empty when the rubric has no resource criteria."""
+        res = self.resources()
+        if not res:
+            return {}
+        out = {f"resource.{c.id}": float(scores.get(c.id) or 0.0) for c in res}
+        weight = sum(c.weight for c in res)
+        out["resource_score"] = (sum(c.weight * out[f"resource.{c.id}"] for c in res) / weight) if weight else 0.0
+        return out
 
     @property
     def version_id(self) -> str:

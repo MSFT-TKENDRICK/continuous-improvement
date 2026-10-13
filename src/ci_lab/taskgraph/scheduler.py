@@ -49,6 +49,8 @@ from ci_lab.bus.types import (
 )
 from ci_lab.bus.voters.local import Voter, run_voters
 from ci_lab.bus.wal import AgentBus, BusCorrupt
+from ci_lab.metrics.maf import metering_middleware
+from ci_lab.metrics.runtime import RunMeter
 from ci_lab.taskgraph.firewall import LeakScreen, sanitize_correction
 from ci_lab.taskgraph.model import (
     Deliverable,
@@ -212,14 +214,22 @@ async def _student(run: GraphRun, d: Deliverable, topic: str, aid: str, rubric: 
     if (p := run.bus.state(topic).proposal_by_id(pid)) is not None:
         return p
     spec = StudentSpec.of(d)
-    async with asyncio.timeout(d.budget.timeout_s):
-        res = await succeed(run.bus, topic, "student", lambda mw: run.student_factory(spec, mw), spec,
-                            d.depends_on, screen=screen)
+    meter = RunMeter()
+
+    def metered(mw: Any) -> Any:  # evaluator-side metering after the firewall; the student never sees it
+        mw.extend(metering_middleware(meter))
+        return run.student_factory(spec, mw)
+
+    with meter:
+        async with asyncio.timeout(d.budget.timeout_s):
+            res = await succeed(run.bus, topic, "student", metered, spec, d.depends_on, screen=screen)
     if res.leak:
         return res.leak_hits
     ref = await run.bus.put_artifact(topic, res.text)
+    measurements = {**meter.as_dict(), "output_chars": float(len(res.text)),
+                    "output_lines": float(len(res.text.splitlines()))}
     body = ProposalBody(proposal=pid, attempt=aid, rubric_version=rubric.version_id, artifact=ref,
-                        summary=f"student attempt {aid}")
+                        summary=f"student attempt {aid}", measurements=measurements)
     return await run.bus.append(topic, "proposal", STUDENT, body)
 
 
@@ -268,14 +278,16 @@ def _corpus(run: GraphRun, topic: str) -> Corpus:
                 for e in st.entries if e.kind == "exploit" and (b := e.body)]  # type: ignore[union-attr]
     honest = [CorpusItem(st.entries[v.ref].body.proposal, "honest", text(st.entries[v.ref]))  # type: ignore[index, union-attr]
               for v in st.verdicts.values() if st.entries[v.ref].author.role == "student"  # type: ignore[index]
-              and not any(c.oracle and c.passed is False for c in v.body.criteria.values())]  # type: ignore[union-attr]
+              and not any(c.oracle and not c.resource and c.passed is False for c in v.body.criteria.values())]  # type: ignore[union-attr]
     return Corpus(tuple(exploits), tuple(honest))
 
 
 def default_scorer(run: GraphRun, d: Deliverable) -> Scorer:
-    """Would the gameable part of a rubric (all but ``check.independent`` validity oracles) accept an item?"""
+    """Would the gameable part of a rubric (all but ``check.independent`` validity oracles and resource
+    criteria, which score runtime measurements a corpus item does not have) accept an item?"""
     async def score(rubric: Rubric, items: Sequence[CorpusItem]) -> list[bool]:
-        sub = replace(rubric, criteria=tuple(c for c in rubric.criteria if c.check.get("independent") is not True))
+        sub = replace(rubric, criteria=tuple(c for c in rubric.criteria
+                                             if c.check.get("independent") is not True and not c.resource))
         pid, out = ids.proposal_id(ids.attempt_id(d.id, 1), "student", "corpus"), []
         for item in items:
             data = item.text.encode("utf-8")
