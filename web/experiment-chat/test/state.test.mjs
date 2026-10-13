@@ -25,7 +25,7 @@ test("draft card fields come from the STATE_SNAPSHOT draft", () => {
     assert.ok(!rows.some(([k]) => k === "budget" || k === "rrsi"), "null and empty hyperparameters are hidden");
     assert.equal(normalizeDraft(null), null);
     assert.equal(normalizeDraft([1]), null);
-    assert.equal(normalizeDraft({ cid: "legacy", domain: "order_support" }).domain, "order_support");
+    assert.equal(normalizeDraft({ cid: "custom", domain: "external_domain" }).domain, "external_domain");
 });
 
 test("approval card reads the launch call from the interrupt metadata", () => {
