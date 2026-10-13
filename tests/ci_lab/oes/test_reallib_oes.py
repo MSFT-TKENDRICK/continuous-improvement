@@ -57,7 +57,7 @@ def test_tampered_envelope_is_rejected(path):
 
 def test_sleep_envelope_from_real_harness_pin_validates(fx):
     pin = HarnessDomain(cases=[]).pin()
-    assert pin.evaluator_tree.startswith("sha256:") and pin.judge_provider == "s1"
+    assert pin.evaluator_tree.startswith("sha256:") and pin.judge_provider == "scripted"
     doc = sleep_envelope(
         "2026-10-08", incumbent=fx.make_eval(fx.T0, pin=pin), candidate=fx.make_eval(fx.T1, base=0.65, pin=pin),
         incumbent_commit=fx.H0, skillopt_version="0.2.0", tasks_by_origin={"reviewed": 9},
