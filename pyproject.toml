@@ -25,6 +25,7 @@ dependencies = [
     "uvicorn>=0.30",
     "agent-governance-toolkit-core>=5,<6",
     "agent-sre>=3.7,<4",
+    "mcp>=1.9,<2",
 ]
 
 [project.scripts]
