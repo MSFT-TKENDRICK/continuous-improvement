@@ -112,6 +112,7 @@ def test_candidate_copy_and_scrubbed_environment(candidate: Path, monkeypatch: p
     assert {"GH_TOKEN", "GITHUB_TOKEN", "GIT_ASKPASS"}.isdisjoint(observed["env"])
     assert set(observed["env"]) <= {
         "PATH", "SYSTEMROOT", "TEMP", "TMP", "PYTHONPATH",
+        "HOME", "USERPROFILE", "HOMEDRIVE", "HOMEPATH", "APPDATA", "LOCALAPPDATA",
         "CI_COPILOT_SERVE_URL", "CI_COPILOT_SERVE_KEY", "CI_S1_LLAMA_URL",
         PROFILE_ENV, TARGET_MODEL_ENV, JUDGE_MODEL_ENV,
     }
