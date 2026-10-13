@@ -15,17 +15,17 @@ def test_live_tool_round_trip():
     records: list[dict] = []
 
     @tool(approval_mode="never_require")
-    def lookup_order(order_id: str) -> str:
-        """Look up the status code of an order by id."""
-        calls.append(order_id)
-        return f"order {order_id} status code: ZEBRA-{len(order_id)}7"
+    def read_file(path: str) -> str:
+        """Look up the status code of a file by path."""
+        calls.append(path)
+        return f"file {path} status code: ZEBRA-{len(path)}7"
 
     async def main():
         async with CopilotChatClient(model="gpt-5-mini", timeout_s=180, on_model_request=records.append) as client:
             agent = Agent(client=client, instructions="Use tools to answer. Reply with the exact status code.",
-                          tools=[lookup_order])
+                          tools=[read_file])
             with copilot_scope("live-test"):
-                return await agent.run("What is the status code of order A1? Call lookup_order.")
+                return await agent.run("What is the status code of file A1? Call read_file.")
 
     result = asyncio.run(main())
     assert calls == ["A1"]

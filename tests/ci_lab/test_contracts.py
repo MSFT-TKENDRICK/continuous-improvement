@@ -43,16 +43,16 @@ def test_fake_client_drives_a_real_maf_tool_loop():
 
     seen = []
 
-    def lookup(order_id: str) -> str:
-        """Look up an order."""
-        seen.append(order_id)
-        return "shipped"
+    def lookup(path: str) -> str:
+        """Read a path."""
+        seen.append(path)
+        return "found"
 
-    client = FakeChatClient([[Call("lookup", {"order_id": "NW-1"})], "It shipped."])
+    client = FakeChatClient([[Call("lookup", {"path": "file-1"})], "Found it."])
     agent = Agent(client=client, instructions="sys", tools=[lookup])
-    result = asyncio.run(agent.run("where is NW-1?"))
-    assert seen == ["NW-1"]
-    assert result.text == "It shipped."
+    result = asyncio.run(agent.run("where is CASE-1?"))
+    assert seen == ["file-1"]
+    assert result.text == "Found it."
     last_msgs, _ = client.requests[-1]
     assert any(c.type == "function_result" for m in last_msgs for c in m.contents)
 

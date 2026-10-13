@@ -9,9 +9,9 @@ from ci_lab.providers.fake_sdk import FakeCall, FakeCopilotClient
 from ci_lab.providers.streaming import response_updates
 
 
-def lookup(order_id: str) -> str:
-    """Look up an order."""
-    return f"{order_id}: shipped"
+def lookup(path: str) -> str:
+    """Read a path."""
+    return f"{path}: found"
 
 
 def make(script, **kw):
@@ -37,13 +37,13 @@ def test_stream_without_tools_yields_text_and_final_response():
 
 
 def test_stream_runs_tool_loop_through_agent():
-    sdk, client = make([[FakeCall("lookup", {"order_id": "A"})],
+    sdk, client = make([[FakeCall("lookup", {"path": "A"})],
                         lambda s: "done: " + s.tool_results[0][2].text_result_for_llm])
     agent = Agent(client=client, tools=[lookup])
     updates, final = collect(agent.run("where is A?", stream=True))
     types = [c.type for u in updates for c in u.contents]
     assert "function_call" in types and "function_result" in types
-    assert final.text == "done: A: shipped"
+    assert final.text == "done: A: found"
     assert len(sdk.sessions) == 1  # the bridge continued the same session
 
 
@@ -62,14 +62,15 @@ def test_stream_surfaces_approval_request_and_resume_bridges_into_suspended_sess
     agent = Agent(client=client, tools=[launch])
 
     async def main():
-        stream = agent.run("launch abc", stream=True)
+        session = agent.create_session()
+        stream = agent.run("launch abc", session=session, stream=True)
         updates = [u async for u in stream]
-        final = await stream.get_final_response()
+        await stream.get_final_response()
         requests = [c for u in updates for c in u.contents if c.type == "function_approval_request"]
         assert len(requests) == 1 and requests[0].function_call.name == "launch"
         assert ran == []  # gated: nothing runs before the human answers
         approved = Message(role="user", contents=[requests[0].to_function_approval_response(approved=True)])
-        stream = agent.run([Message(role="user", contents=["launch abc"]), *final.messages, approved], stream=True)
+        stream = agent.run(approved, session=session, stream=True)
         [u async for u in stream]
         return await stream.get_final_response()
 
@@ -83,7 +84,7 @@ def test_response_updates_round_trip_preserves_calls_usage_and_finish_reason():
     resp = ChatResponse(
         messages=[Message(role="assistant", contents=[Content.from_text("thinking"),
                                                       Content.from_function_call(call_id="c1", name="lookup",
-                                                                                 arguments={"order_id": "A"})])],
+                                                                                 arguments={"path": "A"})])],
         response_id="r1", model="m", finish_reason="tool_calls",
         usage_details={"input_token_count": 3, "output_token_count": 5, "total_token_count": 8})
     ups = response_updates(resp)
