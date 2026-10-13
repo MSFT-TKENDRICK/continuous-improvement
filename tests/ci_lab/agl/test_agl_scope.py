@@ -30,12 +30,13 @@ def test_sync_scope_records_and_succeeds(tmp_path: Path) -> None:
     rec = j.load(KEY.rollout_id)
     assert rec is not None and rec.status == "succeeded" and rec.input == {"intent": "refund"}
     types = [e["event_type"] for e in rec.events]
-    assert types == ["model_request", "model_request", "ci.score", "reward"]
-    reward = rec.events[-1]
+    assert types == ["model_request", "model_request", "ci.score", "reward", "ci.metric"]
+    reward = rec.events[-2]
     assert reward["data"] == {"value": 0.75, "message": None, "source": "assert", "reason": "judged"}
     assert reward["event_id"] == op_id(KEY.rollout_id, "0", "reward", "reward")
     assert rec.events[2]["data"] == {"name": "assert.policy", "value": 0.75,
                                      "suite": "refund_authorization", "violations": []}
+    assert rec.events[-1]["data"]["llm_calls"] == 2
 
 
 def test_async_scope_and_contextvar(tmp_path: Path) -> None:
@@ -50,7 +51,7 @@ def test_async_scope_and_contextvar(tmp_path: Path) -> None:
 
     asyncio.run(main())
     rec = j.load(KEY.rollout_id)
-    assert rec is not None and rec.status == "succeeded" and len(rec.events) == 4
+    assert rec is not None and rec.status == "succeeded" and len(rec.events) == 5
 
 
 def test_exception_and_fail_mark_failed(tmp_path: Path) -> None:
@@ -59,7 +60,8 @@ def test_exception_and_fail_mark_failed(tmp_path: Path) -> None:
         raise RuntimeError("secret detail")
     rec = j.load(KEY.rollout_id)
     assert rec is not None and rec.status == "failed"
-    assert rec.events[-1]["event_type"] == "ci.error" and rec.events[-1]["data"] == {"type": "RuntimeError"}
+    error = next(e for e in rec.events if e["event_type"] == "ci.error")
+    assert error["data"] == {"type": "RuntimeError"}
     k2 = RolloutKey("camp-r00", "base", "case-2")
     with RolloutScope(j, k2) as scope:
         scope.fail()
@@ -77,7 +79,7 @@ def test_base_exception_leaves_rollout_running(tmp_path: Path) -> None:
     with RolloutScope(j, KEY) as scope:  # resume completes it without duplicating the reward
         scope.reward(1.0)
     rec = j.load(KEY.rollout_id)
-    assert rec is not None and rec.status == "succeeded" and len(rec.events) == 1
+    assert rec is not None and rec.status == "succeeded" and len(rec.events) == 2
 
 
 @pytest.mark.parametrize("make", [lambda p: FileRolloutJournal(p), lambda p: MemoryJournal()])
@@ -86,11 +88,11 @@ def test_reexecution_is_idempotent(tmp_path: Path, make) -> None:  # type: ignor
     for _ in range(3):  # e.g. checkpoint resume re-running the same case
         with RolloutScope(j, KEY, {"intent": "x"}) as scope:
             _body(scope)
-    assert len(j.events(KEY)) == 4
+    assert len(j.events(KEY)) == 5
     ids = [e["event_id"] for e in j.events(KEY)]
-    assert len(set(ids)) == 4
+    assert len(set(ids)) == 5
     if isinstance(j, FileRolloutJournal):
-        assert len(j.path(KEY.rollout_id).read_text().splitlines()) == 6  # start + 4 events + finish
+        assert len(j.path(KEY.rollout_id).read_text().splitlines()) == 7  # start + 5 events + finish
 
 
 def test_new_attempt_has_distinct_ids(tmp_path: Path) -> None:
@@ -100,7 +102,7 @@ def test_new_attempt_has_distinct_ids(tmp_path: Path) -> None:
     with RolloutScope(j, RolloutKey("camp-r00", "base", "case-1", attempt=1)) as s1:
         s1.reward(1.0)
     rec = j.load(KEY.rollout_id)
-    assert rec is not None and rec.attempts == ["0", "1"] and len(rec.events) == 2
+    assert rec is not None and rec.attempts == ["0", "1"] and len(rec.events) == 4
     assert rec.status == "succeeded" and rec.finished_attempt == "0"  # terminal state recorded once
 
 

@@ -9,16 +9,18 @@ from __future__ import annotations
 
 import logging
 import threading
+import time
 from collections import defaultdict
 from collections.abc import Mapping
 from contextlib import AbstractContextManager
 from contextvars import ContextVar, Token
 from types import TracebackType
-from typing import Any, Literal
+from typing import Any, Literal, Self
 
 from opentelemetry import trace
 
 from ci_lab import obs
+from ci_lab.agl.metrics import METRIC, rollout_metrics
 from ci_lab.contracts import (
     ATTR_ATTEMPT,
     ATTR_CASE,
@@ -70,6 +72,7 @@ class RolloutScope:
         self._spans: list[AbstractContextManager[Any] | None] = []
         self.span: trace.Span = trace.INVALID_SPAN  # the ci.case span while entered
         self._started = False
+        self._entered_at: float | None = None
 
     def __repr__(self) -> str:
         return f"RolloutScope({self.key.rollout_id!r}, attempt={self.key.attempt_id!r})"
@@ -100,6 +103,11 @@ class RolloutScope:
     def record_model_request(self, data: Mapping[str, Any], *, name: str | int | None = None) -> str:
         """Journal a ``model_request`` event (AGL proxy field set; see ``mirror.model_request_data``)."""
         return self.emit(MODEL_REQUEST, data, name=name)
+
+    def record_tool_call(self, tool: str, *, wall_ms: float = 0.0,
+                         name: str | int | None = None) -> str:
+        """Journal one typed tool-call delta without recording arguments or output."""
+        return self.emit("ci.tool_call", {"tool": str(tool), "wall_ms": float(wall_ms)}, name=name)
 
     def reward(self, value: float, *, source: str | None = None, reason: str | None = None,
                message: str | None = None, name: str = "reward") -> str:
@@ -150,7 +158,7 @@ class RolloutScope:
         if cm is not None:
             cm.__exit__(exc_type, exc, tb)
 
-    def __enter__(self) -> RolloutScope:
+    def __enter__(self) -> Self:
         self._open_span()
         try:
             if not self._started:
@@ -159,6 +167,7 @@ class RolloutScope:
         except BaseException as exc:
             self._close_span(type(exc), exc, exc.__traceback__)
             raise
+        self._entered_at = time.perf_counter()
         self._tokens.append(current_rollout.set(self))
         return self
 
@@ -174,6 +183,11 @@ class RolloutScope:
                 importer = getattr(self.journal, "import_server_events", None)
                 if importer is not None:
                     importer(self.key)
+            metrics = rollout_metrics(self.journal.events(self.key))
+            if self._entered_at is not None:
+                metrics["wall_ms"] = max(float(metrics["wall_ms"]),
+                                         (time.perf_counter() - self._entered_at) * 1000.0)
+            self.emit(METRIC, metrics, name="finish")
             status: Literal["succeeded", "failed"] = "failed" if exc is not None else (self.outcome or "succeeded")
             self.journal.finish(self.key, status)
             if exc is None and status == "failed":
@@ -183,7 +197,7 @@ class RolloutScope:
                 current_rollout.reset(self._tokens.pop())
             self._close_span(exc_type, exc, tb)
 
-    async def __aenter__(self) -> RolloutScope:
+    async def __aenter__(self) -> Self:
         return self.__enter__()
 
     async def __aexit__(self, exc_type: type[BaseException] | None, exc: BaseException | None,
