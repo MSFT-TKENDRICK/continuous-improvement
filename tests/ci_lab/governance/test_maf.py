@@ -8,8 +8,6 @@ import json
 import pytest
 
 from ci_lab.governance import maf as gmaf
-from ci_lab.governance.acs import AgentControlBlocked, AgentControlSuspended
-from ci_lab.governance.approvals import FileApprovalQueue
 from ci_lab.governance.audit import AuditTrail
 from ci_lab.governance.hypervisor import KillSwitchAdapter
 from ci_lab.testing import Call, FakeChatClient
@@ -100,27 +98,6 @@ def test_invalid_mode_env_fails_at_startup(monkeypatch, audit):
         gmaf.Governance("meta_agents", audit=audit)
 
 
-def test_escalation_round_trips_through_the_file_queue(tmp_path, audit):
-    queue = FileApprovalQueue(tmp_path / "approvals")
-    gov = gmaf.Governance("order_support", audit=audit, approvals=queue, kill_switch=KILL_OFF)
-    hist = [{"kind": "tool_call", "tool": "verify_identity", "call_id": "c1", "args": {"order_id": "A1"}},
-            {"kind": "tool_result", "tool": "verify_identity", "call_id": "c1",
-             "result": {"verified": True, "order_id": "A1"}, "status": "ok"}]
-    snap = {"call": {"name": "issue_refund", "arguments": {"order_id": "A1", "amount": 900}}, "history": hist}
-    with pytest.raises(AgentControlSuspended) as exc:
-        asyncio.run(gov.check("pre_tool_call", snap, "issue_refund"))
-    identity = exc.value.result.enforced_identity
-    [pending] = queue.pending()
-    assert "sha256:" + pending["enforced_identity"] == identity and pending["reason"] == "refund_over_limit"
-    queue.decide(identity, "approve", by="tester")
-    assert asyncio.run(gov.check("pre_tool_call", snap, "issue_refund")).verdict.reason == "refund_over_limit"
-    with pytest.raises(AgentControlBlocked):  # one-shot: the approval is consumed
-        asyncio.run(gov.check("pre_tool_call", snap, "issue_refund"))
-    with pytest.raises(ValueError, match="64-hex"):
-        queue.decide("../etc", "approve")
-    assert [(r["decision"], r["reason"]) for r in _records(audit)] == [
-        ("deny", "refund_over_limit approval:suspend"), ("allow", "refund_over_limit approval:allow"),
-        ("deny", "refund_over_limit")]
 
 
 def test_harness_mcp_hook_allows_introspection_and_fails_closed(monkeypatch):

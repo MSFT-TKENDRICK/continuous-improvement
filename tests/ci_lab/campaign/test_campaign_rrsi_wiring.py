@@ -52,7 +52,7 @@ def ev(score: float | dict[str, float], *, split: str = "evolve", tree: str = "i
     per = score if isinstance(score, dict) else dict.fromkeys(cases, score)
     return EvalResult(sha(tree), split, PIN,  # type: ignore[arg-type]
                       [TaskScore(c, 0, "stub", per[c], tokens_in=tokens,
-                                 violations=(Violation("refund.unverified_identity", "critical", "x"),)
+                                 violations=(Violation("change.unverified_identity", "critical", "x"),)
                                  if c in critical else ())
                        for c in cases])
 
@@ -92,7 +92,7 @@ def test_hyperparams_maps_campaign_keys() -> None:
 
 def test_old_history_rows_parse_with_defaults() -> None:
     old = [{"eid": f"{CID}-r01", "round": 1, "decision": "ship", "winner": "v1", "tokens": 10,
-            "arms": [{"arm": "v1", "component": "skill", "hypotheses": ["use refunds skill"], "accepted": True,
+            "arms": [{"arm": "v1", "component": "skill", "hypotheses": ["use changes skill"], "accepted": True,
                       "score": 0.6, "status": "evaluated"},
                      {"arm": "v2", "component": "prompt", "hypotheses": [], "accepted": False, "score": None,
                       "status": "failed"}]},
@@ -101,7 +101,7 @@ def test_old_history_rows_parse_with_defaults() -> None:
     assert len(recs) == 1
     (r,) = recs
     assert (r.round, r.arm, r.strategy, r.accepted, r.delta_s, r.novelty) == (0, "v1", "agent", True, None, 0)
-    assert [(e.component, e.hypothesis) for e in r.edits] == [("skill", "use refunds skill")]
+    assert [(e.component, e.hypothesis) for e in r.edits] == [("skill", "use changes skill")]
     assert rrsi_wiring.trajectory(old) == []  # no incumbent_score in old rows -> no stall signal
     assert rrsi_wiring.score_next(old[0]) == 0.6 and rrsi_wiring.best_score(old) == 0.6
     # And schedule still plans from them.
@@ -357,17 +357,13 @@ def _no_client(**_: Any) -> Any:
     raise AssertionError("building deps must not create chat clients")
 
 
-def test_wired_deps_offline_uses_rrsi_adapters_and_agl_journal(tmp_path: Path, no_offline_env: None) -> None:
-    from ci_lab.agl.journal import FileRolloutJournal
-
+def test_wired_deps_offline_uses_rrsi_adapters(tmp_path: Path, no_offline_env: None) -> None:
     deps = wired_deps("offline", run_root=tmp_path / "runs", ledger_dir=tmp_path / "experiments",
-                      client_factory=_no_client, wt_root=tmp_path / "wt", domain_name="order_support")
+                      client_factory=_no_client, wt_root=tmp_path / "wt", domain_name="harness")
     assert deps.schedule is rrsi_wiring.schedule and deps.select is rrsi_wiring.select
     assert deps.calibrate_delta is rrsi_wiring.calibrate_delta and deps.confirm_test is rrsi_wiring.confirm_test
     assert deps.build_envelope is rrsi_wiring.build_envelope
-    journal = deps.domain.inner.journal  # type: ignore[attr-defined]
-    assert isinstance(journal, FileRolloutJournal)
-    assert Path(journal.root) == tmp_path / "runs" / AGL_DIR and journal.root.is_dir()
+    assert deps.domain.name == "harness"
     over = wired_deps("offline", run_root=tmp_path / "runs", ledger_dir=tmp_path / "experiments",
                       client_factory=_no_client, wt_root=tmp_path / "wt", select=defaults.select)
     assert over.select is defaults.select  # overrides still win

@@ -48,8 +48,10 @@ def test_manifest_surface_splits_and_registry_defaults() -> None:
     domain = HarnessDomain()
     assert domain.name == "harness"
     assert DEFAULT_DOMAIN == "harness"
-    assert DOMAIN_CHOICES == ("order_support", "harness")
+    assert DOMAIN_CHOICES == ("harness",)
     assert isinstance(get_domain("harness"), HarnessDomain)
+    with pytest.raises(ValueError, match="unknown domain"):
+        get_domain("retired")
     assert "harness/harness.yaml" not in SURFACE_GLOBS
     assert {"src/**", "evals/**", "schemas/**", ".github/**", "third_party/**",
             "harness/harness.yaml"} <= set(FROZEN_GLOBS)

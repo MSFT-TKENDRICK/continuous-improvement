@@ -112,7 +112,7 @@ def test_guard_eval_is_stochastic_on_copilot_profile(tmp_path: Path) -> None:
 def test_text_strategy_may_not_write_guards(tmp_path: Path) -> None:
     """N5/B2: a text strategy touching harness/guards/** is rejected before evaluation."""
     camp, deps = _new(tmp_path, {"strategies": ["gepa"]})
-    deps.get_strategy("gepa").files = ("harness/prompt/x", "src/order_support/harness/guards/evil.yaml")
+    deps.get_strategy("gepa").files = ("harness/prompt/x", "harness/guards/evil.yaml")
     asyncio.run(camp.calibrate())
     out = asyncio.run(camp.run(rounds=1))
     assert out["rounds"][0]["decision"] != "ship"
@@ -120,7 +120,7 @@ def test_text_strategy_may_not_write_guards(tmp_path: Path) -> None:
     for arm in ("v1", "v2"):
         ev = json.loads((run_dir / arm / "eval.json").read_text())
         assert ev["skipped"] is True
-        assert ev["reason"] == "edit_scope: gepa may not write src/order_support/harness/guards/evil.yaml"
+        assert ev["reason"] == "edit_scope: gepa may not write harness/guards/evil.yaml"
         assert json.loads((run_dir / arm / "arm.done").read_text())["result"]["status"] == "rejected"
     assert not [v for e, v, _ in deps.domain.calls if e == f"{CID}-r01" and v != "inc"]
 

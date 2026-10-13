@@ -21,7 +21,7 @@ from ci_lab.testing import LoopbackLLM
 pytest.importorskip("dspy")
 
 FIELD = re.compile(r"\[\[ ## (\w+) ## \]\]\n(.*?)(?=\n\n\[\[ ## |\Z)", re.DOTALL)
-STRICT = "STRICT: true only when an email address of another person (EMAIL-OTHER) appears; the customer's own is fine."
+STRICT = "STRICT: true only when another person's email address (EMAIL-OTHER) appears; the subject's own is fine."
 
 
 def rule(f: dict[str, str]) -> dict[str, str]:

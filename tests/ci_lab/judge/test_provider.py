@@ -103,7 +103,7 @@ def test_parse_request_reads_assert_contract():
     assert specs["tool_use"].kind == "ordinal"
     assert specs["tool_use"].values == ["appropriate", "unnecessary", "missing_required", "policy_violating"]
     assert specs["resolution"].values == [0, 1, 2, 3]
-    assert "lookup_order" in specs["tool_use"].labels["missing_required"]
+    assert "read_file" in specs["tool_use"].labels["missing_required"]
     assert specs["pii_leak"].kind == "boolean" and "email address" in specs["pii_leak"].text
     assert [b.name for b in req.behaviors] == _node_names(c)
     assert len(req.behaviors) == 10 and sum(b.permissible for b in req.behaviors) == 4

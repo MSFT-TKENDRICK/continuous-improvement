@@ -13,7 +13,7 @@ from ci_lab.campaign.driver import Campaign
 from ci_lab.campaign.fakes import StubDomain, fake_deps
 from ci_lab.cli import main
 from ci_lab.contracts import Profile
-from ci_lab.domain import order_support as osd
+from ci_lab.domain import harness as harness_domain
 from ci_lab.governance import maf as gmaf
 from ci_lab.governance.approvals import FileApprovalQueue
 from ci_lab.governance.audit import AuditTrail
@@ -39,7 +39,7 @@ def _launch(gov, **kw):
 
 def test_dry_run_launch_is_allowed_for_real_and_fake_domains(tmp_path):
     assert _launch(_gov(tmp_path))["decision"] == "allow"
-    real = arm_scopes(osd.COMPONENT_GLOBS, osd.SURFACE_GLOBS)
+    real = arm_scopes(harness_domain.COMPONENT_GLOBS, harness_domain.SURFACE_GLOBS)
     assert _launch(_gov(tmp_path), arms=real, publish=True)["decision"] == "allow"
 
 
