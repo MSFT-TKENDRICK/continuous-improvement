@@ -25,7 +25,7 @@ from ci_lab.meta.brief import (
     student_brief_tools,
 )
 from ci_lab.meta.run import default_arm_brief, write_brief, write_failures
-from ci_lab.meta.spec_loader import SPECS_DIR, default_builder, load_spec
+from ci_lab.meta.spec_loader import default_builder, load_spec
 from ci_lab.testing import Call, FakeChatClient
 from ci_lab.workflows.steps import arm_tools
 
@@ -46,7 +46,7 @@ def correction(text: str) -> StudentCorrection:
 
 
 def test_student_spec_has_no_rubric_tools_and_builds():
-    spec = load_spec(SPECS_DIR / "student.yaml")
+    spec = load_spec("student")
     assert spec.name == "CiStudent" and "submit_output" in spec.tools
     assert not [t for t in spec.tools if re.search(r"brief|history|document|rubric|vault|eval", t)]
     with warnings.catch_warnings():

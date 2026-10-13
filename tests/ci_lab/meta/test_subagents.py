@@ -8,6 +8,7 @@ import pytest
 import yaml
 
 from ci_lab.contracts import ArmContext, ArmDirective, FailureRecord, Profile
+from ci_lab.harness_tree import repo_harness_dir
 from ci_lab.meta.run import ArmSurface, MetaAgentError, run_meta_agent, run_proposer
 from ci_lab.meta.spec_loader import (
     SPECS_DIR,
@@ -44,8 +45,9 @@ def _bindings(spec):
 
 @pytest.fixture
 def spec_copy(tmp_path):
-    shutil.copytree(SPECS_DIR, tmp_path / "specs")
-    return tmp_path / "specs"
+    shutil.copytree(repo_harness_dir(), tmp_path / "harness")
+    shutil.copy(SPECS_DIR / "critic.yaml", tmp_path / "harness" / "agents")
+    return tmp_path / "harness" / "agents"
 
 
 def _mutate(path, fn):

@@ -37,6 +37,6 @@ tools:
       - name: submit_verdict
 x-ci:
   purpose: critic
-  instructions_files: [prompts/common.md, prompts/critic.md]
+  instructions_files: [prompts/critic_common.md, prompts/critic.md]
   terminal_tool: submit_verdict
   documents: [brief, proposal, diff, analysis]

@@ -1,5 +1,5 @@
 # Student (bus contract v2 §6): produces one task-graph deliverable. Not a manifest agent; the bus
-# loads it by path (load_spec(SPECS_DIR / "student.yaml")) and installs StudentFirewallMiddleware.
+# loads it by path (load_spec("student", harness_dir=...)) and installs StudentFirewallMiddleware.
 # Its only input is the projected trajectory message (task + own artifacts + dependency excerpts +
 # latest StudentCorrection). No tool reads run documents, the rubric vault, evals or history.
 kind: Prompt

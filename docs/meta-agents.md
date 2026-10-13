@@ -9,7 +9,14 @@ The self-improvement loop uses four LLM agents and a Domain adapter:
 
 The agents are defined declaratively as MAF `kind: Prompt` specs and run through MAF `create_harness_agent` (`runtime: harness`). Each one ends by calling a terminal `submit_*` tool, and the loop then reads the JSON that tool wrote.
 
-## Specs (`src/ci_lab/meta/specs/`)
+## Specs
+
+The evolvable specs (analyst, proposer, reflector, failure_analyst and the task-graph student) and their
+prompts live in the self-hosted harness tree, `harness/agents/` and `harness/prompts/` (see
+[harness-tree.md](harness-tree.md)). `load_spec(key, harness_dir=...)` resolves them under an explicit
+`harness_dir` (default: the repo-root `harness/`). The critic, judge, adversary and `manifest.yaml` stay
+frozen in `src/ci_lab/meta/specs/` (the critic reads a frozen copy of the common prompt,
+`prompts/critic_common.md`).
 
 | File | Role | Terminal tool |
 |---|---|---|
@@ -30,7 +37,7 @@ Each spec uses provider `GitHubCopilot`. Its `tools[].bindings` names are resolv
 
 The `x-ci` extension block holds:
 
-- `instructions_files`: markdown files appended to `instructions`, in order (`prompts/common.md` first);
+- `instructions_files`: markdown files appended to `instructions`, in order (`../prompts/common.md` first for tree specs);
 - `terminal_tool`;
 - `purpose`;
 - `documents`: the run documents the agent may read;

@@ -53,7 +53,7 @@ tools:
       - name: submit_proposal_done
 x-ci:
   purpose: proposer
-  instructions_files: [prompts/common.md, prompts/proposer.md]
+  instructions_files: [../prompts/common.md, ../prompts/proposer.md]
   terminal_tool: submit_proposal_done
   documents: [brief, analysis, history, critique]
   skills_paths: [third_party/agent-lightning-skill/skills]
