@@ -10,9 +10,14 @@ from ci_lab.optim.gepa import (
     optimize_texts,
 )
 from ci_lab.optim.lm import make_lm
-from ci_lab.optim.scoring import CaseOutcome, DomainEvolveScorer, EvolveGuard, MetricBudget
+from ci_lab.optim.scoring import (
+    CaseOutcome,
+    DomainEvolveScorer,
+    EvolveGuard,
+    MetricBudget,
+)
 
-PROMPT = "src/order_support/harness/prompts/system.md"
+PROMPT = "harness/prompts/system.md"
 KW = {"c1": "refund", "c2": "tracking", "c3": "escalate", "c4": "polite", "c5": "verify", "c6": "apologise"}
 
 
@@ -131,7 +136,7 @@ def test_async_scorer_runs_on_caller_loop():
                                    config=GepaConfig(max_metric_calls=12))
         return res, asyncio.get_running_loop()
 
-    res, loop = run(go())
+    _res, loop = run(go())
     assert loops and all(lp is loop for lp in loops)
 
 

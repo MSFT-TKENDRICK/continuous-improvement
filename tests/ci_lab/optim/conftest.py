@@ -3,14 +3,15 @@ from __future__ import annotations
 
 import subprocess
 from pathlib import Path
+from typing import ClassVar
 
 import pytest
 
 from ci_lab.contracts import EvalResult, EvaluatorPin, FailureRecord, TaskScore
 
-PROMPT = "src/order_support/harness/prompts/system.md"
-SKILL = "src/order_support/harness/skills/order-support/SKILL.md"
-MEMORY = "src/order_support/harness/skills/order-support/memory.md"
+PROMPT = "harness/prompts/system.md"
+SKILL = "harness/skills/harness-editing/SKILL.md"
+MEMORY = "harness/skills/harness-editing/memory.md"
 
 
 class KeywordDomain:
@@ -18,9 +19,9 @@ class KeywordDomain:
     (system.md + SKILL.md). Records every split it is asked to evaluate."""
 
     name = "fake"
-    surface_globs = ("src/order_support/harness/**",)
-    frozen_globs = ("src/order_support/harness/frozen/**",)
-    component_globs = {"prompt": ("src/order_support/harness/prompts/*.md",)}
+    surface_globs = ("harness/**",)
+    frozen_globs = ("harness/frozen/**",)
+    component_globs: ClassVar[dict[str, tuple[str, ...]]] = {"prompt": ("harness/prompts/**/*.md",)}
 
     def __init__(self, keywords=None, heldout=("h1", "h2")):
         self.keywords = keywords or {"c1": "refund", "c2": "tracking", "c3": "escalate", "c4": "polite"}
@@ -57,10 +58,10 @@ def git(cwd, *args):
 @pytest.fixture
 def worktree(tmp_path):
     wt = tmp_path / "wt"
-    for rel, text in {PROMPT: "You are an order support agent.\n",
-                      SKILL: "# Order support\nBe helpful.\n",
-                      MEMORY: "- remember things\n",
-                      "src/order_support/harness/agent.yaml": "name: OrderSupport\ninstructions: Base.\n"}.items():
+    for rel, text in {PROMPT: "Improve this repository's self-hosted harness.\n",
+                      SKILL: "# Harness editing\nMake bounded harness changes.\n",
+                      MEMORY: "- remember harness lessons\n",
+                      "harness/agent.yaml": "name: HarnessImprover\ninstructions: Base.\n"}.items():
         f = wt / rel
         f.parent.mkdir(parents=True, exist_ok=True)
         f.write_text(text, encoding="utf-8", newline="\n")
