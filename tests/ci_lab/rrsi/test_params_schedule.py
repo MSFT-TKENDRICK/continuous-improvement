@@ -3,7 +3,8 @@ import random
 
 import pytest
 
-from ci_lab.contracts import COMPONENTS, ArmDirective
+from ci_lab.contracts import COMPONENTS, STRATEGIES, ArmDirective
+from ci_lab.rrsi import params as P
 from ci_lab.rrsi import schedule as S
 from ci_lab.rrsi.history import tried_components
 from ci_lab.rrsi.params import PROFILES, TABLE5, Hyperparams, paper_reference, profile
@@ -27,7 +28,7 @@ def test_table5_reference_columns():
 
 
 def test_profiles_and_roundtrip():
-    assert set(PROFILES) == {"smoke", "local", "paper"}
+    assert set(PROFILES) == {"smoke", "local", "paper", "harness"}
     assert (profile("smoke").M, profile("smoke").k, profile("smoke").n_arms, profile("smoke").T) == (12, 1, 2, 3)
     assert (profile("local").M, profile("local").k, profile("local").T) == (40, 2, 8)
     for p in PROFILES.values():
@@ -42,6 +43,45 @@ def test_profiles_and_roundtrip():
 def test_hyperparam_validation(bad):
     with pytest.raises(ValueError):
         profile("paper", **bad)
+
+
+@pytest.mark.parametrize("bad", [{"w_x": -0.1}, {"w_x": math.inf}, {"x_cap": math.nan}, {"calls_cap": -1.0},
+                                 {"wall_cap": math.inf}, {"x_cap": True}])
+def test_resource_hyperparam_validation(bad):
+    with pytest.raises(ValueError):
+        profile("paper", **bad)
+    with pytest.raises(TypeError):
+        profile("paper", require_resource_metrics=1)
+
+
+def test_existing_profiles_keep_paper_faithful_resource_defaults():
+    for name in ("smoke", "local", "paper"):
+        p = profile(name)
+        assert (p.w_x, p.x_cap, p.calls_cap, p.wall_cap, p.require_resource_metrics) == (0.0, None, None, None, False)
+        assert not p.resource_aware
+        assert "agl" not in p.strategies and "guard" not in p.strategies
+    assert "agl" in P.OPT_IN_STRATEGIES and "guard" in P.OPT_IN_STRATEGIES
+
+
+def test_harness_profile_copies_local_plus_resource_knobs():
+    h, local = profile("harness"), profile("local")
+    assert (h.w_x, h.x_cap, h.calls_cap, h.wall_cap, h.require_resource_metrics) == (0.5, 0.10, 0.15, None, True)
+    assert h.resource_aware
+    assert h.strategies == P.HARNESS_STRATEGIES
+    assert h.strategies == tuple(s for s in ("agent", "gepa", "skillopt", "agl") if s in STRATEGIES)
+    assert {"agent", "gepa", "skillopt"} <= set(h.strategies)
+    skip = {"name", "strategies", "w_x", "x_cap", "calls_cap", "wall_cap", "require_resource_metrics"}
+    assert {k: v for k, v in h.to_dict().items() if k not in skip} == \
+        {k: v for k, v in local.to_dict().items() if k not in skip}
+
+
+def test_resource_knobs_roundtrip_and_old_dicts_load():
+    p = profile("local", w_x=0.25, x_cap=-0.05, calls_cap=0.2, wall_cap=0.5, require_resource_metrics=True)
+    assert Hyperparams.from_dict(p.to_dict()) == p
+    old = {k: v for k, v in profile("local").to_dict().items()
+           if k not in ("w_x", "x_cap", "calls_cap", "wall_cap", "require_resource_metrics")}
+    assert Hyperparams.from_dict(old) == profile("local")
+    assert profile("local", x_cap=0.1).resource_aware and profile("local", w_x=0.1).resource_aware
 
 
 # ---------------------------------------------------------------- budget

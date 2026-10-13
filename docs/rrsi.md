@@ -8,7 +8,7 @@ Nothing in it calls models, git or a clock. The only I/O is the JSON/JSONL helpe
 
 | Module | Public API |
 |---|---|
-| `params` | `Hyperparams` (frozen; `with_`, `to_dict`, `from_dict`), `PROFILES` (`smoke`, `local`, `paper`), `profile(name, **overrides)`, `TABLE5`, `paper_reference(domain)` |
+| `params` | `Hyperparams` (frozen; `with_`, `to_dict`, `from_dict`), `PROFILES` (`smoke`, `local`, `paper`, `harness`), `HARNESS_STRATEGIES`, `profile(name, **overrides)`, `TABLE5`, `paper_reference(domain)` |
 | `schedule` | `edit_budget(t, T, b_min, b_max)`, `stall_flag(traj, t, w, delta)`, `untried(history)`, `component_yield`, `prune_set(history, t, n_prune)`, `exploration_slots`, `plan_round(t, hp, history, trajectory, delta, arms=None, *, experiment_id=None)` → `RoundSchedule` (`.directives` rich, `.arm_directives` contract), `directives(...)` → `tuple[contracts.ArmDirective, ...]` |
 | `strategies` | `strategy_stats(history)`, `starved(stats, t, K)`, `allocate_strategies(t, n_arms, history, hp)` → `StrategyAllocation` (strategy + reason + Thompson draws per slot) |
 | `history` | `HistoryRecord` (round, arm, edits, score, cost, delta_s, delta_c, accepted = *a*, novelty, admissible, reasons), `read_jsonl`, `append_jsonl` (rejects a duplicate (round, arm)), `write_jsonl` (atomic), `accepted_counts`, `tried_components`, `before`, `replace_round` |
@@ -20,7 +20,7 @@ Nothing in it calls models, git or a clock. The only I/O is the JSON/JSONL helpe
 
 ## Profiles
 
-All three profiles share the paper's coding-domain weights: w_s = 0, w_c = 15, w_n = 0.5, β0 = 0.10, β1 = 44.5.
+All profiles share the paper's coding-domain weights: w_s = 0, w_c = 15, w_n = 0.5, β0 = 0.10, β1 = 44.5.
 
 | | T | k | N | b_min..b_max | w | m_draft | n_prune | M | n_bootstrap |
 |---|---|---|---|---|---|---|---|---|---|
@@ -30,6 +30,8 @@ All three profiles share the paper's coding-domain weights: w_s = 0, w_c = 15, w
 
 - In every profile, δ is `None` because it is calibrated by A/A. `paper_reference(domain)` carries the paper's fixed δ for comparison only.
 - The smoke and local window and budget values are our own choices and do not come from the paper.
+- `harness` (self-hosted harness target) copies `local` and turns on resource regularization: w_x = 0.5, `x_cap` = 0.10, `calls_cap` = 0.15, `wall_cap` = None, `require_resource_metrics` = True (see [Resource regularization](#resource-regularization)). Its strategies are `HARNESS_STRATEGIES`, computed at import as `agent`, `gepa`, `skillopt`, `agl` filtered by `contracts.STRATEGIES`, so `agl` joins automatically once it is registered.
+- `smoke`, `local` and `paper` keep every resource knob off (w_x = 0, no caps), so their decisions are paper-faithful. `DEFAULT_STRATEGIES` excludes the opt-in `guard` and `agl` strategies.
 
 ## Semantics
 
