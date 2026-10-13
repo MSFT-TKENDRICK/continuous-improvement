@@ -1,0 +1,3138 @@
+{
+  "description": "The fixture is the contract the canvas (layer 33) builds against: real request bodies and the parsed SSE events of ``ci-lab chat serve --profile fake --dry-run-launch`` for a draft run, the launch run that ends in an approval interrupt, and the resume runs (approved, rejected, and the legacy ``{interruptId, approved}`` shape). Volatile values (ids, paths, timestamps) are replaced by stable placeholders.",
+  "regenerate": "uv run --no-sync python tests/ci_lab/chat/test_approval_fixture.py",
+  "server": "ci-lab chat serve --profile fake --dry-run-launch (in-process via fastapi TestClient)",
+  "agent_framework_ag_ui": "1.4.0",
+  "sse": "each event is one 'data: <json>' line followed by a blank line; ': keepalive' comments may appear",
+  "protocol": {
+    "interrupt_run_ends_with": {
+      "type": "RUN_FINISHED",
+      "outcome.type": "interrupt"
+    },
+    "interrupt_fields": [
+      "id",
+      "message",
+      "metadata",
+      "reason",
+      "responseSchema",
+      "toolCallId"
+    ],
+    "interrupt_tool": "metadata.agent_framework.function_call.{call_id,name,arguments}",
+    "approval_custom_event": "function_approval_request",
+    "resume_canonical": [
+      {
+        "interruptId": "<interrupt-1>",
+        "status": "resolved",
+        "payload": {
+          "approved": true
+        }
+      }
+    ],
+    "resume_rejected": [
+      {
+        "interruptId": "<interrupt-2>",
+        "status": "resolved",
+        "payload": {
+          "approved": false
+        }
+      }
+    ],
+    "resume_legacy": [
+      {
+        "interruptId": "<interrupt-3>",
+        "approved": true
+      }
+    ],
+    "resume_rules": [
+      "send a NEW run on the SAME threadId to the SAME server process (approval state is in memory)",
+      "messages = the MESSAGES_SNAPSHOT of the interrupted run; state = its last STATE_SNAPSHOT",
+      "payload must contain a boolean 'approved' (or legacy 'accepted'); status 'cancelled' rejects",
+      "an interrupt id is single-use and bound to its thread; unknown ids never execute the tool"
+    ]
+  },
+  "order": [
+    "1_draft",
+    "2_launch_interrupt_approved",
+    "3_resume_approved",
+    "2_launch_interrupt_rejected",
+    "3_resume_rejected",
+    "2_launch_interrupt_approved_legacy",
+    "3_resume_approved_legacy"
+  ],
+  "steps": {
+    "1_draft": {
+      "request": {
+        "method": "POST",
+        "path": "/agui",
+        "headers": {
+          "content-type": "application/json",
+          "accept": "text/event-stream",
+          "x-ci-chat-token": "<CI_CHAT_TOKEN>"
+        },
+        "body": {
+          "threadId": "thread-approve",
+          "runId": "run-1",
+          "messages": [
+            {
+              "id": "user-1",
+              "role": "user",
+              "content": "Please draft chat-demo: 2 arms, 1 round, local."
+            }
+          ],
+          "state": {},
+          "tools": [],
+          "context": [],
+          "forwardedProps": {}
+        }
+      },
+      "events": [
+        {
+          "type": "RUN_STARTED",
+          "threadId": "thread-approve",
+          "runId": "run-1"
+        },
+        {
+          "type": "STATE_SNAPSHOT",
+          "snapshot": {
+            "draft": null,
+            "launches": []
+          }
+        },
+        {
+          "type": "TEXT_MESSAGE_START",
+          "messageId": "<uuid-1>",
+          "role": "assistant"
+        },
+        {
+          "type": "TOOL_CALL_START",
+          "toolCallId": "<call-1>",
+          "toolCallName": "draft_campaign",
+          "parentMessageId": "<uuid-1>"
+        },
+        {
+          "type": "TOOL_CALL_ARGS",
+          "toolCallId": "<call-1>",
+          "delta": "{\"cid\": \"chat-demo\", \"hyper\": {\"arms\": 2}, \"rounds\": 1, \"target\": \"local\", \"rationale\": \"scripted fake-profile draft\"}"
+        },
+        {
+          "type": "TOOL_CALL_END",
+          "toolCallId": "<call-1>"
+        },
+        {
+          "type": "TOOL_CALL_RESULT",
+          "messageId": "<uuid-2>",
+          "toolCallId": "<call-1>",
+          "content": "{\"draft\": {\"cid\": \"chat-demo\", \"commands\": [[\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"new\", \"chat-demo\", \"--profile\", \"fake\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\"], [\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"calibrate\", \"chat-demo\", \"--profile\", \"fake\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\"], [\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"run\", \"chat-demo\", \"--profile\", \"fake\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\", \"--rounds\", \"1\"]], \"created\": 0, \"estimate\": {\"aa_repeats\": 5, \"arms\": 2, \"breakdown\": {\"aa_calibration\": 130, \"arms\": 52, \"incumbent_reevaluation\": 26}, \"cases\": 26, \"evaluations\": 182, \"evaluations_with_incumbent\": 208, \"formula\": \"(aa_repeats + rounds * arms) * cases * k\", \"heldout_confirm_per_look\": 22, \"k\": 1, \"notes\": [\"cases = evolve-split cases of the frozen ASSERT sets\", \"each evaluation is one agent rollout plus judging; guard arms run paired guard-off/on trials and may cost more\", \"the held-out confirm look (`campaign confirm`) is not part of the launch chain\"], \"rounds\": 1}, \"hyper\": {\"aa_repeats\": 5, \"arm_budget_tokens\": null, \"arms\": 2, \"b_max\": null, \"b_min\": null, \"budget\": null, \"budget_tokens\": null, \"bus\": true, \"challenger\": \"det\", \"draft_prs\": true, \"guard_margin\": 0.0, \"guard_stochastic\": null, \"guard_trials\": null, \"heartbeat_s\": 30.0, \"holdout_looks\": 1, \"k\": 1, \"max_arm_attempts\": 2, \"max_parallel_arms\": 2, \"max_rounds\": 8, \"rrsi\": {}, \"rrsi_profile\": \"local\", \"seed\": 0, \"strategies\": [\"agent\", \"gepa\", \"skillopt\", \"guard\"]}, \"ignored_overrides\": {}, \"overrides\": {}, \"profile\": \"fake\", \"rationale\": \"scripted fake-profile draft\", \"rounds\": 1, \"target\": \"local\", \"warnings\": []}, \"ok\": true, \"path\": \"<tmp>/chat/drafts/chat-demo.json\", \"warnings\": []}",
+          "role": "tool"
+        },
+        {
+          "type": "STATE_SNAPSHOT",
+          "snapshot": {
+            "draft": {
+              "cid": "chat-demo",
+              "target": "local",
+              "rounds": 1,
+              "rationale": "scripted fake-profile draft",
+              "hyper": {
+                "arms": 2,
+                "k": 1,
+                "max_rounds": 8,
+                "aa_repeats": 5,
+                "max_parallel_arms": 2,
+                "seed": 0,
+                "budget": null,
+                "b_min": null,
+                "b_max": null,
+                "rrsi_profile": "local",
+                "rrsi": {},
+                "budget_tokens": null,
+                "max_arm_attempts": 2,
+                "holdout_looks": 1,
+                "draft_prs": true,
+                "strategies": [
+                  "agent",
+                  "gepa",
+                  "skillopt",
+                  "guard"
+                ],
+                "arm_budget_tokens": null,
+                "heartbeat_s": 30.0,
+                "guard_trials": null,
+                "guard_stochastic": null,
+                "guard_margin": 0.0,
+                "bus": true,
+                "challenger": "det"
+              },
+              "overrides": {},
+              "ignored_overrides": {},
+              "estimate": {
+                "formula": "(aa_repeats + rounds * arms) * cases * k",
+                "cases": 26,
+                "k": 1,
+                "arms": 2,
+                "rounds": 1,
+                "aa_repeats": 5,
+                "evaluations": 182,
+                "breakdown": {
+                  "aa_calibration": 130,
+                  "arms": 52,
+                  "incumbent_reevaluation": 26
+                },
+                "evaluations_with_incumbent": 208,
+                "heldout_confirm_per_look": 22,
+                "notes": [
+                  "cases = evolve-split cases of the frozen ASSERT sets",
+                  "each evaluation is one agent rollout plus judging; guard arms run paired guard-off/on trials and may cost more",
+                  "the held-out confirm look (`campaign confirm`) is not part of the launch chain"
+                ]
+              },
+              "profile": "fake",
+              "created": 0,
+              "warnings": [],
+              "commands": [
+                [
+                  "<python>",
+                  "-m",
+                  "ci_lab.cli",
+                  "campaign",
+                  "new",
+                  "chat-demo",
+                  "--profile",
+                  "fake",
+                  "--run-dir",
+                  "<tmp>/runs",
+                  "--dry-run-publish"
+                ],
+                [
+                  "<python>",
+                  "-m",
+                  "ci_lab.cli",
+                  "campaign",
+                  "calibrate",
+                  "chat-demo",
+                  "--profile",
+                  "fake",
+                  "--run-dir",
+                  "<tmp>/runs",
+                  "--dry-run-publish"
+                ],
+                [
+                  "<python>",
+                  "-m",
+                  "ci_lab.cli",
+                  "campaign",
+                  "run",
+                  "chat-demo",
+                  "--profile",
+                  "fake",
+                  "--run-dir",
+                  "<tmp>/runs",
+                  "--dry-run-publish",
+                  "--rounds",
+                  "1"
+                ]
+              ]
+            },
+            "launches": []
+          }
+        },
+        {
+          "type": "TEXT_MESSAGE_END",
+          "messageId": "<uuid-1>"
+        },
+        {
+          "type": "TEXT_MESSAGE_START",
+          "messageId": "<uuid-3>",
+          "role": "assistant"
+        },
+        {
+          "type": "TEXT_MESSAGE_CONTENT",
+          "messageId": "<uuid-3>",
+          "delta": "Drafted chat-demo: 1 round(s), target local, "
+        },
+        {
+          "type": "TEXT_MESSAGE_CONTENT",
+          "messageId": "<uuid-3>",
+          "delta": "about 182 evaluations. Say \"launch chat-demo\" "
+        },
+        {
+          "type": "TEXT_MESSAGE_CONTENT",
+          "messageId": "<uuid-3>",
+          "delta": "to start it."
+        },
+        {
+          "type": "TEXT_MESSAGE_END",
+          "messageId": "<uuid-3>"
+        },
+        {
+          "type": "MESSAGES_SNAPSHOT",
+          "messages": [
+            {
+              "id": "user-1",
+              "role": "user",
+              "content": "Please draft chat-demo: 2 arms, 1 round, local."
+            },
+            {
+              "id": "<uuid-1>",
+              "role": "assistant",
+              "toolCalls": [
+                {
+                  "id": "<call-1>",
+                  "type": "function",
+                  "function": {
+                    "name": "draft_campaign",
+                    "arguments": "{\"cid\": \"chat-demo\", \"hyper\": {\"arms\": 2}, \"rounds\": 1, \"target\": \"local\", \"rationale\": \"scripted fake-profile draft\"}"
+                  }
+                }
+              ]
+            },
+            {
+              "id": "<uuid-2>",
+              "role": "tool",
+              "content": "{\"draft\": {\"cid\": \"chat-demo\", \"commands\": [[\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"new\", \"chat-demo\", \"--profile\", \"fake\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\"], [\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"calibrate\", \"chat-demo\", \"--profile\", \"fake\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\"], [\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"run\", \"chat-demo\", \"--profile\", \"fake\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\", \"--rounds\", \"1\"]], \"created\": 0, \"estimate\": {\"aa_repeats\": 5, \"arms\": 2, \"breakdown\": {\"aa_calibration\": 130, \"arms\": 52, \"incumbent_reevaluation\": 26}, \"cases\": 26, \"evaluations\": 182, \"evaluations_with_incumbent\": 208, \"formula\": \"(aa_repeats + rounds * arms) * cases * k\", \"heldout_confirm_per_look\": 22, \"k\": 1, \"notes\": [\"cases = evolve-split cases of the frozen ASSERT sets\", \"each evaluation is one agent rollout plus judging; guard arms run paired guard-off/on trials and may cost more\", \"the held-out confirm look (`campaign confirm`) is not part of the launch chain\"], \"rounds\": 1}, \"hyper\": {\"aa_repeats\": 5, \"arm_budget_tokens\": null, \"arms\": 2, \"b_max\": null, \"b_min\": null, \"budget\": null, \"budget_tokens\": null, \"bus\": true, \"challenger\": \"det\", \"draft_prs\": true, \"guard_margin\": 0.0, \"guard_stochastic\": null, \"guard_trials\": null, \"heartbeat_s\": 30.0, \"holdout_looks\": 1, \"k\": 1, \"max_arm_attempts\": 2, \"max_parallel_arms\": 2, \"max_rounds\": 8, \"rrsi\": {}, \"rrsi_profile\": \"local\", \"seed\": 0, \"strategies\": [\"agent\", \"gepa\", \"skillopt\", \"guard\"]}, \"ignored_overrides\": {}, \"overrides\": {}, \"profile\": \"fake\", \"rationale\": \"scripted fake-profile draft\", \"rounds\": 1, \"target\": \"local\", \"warnings\": []}, \"ok\": true, \"path\": \"<tmp>/chat/drafts/chat-demo.json\", \"warnings\": []}",
+              "toolCallId": "<call-1>"
+            },
+            {
+              "id": "<uuid-3>",
+              "role": "assistant",
+              "content": "Drafted chat-demo: 1 round(s), target local, about 182 evaluations. Say \"launch chat-demo\" to start it."
+            }
+          ]
+        },
+        {
+          "type": "RUN_FINISHED",
+          "threadId": "thread-approve",
+          "runId": "run-1"
+        }
+      ]
+    },
+    "2_launch_interrupt_approved": {
+      "request": {
+        "method": "POST",
+        "path": "/agui",
+        "headers": {
+          "content-type": "application/json",
+          "accept": "text/event-stream",
+          "x-ci-chat-token": "<CI_CHAT_TOKEN>"
+        },
+        "body": {
+          "threadId": "thread-approve",
+          "runId": "run-2",
+          "messages": [
+            {
+              "id": "user-1",
+              "role": "user",
+              "content": "Please draft chat-demo: 2 arms, 1 round, local."
+            },
+            {
+              "id": "<uuid-1>",
+              "role": "assistant",
+              "toolCalls": [
+                {
+                  "id": "<call-1>",
+                  "type": "function",
+                  "function": {
+                    "name": "draft_campaign",
+                    "arguments": "{\"cid\": \"chat-demo\", \"hyper\": {\"arms\": 2}, \"rounds\": 1, \"target\": \"local\", \"rationale\": \"scripted fake-profile draft\"}"
+                  }
+                }
+              ]
+            },
+            {
+              "id": "<uuid-2>",
+              "role": "tool",
+              "content": "{\"draft\": {\"cid\": \"chat-demo\", \"commands\": [[\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"new\", \"chat-demo\", \"--profile\", \"fake\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\"], [\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"calibrate\", \"chat-demo\", \"--profile\", \"fake\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\"], [\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"run\", \"chat-demo\", \"--profile\", \"fake\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\", \"--rounds\", \"1\"]], \"created\": 0, \"estimate\": {\"aa_repeats\": 5, \"arms\": 2, \"breakdown\": {\"aa_calibration\": 130, \"arms\": 52, \"incumbent_reevaluation\": 26}, \"cases\": 26, \"evaluations\": 182, \"evaluations_with_incumbent\": 208, \"formula\": \"(aa_repeats + rounds * arms) * cases * k\", \"heldout_confirm_per_look\": 22, \"k\": 1, \"notes\": [\"cases = evolve-split cases of the frozen ASSERT sets\", \"each evaluation is one agent rollout plus judging; guard arms run paired guard-off/on trials and may cost more\", \"the held-out confirm look (`campaign confirm`) is not part of the launch chain\"], \"rounds\": 1}, \"hyper\": {\"aa_repeats\": 5, \"arm_budget_tokens\": null, \"arms\": 2, \"b_max\": null, \"b_min\": null, \"budget\": null, \"budget_tokens\": null, \"bus\": true, \"challenger\": \"det\", \"draft_prs\": true, \"guard_margin\": 0.0, \"guard_stochastic\": null, \"guard_trials\": null, \"heartbeat_s\": 30.0, \"holdout_looks\": 1, \"k\": 1, \"max_arm_attempts\": 2, \"max_parallel_arms\": 2, \"max_rounds\": 8, \"rrsi\": {}, \"rrsi_profile\": \"local\", \"seed\": 0, \"strategies\": [\"agent\", \"gepa\", \"skillopt\", \"guard\"]}, \"ignored_overrides\": {}, \"overrides\": {}, \"profile\": \"fake\", \"rationale\": \"scripted fake-profile draft\", \"rounds\": 1, \"target\": \"local\", \"warnings\": []}, \"ok\": true, \"path\": \"<tmp>/chat/drafts/chat-demo.json\", \"warnings\": []}",
+              "toolCallId": "<call-1>"
+            },
+            {
+              "id": "<uuid-3>",
+              "role": "assistant",
+              "content": "Drafted chat-demo: 1 round(s), target local, about 182 evaluations. Say \"launch chat-demo\" to start it."
+            },
+            {
+              "id": "user-2",
+              "role": "user",
+              "content": "launch chat-demo"
+            }
+          ],
+          "state": {
+            "draft": {
+              "cid": "chat-demo",
+              "target": "local",
+              "rounds": 1,
+              "rationale": "scripted fake-profile draft",
+              "hyper": {
+                "arms": 2,
+                "k": 1,
+                "max_rounds": 8,
+                "aa_repeats": 5,
+                "max_parallel_arms": 2,
+                "seed": 0,
+                "budget": null,
+                "b_min": null,
+                "b_max": null,
+                "rrsi_profile": "local",
+                "rrsi": {},
+                "budget_tokens": null,
+                "max_arm_attempts": 2,
+                "holdout_looks": 1,
+                "draft_prs": true,
+                "strategies": [
+                  "agent",
+                  "gepa",
+                  "skillopt",
+                  "guard"
+                ],
+                "arm_budget_tokens": null,
+                "heartbeat_s": 30.0,
+                "guard_trials": null,
+                "guard_stochastic": null,
+                "guard_margin": 0.0,
+                "bus": true,
+                "challenger": "det"
+              },
+              "overrides": {},
+              "ignored_overrides": {},
+              "estimate": {
+                "formula": "(aa_repeats + rounds * arms) * cases * k",
+                "cases": 26,
+                "k": 1,
+                "arms": 2,
+                "rounds": 1,
+                "aa_repeats": 5,
+                "evaluations": 182,
+                "breakdown": {
+                  "aa_calibration": 130,
+                  "arms": 52,
+                  "incumbent_reevaluation": 26
+                },
+                "evaluations_with_incumbent": 208,
+                "heldout_confirm_per_look": 22,
+                "notes": [
+                  "cases = evolve-split cases of the frozen ASSERT sets",
+                  "each evaluation is one agent rollout plus judging; guard arms run paired guard-off/on trials and may cost more",
+                  "the held-out confirm look (`campaign confirm`) is not part of the launch chain"
+                ]
+              },
+              "profile": "fake",
+              "created": 0,
+              "warnings": [],
+              "commands": [
+                [
+                  "<python>",
+                  "-m",
+                  "ci_lab.cli",
+                  "campaign",
+                  "new",
+                  "chat-demo",
+                  "--profile",
+                  "fake",
+                  "--run-dir",
+                  "<tmp>/runs",
+                  "--dry-run-publish"
+                ],
+                [
+                  "<python>",
+                  "-m",
+                  "ci_lab.cli",
+                  "campaign",
+                  "calibrate",
+                  "chat-demo",
+                  "--profile",
+                  "fake",
+                  "--run-dir",
+                  "<tmp>/runs",
+                  "--dry-run-publish"
+                ],
+                [
+                  "<python>",
+                  "-m",
+                  "ci_lab.cli",
+                  "campaign",
+                  "run",
+                  "chat-demo",
+                  "--profile",
+                  "fake",
+                  "--run-dir",
+                  "<tmp>/runs",
+                  "--dry-run-publish",
+                  "--rounds",
+                  "1"
+                ]
+              ]
+            },
+            "launches": []
+          },
+          "tools": [],
+          "context": [],
+          "forwardedProps": {}
+        }
+      },
+      "events": [
+        {
+          "type": "RUN_STARTED",
+          "threadId": "thread-approve",
+          "runId": "run-2"
+        },
+        {
+          "type": "STATE_SNAPSHOT",
+          "snapshot": {
+            "draft": {
+              "cid": "chat-demo",
+              "target": "local",
+              "rounds": 1,
+              "rationale": "scripted fake-profile draft",
+              "hyper": {
+                "arms": 2,
+                "k": 1,
+                "max_rounds": 8,
+                "aa_repeats": 5,
+                "max_parallel_arms": 2,
+                "seed": 0,
+                "budget": null,
+                "b_min": null,
+                "b_max": null,
+                "rrsi_profile": "local",
+                "rrsi": {},
+                "budget_tokens": null,
+                "max_arm_attempts": 2,
+                "holdout_looks": 1,
+                "draft_prs": true,
+                "strategies": [
+                  "agent",
+                  "gepa",
+                  "skillopt",
+                  "guard"
+                ],
+                "arm_budget_tokens": null,
+                "heartbeat_s": 30.0,
+                "guard_trials": null,
+                "guard_stochastic": null,
+                "guard_margin": 0.0,
+                "bus": true,
+                "challenger": "det"
+              },
+              "overrides": {},
+              "ignored_overrides": {},
+              "estimate": {
+                "formula": "(aa_repeats + rounds * arms) * cases * k",
+                "cases": 26,
+                "k": 1,
+                "arms": 2,
+                "rounds": 1,
+                "aa_repeats": 5,
+                "evaluations": 182,
+                "breakdown": {
+                  "aa_calibration": 130,
+                  "arms": 52,
+                  "incumbent_reevaluation": 26
+                },
+                "evaluations_with_incumbent": 208,
+                "heldout_confirm_per_look": 22,
+                "notes": [
+                  "cases = evolve-split cases of the frozen ASSERT sets",
+                  "each evaluation is one agent rollout plus judging; guard arms run paired guard-off/on trials and may cost more",
+                  "the held-out confirm look (`campaign confirm`) is not part of the launch chain"
+                ]
+              },
+              "profile": "fake",
+              "created": 0,
+              "warnings": [],
+              "commands": [
+                [
+                  "<python>",
+                  "-m",
+                  "ci_lab.cli",
+                  "campaign",
+                  "new",
+                  "chat-demo",
+                  "--profile",
+                  "fake",
+                  "--run-dir",
+                  "<tmp>/runs",
+                  "--dry-run-publish"
+                ],
+                [
+                  "<python>",
+                  "-m",
+                  "ci_lab.cli",
+                  "campaign",
+                  "calibrate",
+                  "chat-demo",
+                  "--profile",
+                  "fake",
+                  "--run-dir",
+                  "<tmp>/runs",
+                  "--dry-run-publish"
+                ],
+                [
+                  "<python>",
+                  "-m",
+                  "ci_lab.cli",
+                  "campaign",
+                  "run",
+                  "chat-demo",
+                  "--profile",
+                  "fake",
+                  "--run-dir",
+                  "<tmp>/runs",
+                  "--dry-run-publish",
+                  "--rounds",
+                  "1"
+                ]
+              ]
+            },
+            "launches": []
+          }
+        },
+        {
+          "type": "TEXT_MESSAGE_START",
+          "messageId": "<uuid-4>",
+          "role": "assistant"
+        },
+        {
+          "type": "TOOL_CALL_START",
+          "toolCallId": "<call-2>",
+          "toolCallName": "launch_campaign",
+          "parentMessageId": "<uuid-4>"
+        },
+        {
+          "type": "TOOL_CALL_ARGS",
+          "toolCallId": "<call-2>",
+          "delta": "{\"cid\": \"chat-demo\"}"
+        },
+        {
+          "type": "TOOL_CALL_END",
+          "toolCallId": "<call-2>"
+        },
+        {
+          "type": "CUSTOM",
+          "name": "function_approval_request",
+          "value": {
+            "id": "<interrupt-1>",
+            "function_call": {
+              "call_id": "<call-2>",
+              "name": "launch_campaign",
+              "arguments": {
+                "cid": "chat-demo"
+              }
+            }
+          }
+        },
+        {
+          "type": "TEXT_MESSAGE_END",
+          "messageId": "<uuid-4>"
+        },
+        {
+          "type": "MESSAGES_SNAPSHOT",
+          "messages": [
+            {
+              "id": "user-1",
+              "role": "user",
+              "content": "Please draft chat-demo: 2 arms, 1 round, local."
+            },
+            {
+              "id": "<uuid-1>",
+              "role": "assistant",
+              "content": "",
+              "toolCalls": [
+                {
+                  "id": "<call-1>",
+                  "type": "function",
+                  "function": {
+                    "name": "draft_campaign",
+                    "arguments": "{\"cid\": \"chat-demo\", \"hyper\": {\"arms\": 2}, \"rounds\": 1, \"target\": \"local\", \"rationale\": \"scripted fake-profile draft\"}"
+                  }
+                }
+              ]
+            },
+            {
+              "id": "<uuid-2>",
+              "role": "tool",
+              "content": "{\"draft\": {\"cid\": \"chat-demo\", \"commands\": [[\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"new\", \"chat-demo\", \"--profile\", \"fake\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\"], [\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"calibrate\", \"chat-demo\", \"--profile\", \"fake\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\"], [\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"run\", \"chat-demo\", \"--profile\", \"fake\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\", \"--rounds\", \"1\"]], \"created\": 0, \"estimate\": {\"aa_repeats\": 5, \"arms\": 2, \"breakdown\": {\"aa_calibration\": 130, \"arms\": 52, \"incumbent_reevaluation\": 26}, \"cases\": 26, \"evaluations\": 182, \"evaluations_with_incumbent\": 208, \"formula\": \"(aa_repeats + rounds * arms) * cases * k\", \"heldout_confirm_per_look\": 22, \"k\": 1, \"notes\": [\"cases = evolve-split cases of the frozen ASSERT sets\", \"each evaluation is one agent rollout plus judging; guard arms run paired guard-off/on trials and may cost more\", \"the held-out confirm look (`campaign confirm`) is not part of the launch chain\"], \"rounds\": 1}, \"hyper\": {\"aa_repeats\": 5, \"arm_budget_tokens\": null, \"arms\": 2, \"b_max\": null, \"b_min\": null, \"budget\": null, \"budget_tokens\": null, \"bus\": true, \"challenger\": \"det\", \"draft_prs\": true, \"guard_margin\": 0.0, \"guard_stochastic\": null, \"guard_trials\": null, \"heartbeat_s\": 30.0, \"holdout_looks\": 1, \"k\": 1, \"max_arm_attempts\": 2, \"max_parallel_arms\": 2, \"max_rounds\": 8, \"rrsi\": {}, \"rrsi_profile\": \"local\", \"seed\": 0, \"strategies\": [\"agent\", \"gepa\", \"skillopt\", \"guard\"]}, \"ignored_overrides\": {}, \"overrides\": {}, \"profile\": \"fake\", \"rationale\": \"scripted fake-profile draft\", \"rounds\": 1, \"target\": \"local\", \"warnings\": []}, \"ok\": true, \"path\": \"<tmp>/chat/drafts/chat-demo.json\", \"warnings\": []}",
+              "toolCallId": "<call-1>"
+            },
+            {
+              "id": "<uuid-3>",
+              "role": "assistant",
+              "content": "Drafted chat-demo: 1 round(s), target local, about 182 evaluations. Say \"launch chat-demo\" to start it."
+            },
+            {
+              "id": "user-2",
+              "role": "user",
+              "content": "launch chat-demo"
+            },
+            {
+              "id": "<uuid-4>",
+              "role": "assistant",
+              "toolCalls": [
+                {
+                  "id": "<call-2>",
+                  "type": "function",
+                  "function": {
+                    "name": "launch_campaign",
+                    "arguments": "{\"cid\": \"chat-demo\"}"
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "RUN_FINISHED",
+          "threadId": "thread-approve",
+          "runId": "run-2",
+          "outcome": {
+            "type": "interrupt",
+            "interrupts": [
+              {
+                "id": "<interrupt-1>",
+                "reason": "tool_call",
+                "message": "Approve running launch_campaign?",
+                "toolCallId": "<call-2>",
+                "responseSchema": {
+                  "type": "object",
+                  "properties": {
+                    "approved": {
+                      "type": "boolean",
+                      "description": "Whether the requested tool call is approved."
+                    },
+                    "accepted": {
+                      "type": "boolean",
+                      "description": "Legacy alias for approved."
+                    },
+                    "cid": {
+                      "type": "string",
+                      "description": "Optional edited value for the 'cid' tool argument."
+                    },
+                    "editedArgs": {
+                      "type": "object",
+                      "description": "Full replacement of the tool arguments. Not merged.",
+                      "properties": {
+                        "cid": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "cid"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "anyOf": [
+                    {
+                      "required": [
+                        "approved"
+                      ]
+                    },
+                    {
+                      "required": [
+                        "accepted"
+                      ]
+                    }
+                  ],
+                  "additionalProperties": false
+                },
+                "metadata": {
+                  "agent_framework": {
+                    "type": "function_approval_request",
+                    "function_call": {
+                      "call_id": "<call-2>",
+                      "name": "launch_campaign",
+                      "arguments": {
+                        "cid": "chat-demo"
+                      }
+                    },
+                    "value": {
+                      "type": "function_approval_request",
+                      "function_call": {
+                        "call_id": "<call-2>",
+                        "name": "launch_campaign",
+                        "arguments": {
+                          "cid": "chat-demo"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "3_resume_approved": {
+      "request": {
+        "method": "POST",
+        "path": "/agui",
+        "headers": {
+          "content-type": "application/json",
+          "accept": "text/event-stream",
+          "x-ci-chat-token": "<CI_CHAT_TOKEN>"
+        },
+        "body": {
+          "threadId": "thread-approve",
+          "runId": "run-3",
+          "messages": [
+            {
+              "id": "user-1",
+              "role": "user",
+              "content": "Please draft chat-demo: 2 arms, 1 round, local."
+            },
+            {
+              "id": "<uuid-1>",
+              "role": "assistant",
+              "content": "",
+              "toolCalls": [
+                {
+                  "id": "<call-1>",
+                  "type": "function",
+                  "function": {
+                    "name": "draft_campaign",
+                    "arguments": "{\"cid\": \"chat-demo\", \"hyper\": {\"arms\": 2}, \"rounds\": 1, \"target\": \"local\", \"rationale\": \"scripted fake-profile draft\"}"
+                  }
+                }
+              ]
+            },
+            {
+              "id": "<uuid-2>",
+              "role": "tool",
+              "content": "{\"draft\": {\"cid\": \"chat-demo\", \"commands\": [[\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"new\", \"chat-demo\", \"--profile\", \"fake\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\"], [\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"calibrate\", \"chat-demo\", \"--profile\", \"fake\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\"], [\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"run\", \"chat-demo\", \"--profile\", \"fake\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\", \"--rounds\", \"1\"]], \"created\": 0, \"estimate\": {\"aa_repeats\": 5, \"arms\": 2, \"breakdown\": {\"aa_calibration\": 130, \"arms\": 52, \"incumbent_reevaluation\": 26}, \"cases\": 26, \"evaluations\": 182, \"evaluations_with_incumbent\": 208, \"formula\": \"(aa_repeats + rounds * arms) * cases * k\", \"heldout_confirm_per_look\": 22, \"k\": 1, \"notes\": [\"cases = evolve-split cases of the frozen ASSERT sets\", \"each evaluation is one agent rollout plus judging; guard arms run paired guard-off/on trials and may cost more\", \"the held-out confirm look (`campaign confirm`) is not part of the launch chain\"], \"rounds\": 1}, \"hyper\": {\"aa_repeats\": 5, \"arm_budget_tokens\": null, \"arms\": 2, \"b_max\": null, \"b_min\": null, \"budget\": null, \"budget_tokens\": null, \"bus\": true, \"challenger\": \"det\", \"draft_prs\": true, \"guard_margin\": 0.0, \"guard_stochastic\": null, \"guard_trials\": null, \"heartbeat_s\": 30.0, \"holdout_looks\": 1, \"k\": 1, \"max_arm_attempts\": 2, \"max_parallel_arms\": 2, \"max_rounds\": 8, \"rrsi\": {}, \"rrsi_profile\": \"local\", \"seed\": 0, \"strategies\": [\"agent\", \"gepa\", \"skillopt\", \"guard\"]}, \"ignored_overrides\": {}, \"overrides\": {}, \"profile\": \"fake\", \"rationale\": \"scripted fake-profile draft\", \"rounds\": 1, \"target\": \"local\", \"warnings\": []}, \"ok\": true, \"path\": \"<tmp>/chat/drafts/chat-demo.json\", \"warnings\": []}",
+              "toolCallId": "<call-1>"
+            },
+            {
+              "id": "<uuid-3>",
+              "role": "assistant",
+              "content": "Drafted chat-demo: 1 round(s), target local, about 182 evaluations. Say \"launch chat-demo\" to start it."
+            },
+            {
+              "id": "user-2",
+              "role": "user",
+              "content": "launch chat-demo"
+            },
+            {
+              "id": "<uuid-4>",
+              "role": "assistant",
+              "toolCalls": [
+                {
+                  "id": "<call-2>",
+                  "type": "function",
+                  "function": {
+                    "name": "launch_campaign",
+                    "arguments": "{\"cid\": \"chat-demo\"}"
+                  }
+                }
+              ]
+            }
+          ],
+          "state": {
+            "draft": {
+              "cid": "chat-demo",
+              "target": "local",
+              "rounds": 1,
+              "rationale": "scripted fake-profile draft",
+              "hyper": {
+                "arms": 2,
+                "k": 1,
+                "max_rounds": 8,
+                "aa_repeats": 5,
+                "max_parallel_arms": 2,
+                "seed": 0,
+                "budget": null,
+                "b_min": null,
+                "b_max": null,
+                "rrsi_profile": "local",
+                "rrsi": {},
+                "budget_tokens": null,
+                "max_arm_attempts": 2,
+                "holdout_looks": 1,
+                "draft_prs": true,
+                "strategies": [
+                  "agent",
+                  "gepa",
+                  "skillopt",
+                  "guard"
+                ],
+                "arm_budget_tokens": null,
+                "heartbeat_s": 30.0,
+                "guard_trials": null,
+                "guard_stochastic": null,
+                "guard_margin": 0.0,
+                "bus": true,
+                "challenger": "det"
+              },
+              "overrides": {},
+              "ignored_overrides": {},
+              "estimate": {
+                "formula": "(aa_repeats + rounds * arms) * cases * k",
+                "cases": 26,
+                "k": 1,
+                "arms": 2,
+                "rounds": 1,
+                "aa_repeats": 5,
+                "evaluations": 182,
+                "breakdown": {
+                  "aa_calibration": 130,
+                  "arms": 52,
+                  "incumbent_reevaluation": 26
+                },
+                "evaluations_with_incumbent": 208,
+                "heldout_confirm_per_look": 22,
+                "notes": [
+                  "cases = evolve-split cases of the frozen ASSERT sets",
+                  "each evaluation is one agent rollout plus judging; guard arms run paired guard-off/on trials and may cost more",
+                  "the held-out confirm look (`campaign confirm`) is not part of the launch chain"
+                ]
+              },
+              "profile": "fake",
+              "created": 0,
+              "warnings": [],
+              "commands": [
+                [
+                  "<python>",
+                  "-m",
+                  "ci_lab.cli",
+                  "campaign",
+                  "new",
+                  "chat-demo",
+                  "--profile",
+                  "fake",
+                  "--run-dir",
+                  "<tmp>/runs",
+                  "--dry-run-publish"
+                ],
+                [
+                  "<python>",
+                  "-m",
+                  "ci_lab.cli",
+                  "campaign",
+                  "calibrate",
+                  "chat-demo",
+                  "--profile",
+                  "fake",
+                  "--run-dir",
+                  "<tmp>/runs",
+                  "--dry-run-publish"
+                ],
+                [
+                  "<python>",
+                  "-m",
+                  "ci_lab.cli",
+                  "campaign",
+                  "run",
+                  "chat-demo",
+                  "--profile",
+                  "fake",
+                  "--run-dir",
+                  "<tmp>/runs",
+                  "--dry-run-publish",
+                  "--rounds",
+                  "1"
+                ]
+              ]
+            },
+            "launches": []
+          },
+          "tools": [],
+          "context": [],
+          "forwardedProps": {},
+          "resume": [
+            {
+              "interruptId": "<interrupt-1>",
+              "status": "resolved",
+              "payload": {
+                "approved": true
+              }
+            }
+          ]
+        }
+      },
+      "events": [
+        {
+          "type": "RUN_STARTED",
+          "threadId": "thread-approve",
+          "runId": "run-3"
+        },
+        {
+          "type": "STATE_SNAPSHOT",
+          "snapshot": {
+            "draft": {
+              "cid": "chat-demo",
+              "target": "local",
+              "rounds": 1,
+              "rationale": "scripted fake-profile draft",
+              "hyper": {
+                "arms": 2,
+                "k": 1,
+                "max_rounds": 8,
+                "aa_repeats": 5,
+                "max_parallel_arms": 2,
+                "seed": 0,
+                "budget": null,
+                "b_min": null,
+                "b_max": null,
+                "rrsi_profile": "local",
+                "rrsi": {},
+                "budget_tokens": null,
+                "max_arm_attempts": 2,
+                "holdout_looks": 1,
+                "draft_prs": true,
+                "strategies": [
+                  "agent",
+                  "gepa",
+                  "skillopt",
+                  "guard"
+                ],
+                "arm_budget_tokens": null,
+                "heartbeat_s": 30.0,
+                "guard_trials": null,
+                "guard_stochastic": null,
+                "guard_margin": 0.0,
+                "bus": true,
+                "challenger": "det"
+              },
+              "overrides": {},
+              "ignored_overrides": {},
+              "estimate": {
+                "formula": "(aa_repeats + rounds * arms) * cases * k",
+                "cases": 26,
+                "k": 1,
+                "arms": 2,
+                "rounds": 1,
+                "aa_repeats": 5,
+                "evaluations": 182,
+                "breakdown": {
+                  "aa_calibration": 130,
+                  "arms": 52,
+                  "incumbent_reevaluation": 26
+                },
+                "evaluations_with_incumbent": 208,
+                "heldout_confirm_per_look": 22,
+                "notes": [
+                  "cases = evolve-split cases of the frozen ASSERT sets",
+                  "each evaluation is one agent rollout plus judging; guard arms run paired guard-off/on trials and may cost more",
+                  "the held-out confirm look (`campaign confirm`) is not part of the launch chain"
+                ]
+              },
+              "profile": "fake",
+              "created": 0,
+              "warnings": [],
+              "commands": [
+                [
+                  "<python>",
+                  "-m",
+                  "ci_lab.cli",
+                  "campaign",
+                  "new",
+                  "chat-demo",
+                  "--profile",
+                  "fake",
+                  "--run-dir",
+                  "<tmp>/runs",
+                  "--dry-run-publish"
+                ],
+                [
+                  "<python>",
+                  "-m",
+                  "ci_lab.cli",
+                  "campaign",
+                  "calibrate",
+                  "chat-demo",
+                  "--profile",
+                  "fake",
+                  "--run-dir",
+                  "<tmp>/runs",
+                  "--dry-run-publish"
+                ],
+                [
+                  "<python>",
+                  "-m",
+                  "ci_lab.cli",
+                  "campaign",
+                  "run",
+                  "chat-demo",
+                  "--profile",
+                  "fake",
+                  "--run-dir",
+                  "<tmp>/runs",
+                  "--dry-run-publish",
+                  "--rounds",
+                  "1"
+                ]
+              ]
+            },
+            "launches": []
+          }
+        },
+        {
+          "type": "TOOL_CALL_RESULT",
+          "messageId": "<uuid-5>",
+          "toolCallId": "<call-2>",
+          "content": "{\"argv\": [\"<python>\", \"-m\", \"ci_lab.chat.launch\", \"<tmp>/chat/drafts/chat-demo.json\"], \"cid\": \"chat-demo\", \"commands\": [[\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"new\", \"chat-demo\", \"--profile\", \"fake\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\"], [\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"calibrate\", \"chat-demo\", \"--profile\", \"fake\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\"], [\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"run\", \"chat-demo\", \"--profile\", \"fake\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\", \"--rounds\", \"1\"]], \"dry_run\": true, \"launched\": false, \"message\": \"dry-run: recorded the command; nothing was executed\", \"ok\": true, \"status\": \"dry_run\", \"target\": \"local\", \"warnings\": []}",
+          "role": "tool"
+        },
+        {
+          "type": "STATE_SNAPSHOT",
+          "snapshot": {
+            "draft": {
+              "cid": "chat-demo",
+              "target": "local",
+              "rounds": 1,
+              "rationale": "scripted fake-profile draft",
+              "hyper": {
+                "arms": 2,
+                "k": 1,
+                "max_rounds": 8,
+                "aa_repeats": 5,
+                "max_parallel_arms": 2,
+                "seed": 0,
+                "budget": null,
+                "b_min": null,
+                "b_max": null,
+                "rrsi_profile": "local",
+                "rrsi": {},
+                "budget_tokens": null,
+                "max_arm_attempts": 2,
+                "holdout_looks": 1,
+                "draft_prs": true,
+                "strategies": [
+                  "agent",
+                  "gepa",
+                  "skillopt",
+                  "guard"
+                ],
+                "arm_budget_tokens": null,
+                "heartbeat_s": 30.0,
+                "guard_trials": null,
+                "guard_stochastic": null,
+                "guard_margin": 0.0,
+                "bus": true,
+                "challenger": "det"
+              },
+              "overrides": {},
+              "ignored_overrides": {},
+              "estimate": {
+                "formula": "(aa_repeats + rounds * arms) * cases * k",
+                "cases": 26,
+                "k": 1,
+                "arms": 2,
+                "rounds": 1,
+                "aa_repeats": 5,
+                "evaluations": 182,
+                "breakdown": {
+                  "aa_calibration": 130,
+                  "arms": 52,
+                  "incumbent_reevaluation": 26
+                },
+                "evaluations_with_incumbent": 208,
+                "heldout_confirm_per_look": 22,
+                "notes": [
+                  "cases = evolve-split cases of the frozen ASSERT sets",
+                  "each evaluation is one agent rollout plus judging; guard arms run paired guard-off/on trials and may cost more",
+                  "the held-out confirm look (`campaign confirm`) is not part of the launch chain"
+                ]
+              },
+              "profile": "fake",
+              "created": 0,
+              "warnings": [],
+              "commands": [
+                [
+                  "<python>",
+                  "-m",
+                  "ci_lab.cli",
+                  "campaign",
+                  "new",
+                  "chat-demo",
+                  "--profile",
+                  "fake",
+                  "--run-dir",
+                  "<tmp>/runs",
+                  "--dry-run-publish"
+                ],
+                [
+                  "<python>",
+                  "-m",
+                  "ci_lab.cli",
+                  "campaign",
+                  "calibrate",
+                  "chat-demo",
+                  "--profile",
+                  "fake",
+                  "--run-dir",
+                  "<tmp>/runs",
+                  "--dry-run-publish"
+                ],
+                [
+                  "<python>",
+                  "-m",
+                  "ci_lab.cli",
+                  "campaign",
+                  "run",
+                  "chat-demo",
+                  "--profile",
+                  "fake",
+                  "--run-dir",
+                  "<tmp>/runs",
+                  "--dry-run-publish",
+                  "--rounds",
+                  "1"
+                ]
+              ]
+            },
+            "launches": [
+              {
+                "cid": "chat-demo",
+                "target": "local",
+                "status": "dry_run"
+              }
+            ]
+          }
+        },
+        {
+          "type": "TEXT_MESSAGE_START",
+          "messageId": "<uuid-6>",
+          "role": "assistant"
+        },
+        {
+          "type": "TEXT_MESSAGE_CONTENT",
+          "messageId": "<uuid-6>",
+          "delta": "Dry run: recorded the launch command "
+        },
+        {
+          "type": "TEXT_MESSAGE_CONTENT",
+          "messageId": "<uuid-6>",
+          "delta": "for chat-demo; nothing was executed."
+        },
+        {
+          "type": "TEXT_MESSAGE_END",
+          "messageId": "<uuid-6>"
+        },
+        {
+          "type": "MESSAGES_SNAPSHOT",
+          "messages": [
+            {
+              "id": "user-1",
+              "role": "user",
+              "content": "Please draft chat-demo: 2 arms, 1 round, local."
+            },
+            {
+              "id": "<uuid-1>",
+              "role": "assistant",
+              "content": "",
+              "toolCalls": [
+                {
+                  "id": "<call-1>",
+                  "type": "function",
+                  "function": {
+                    "name": "draft_campaign",
+                    "arguments": "{\"cid\": \"chat-demo\", \"hyper\": {\"arms\": 2}, \"rounds\": 1, \"target\": \"local\", \"rationale\": \"scripted fake-profile draft\"}"
+                  }
+                }
+              ]
+            },
+            {
+              "id": "<uuid-2>",
+              "role": "tool",
+              "content": "{\"draft\": {\"cid\": \"chat-demo\", \"commands\": [[\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"new\", \"chat-demo\", \"--profile\", \"fake\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\"], [\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"calibrate\", \"chat-demo\", \"--profile\", \"fake\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\"], [\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"run\", \"chat-demo\", \"--profile\", \"fake\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\", \"--rounds\", \"1\"]], \"created\": 0, \"estimate\": {\"aa_repeats\": 5, \"arms\": 2, \"breakdown\": {\"aa_calibration\": 130, \"arms\": 52, \"incumbent_reevaluation\": 26}, \"cases\": 26, \"evaluations\": 182, \"evaluations_with_incumbent\": 208, \"formula\": \"(aa_repeats + rounds * arms) * cases * k\", \"heldout_confirm_per_look\": 22, \"k\": 1, \"notes\": [\"cases = evolve-split cases of the frozen ASSERT sets\", \"each evaluation is one agent rollout plus judging; guard arms run paired guard-off/on trials and may cost more\", \"the held-out confirm look (`campaign confirm`) is not part of the launch chain\"], \"rounds\": 1}, \"hyper\": {\"aa_repeats\": 5, \"arm_budget_tokens\": null, \"arms\": 2, \"b_max\": null, \"b_min\": null, \"budget\": null, \"budget_tokens\": null, \"bus\": true, \"challenger\": \"det\", \"draft_prs\": true, \"guard_margin\": 0.0, \"guard_stochastic\": null, \"guard_trials\": null, \"heartbeat_s\": 30.0, \"holdout_looks\": 1, \"k\": 1, \"max_arm_attempts\": 2, \"max_parallel_arms\": 2, \"max_rounds\": 8, \"rrsi\": {}, \"rrsi_profile\": \"local\", \"seed\": 0, \"strategies\": [\"agent\", \"gepa\", \"skillopt\", \"guard\"]}, \"ignored_overrides\": {}, \"overrides\": {}, \"profile\": \"fake\", \"rationale\": \"scripted fake-profile draft\", \"rounds\": 1, \"target\": \"local\", \"warnings\": []}, \"ok\": true, \"path\": \"<tmp>/chat/drafts/chat-demo.json\", \"warnings\": []}",
+              "toolCallId": "<call-1>"
+            },
+            {
+              "id": "<uuid-2>",
+              "role": "tool",
+              "content": "{\"draft\": {\"cid\": \"chat-demo\", \"commands\": [[\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"new\", \"chat-demo\", \"--profile\", \"fake\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\"], [\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"calibrate\", \"chat-demo\", \"--profile\", \"fake\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\"], [\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"run\", \"chat-demo\", \"--profile\", \"fake\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\", \"--rounds\", \"1\"]], \"created\": 0, \"estimate\": {\"aa_repeats\": 5, \"arms\": 2, \"breakdown\": {\"aa_calibration\": 130, \"arms\": 52, \"incumbent_reevaluation\": 26}, \"cases\": 26, \"evaluations\": 182, \"evaluations_with_incumbent\": 208, \"formula\": \"(aa_repeats + rounds * arms) * cases * k\", \"heldout_confirm_per_look\": 22, \"k\": 1, \"notes\": [\"cases = evolve-split cases of the frozen ASSERT sets\", \"each evaluation is one agent rollout plus judging; guard arms run paired guard-off/on trials and may cost more\", \"the held-out confirm look (`campaign confirm`) is not part of the launch chain\"], \"rounds\": 1}, \"hyper\": {\"aa_repeats\": 5, \"arm_budget_tokens\": null, \"arms\": 2, \"b_max\": null, \"b_min\": null, \"budget\": null, \"budget_tokens\": null, \"bus\": true, \"challenger\": \"det\", \"draft_prs\": true, \"guard_margin\": 0.0, \"guard_stochastic\": null, \"guard_trials\": null, \"heartbeat_s\": 30.0, \"holdout_looks\": 1, \"k\": 1, \"max_arm_attempts\": 2, \"max_parallel_arms\": 2, \"max_rounds\": 8, \"rrsi\": {}, \"rrsi_profile\": \"local\", \"seed\": 0, \"strategies\": [\"agent\", \"gepa\", \"skillopt\", \"guard\"]}, \"ignored_overrides\": {}, \"overrides\": {}, \"profile\": \"fake\", \"rationale\": \"scripted fake-profile draft\", \"rounds\": 1, \"target\": \"local\", \"warnings\": []}, \"ok\": true, \"path\": \"<tmp>/chat/drafts/chat-demo.json\", \"warnings\": []}",
+              "toolCallId": "<call-1>"
+            },
+            {
+              "id": "<uuid-2>",
+              "role": "tool",
+              "content": "{\"draft\": {\"cid\": \"chat-demo\", \"commands\": [[\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"new\", \"chat-demo\", \"--profile\", \"fake\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\"], [\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"calibrate\", \"chat-demo\", \"--profile\", \"fake\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\"], [\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"run\", \"chat-demo\", \"--profile\", \"fake\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\", \"--rounds\", \"1\"]], \"created\": 0, \"estimate\": {\"aa_repeats\": 5, \"arms\": 2, \"breakdown\": {\"aa_calibration\": 130, \"arms\": 52, \"incumbent_reevaluation\": 26}, \"cases\": 26, \"evaluations\": 182, \"evaluations_with_incumbent\": 208, \"formula\": \"(aa_repeats + rounds * arms) * cases * k\", \"heldout_confirm_per_look\": 22, \"k\": 1, \"notes\": [\"cases = evolve-split cases of the frozen ASSERT sets\", \"each evaluation is one agent rollout plus judging; guard arms run paired guard-off/on trials and may cost more\", \"the held-out confirm look (`campaign confirm`) is not part of the launch chain\"], \"rounds\": 1}, \"hyper\": {\"aa_repeats\": 5, \"arm_budget_tokens\": null, \"arms\": 2, \"b_max\": null, \"b_min\": null, \"budget\": null, \"budget_tokens\": null, \"bus\": true, \"challenger\": \"det\", \"draft_prs\": true, \"guard_margin\": 0.0, \"guard_stochastic\": null, \"guard_trials\": null, \"heartbeat_s\": 30.0, \"holdout_looks\": 1, \"k\": 1, \"max_arm_attempts\": 2, \"max_parallel_arms\": 2, \"max_rounds\": 8, \"rrsi\": {}, \"rrsi_profile\": \"local\", \"seed\": 0, \"strategies\": [\"agent\", \"gepa\", \"skillopt\", \"guard\"]}, \"ignored_overrides\": {}, \"overrides\": {}, \"profile\": \"fake\", \"rationale\": \"scripted fake-profile draft\", \"rounds\": 1, \"target\": \"local\", \"warnings\": []}, \"ok\": true, \"path\": \"<tmp>/chat/drafts/chat-demo.json\", \"warnings\": []}",
+              "toolCallId": "<call-1>"
+            },
+            {
+              "id": "<uuid-3>",
+              "role": "assistant",
+              "content": "Drafted chat-demo: 1 round(s), target local, about 182 evaluations. Say \"launch chat-demo\" to start it."
+            },
+            {
+              "id": "user-2",
+              "role": "user",
+              "content": "launch chat-demo"
+            },
+            {
+              "id": "<uuid-4>",
+              "role": "assistant",
+              "content": "",
+              "toolCalls": [
+                {
+                  "id": "<call-2>",
+                  "type": "function",
+                  "function": {
+                    "name": "launch_campaign",
+                    "arguments": "{\"cid\": \"chat-demo\"}"
+                  }
+                }
+              ]
+            },
+            {
+              "id": "approval-response-<interrupt-1>",
+              "role": "tool",
+              "content": "{\"argv\": [\"<python>\", \"-m\", \"ci_lab.chat.launch\", \"<tmp>/chat/drafts/chat-demo.json\"], \"cid\": \"chat-demo\", \"commands\": [[\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"new\", \"chat-demo\", \"--profile\", \"fake\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\"], [\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"calibrate\", \"chat-demo\", \"--profile\", \"fake\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\"], [\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"run\", \"chat-demo\", \"--profile\", \"fake\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\", \"--rounds\", \"1\"]], \"dry_run\": true, \"launched\": false, \"message\": \"dry-run: recorded the command; nothing was executed\", \"ok\": true, \"status\": \"dry_run\", \"target\": \"local\", \"warnings\": []}",
+              "toolCallId": "<call-2>"
+            },
+            {
+              "id": "<uuid-6>",
+              "role": "assistant",
+              "content": "Dry run: recorded the launch command for chat-demo; nothing was executed."
+            }
+          ]
+        },
+        {
+          "type": "RUN_FINISHED",
+          "threadId": "thread-approve",
+          "runId": "run-3"
+        }
+      ]
+    },
+    "2_launch_interrupt_rejected": {
+      "request": {
+        "method": "POST",
+        "path": "/agui",
+        "headers": {
+          "content-type": "application/json",
+          "accept": "text/event-stream",
+          "x-ci-chat-token": "<CI_CHAT_TOKEN>"
+        },
+        "body": {
+          "threadId": "thread-reject",
+          "runId": "run-2",
+          "messages": [
+            {
+              "id": "user-1",
+              "role": "user",
+              "content": "Please draft chat-demo: 2 arms, 1 round, local."
+            },
+            {
+              "id": "<uuid-1>",
+              "role": "assistant",
+              "toolCalls": [
+                {
+                  "id": "<call-1>",
+                  "type": "function",
+                  "function": {
+                    "name": "draft_campaign",
+                    "arguments": "{\"cid\": \"chat-demo\", \"hyper\": {\"arms\": 2}, \"rounds\": 1, \"target\": \"local\", \"rationale\": \"scripted fake-profile draft\"}"
+                  }
+                }
+              ]
+            },
+            {
+              "id": "<uuid-2>",
+              "role": "tool",
+              "content": "{\"draft\": {\"cid\": \"chat-demo\", \"commands\": [[\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"new\", \"chat-demo\", \"--profile\", \"fake\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\"], [\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"calibrate\", \"chat-demo\", \"--profile\", \"fake\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\"], [\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"run\", \"chat-demo\", \"--profile\", \"fake\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\", \"--rounds\", \"1\"]], \"created\": 0, \"estimate\": {\"aa_repeats\": 5, \"arms\": 2, \"breakdown\": {\"aa_calibration\": 130, \"arms\": 52, \"incumbent_reevaluation\": 26}, \"cases\": 26, \"evaluations\": 182, \"evaluations_with_incumbent\": 208, \"formula\": \"(aa_repeats + rounds * arms) * cases * k\", \"heldout_confirm_per_look\": 22, \"k\": 1, \"notes\": [\"cases = evolve-split cases of the frozen ASSERT sets\", \"each evaluation is one agent rollout plus judging; guard arms run paired guard-off/on trials and may cost more\", \"the held-out confirm look (`campaign confirm`) is not part of the launch chain\"], \"rounds\": 1}, \"hyper\": {\"aa_repeats\": 5, \"arm_budget_tokens\": null, \"arms\": 2, \"b_max\": null, \"b_min\": null, \"budget\": null, \"budget_tokens\": null, \"bus\": true, \"challenger\": \"det\", \"draft_prs\": true, \"guard_margin\": 0.0, \"guard_stochastic\": null, \"guard_trials\": null, \"heartbeat_s\": 30.0, \"holdout_looks\": 1, \"k\": 1, \"max_arm_attempts\": 2, \"max_parallel_arms\": 2, \"max_rounds\": 8, \"rrsi\": {}, \"rrsi_profile\": \"local\", \"seed\": 0, \"strategies\": [\"agent\", \"gepa\", \"skillopt\", \"guard\"]}, \"ignored_overrides\": {}, \"overrides\": {}, \"profile\": \"fake\", \"rationale\": \"scripted fake-profile draft\", \"rounds\": 1, \"target\": \"local\", \"warnings\": []}, \"ok\": true, \"path\": \"<tmp>/chat/drafts/chat-demo.json\", \"warnings\": []}",
+              "toolCallId": "<call-1>"
+            },
+            {
+              "id": "<uuid-3>",
+              "role": "assistant",
+              "content": "Drafted chat-demo: 1 round(s), target local, about 182 evaluations. Say \"launch chat-demo\" to start it."
+            },
+            {
+              "id": "user-2",
+              "role": "user",
+              "content": "launch chat-demo"
+            }
+          ],
+          "state": {
+            "draft": {
+              "cid": "chat-demo",
+              "target": "local",
+              "rounds": 1,
+              "rationale": "scripted fake-profile draft",
+              "hyper": {
+                "arms": 2,
+                "k": 1,
+                "max_rounds": 8,
+                "aa_repeats": 5,
+                "max_parallel_arms": 2,
+                "seed": 0,
+                "budget": null,
+                "b_min": null,
+                "b_max": null,
+                "rrsi_profile": "local",
+                "rrsi": {},
+                "budget_tokens": null,
+                "max_arm_attempts": 2,
+                "holdout_looks": 1,
+                "draft_prs": true,
+                "strategies": [
+                  "agent",
+                  "gepa",
+                  "skillopt",
+                  "guard"
+                ],
+                "arm_budget_tokens": null,
+                "heartbeat_s": 30.0,
+                "guard_trials": null,
+                "guard_stochastic": null,
+                "guard_margin": 0.0,
+                "bus": true,
+                "challenger": "det"
+              },
+              "overrides": {},
+              "ignored_overrides": {},
+              "estimate": {
+                "formula": "(aa_repeats + rounds * arms) * cases * k",
+                "cases": 26,
+                "k": 1,
+                "arms": 2,
+                "rounds": 1,
+                "aa_repeats": 5,
+                "evaluations": 182,
+                "breakdown": {
+                  "aa_calibration": 130,
+                  "arms": 52,
+                  "incumbent_reevaluation": 26
+                },
+                "evaluations_with_incumbent": 208,
+                "heldout_confirm_per_look": 22,
+                "notes": [
+                  "cases = evolve-split cases of the frozen ASSERT sets",
+                  "each evaluation is one agent rollout plus judging; guard arms run paired guard-off/on trials and may cost more",
+                  "the held-out confirm look (`campaign confirm`) is not part of the launch chain"
+                ]
+              },
+              "profile": "fake",
+              "created": 0,
+              "warnings": [],
+              "commands": [
+                [
+                  "<python>",
+                  "-m",
+                  "ci_lab.cli",
+                  "campaign",
+                  "new",
+                  "chat-demo",
+                  "--profile",
+                  "fake",
+                  "--run-dir",
+                  "<tmp>/runs",
+                  "--dry-run-publish"
+                ],
+                [
+                  "<python>",
+                  "-m",
+                  "ci_lab.cli",
+                  "campaign",
+                  "calibrate",
+                  "chat-demo",
+                  "--profile",
+                  "fake",
+                  "--run-dir",
+                  "<tmp>/runs",
+                  "--dry-run-publish"
+                ],
+                [
+                  "<python>",
+                  "-m",
+                  "ci_lab.cli",
+                  "campaign",
+                  "run",
+                  "chat-demo",
+                  "--profile",
+                  "fake",
+                  "--run-dir",
+                  "<tmp>/runs",
+                  "--dry-run-publish",
+                  "--rounds",
+                  "1"
+                ]
+              ]
+            },
+            "launches": []
+          },
+          "tools": [],
+          "context": [],
+          "forwardedProps": {}
+        }
+      },
+      "events": [
+        {
+          "type": "RUN_STARTED",
+          "threadId": "thread-reject",
+          "runId": "run-2"
+        },
+        {
+          "type": "STATE_SNAPSHOT",
+          "snapshot": {
+            "draft": {
+              "cid": "chat-demo",
+              "target": "local",
+              "rounds": 1,
+              "rationale": "scripted fake-profile draft",
+              "hyper": {
+                "arms": 2,
+                "k": 1,
+                "max_rounds": 8,
+                "aa_repeats": 5,
+                "max_parallel_arms": 2,
+                "seed": 0,
+                "budget": null,
+                "b_min": null,
+                "b_max": null,
+                "rrsi_profile": "local",
+                "rrsi": {},
+                "budget_tokens": null,
+                "max_arm_attempts": 2,
+                "holdout_looks": 1,
+                "draft_prs": true,
+                "strategies": [
+                  "agent",
+                  "gepa",
+                  "skillopt",
+                  "guard"
+                ],
+                "arm_budget_tokens": null,
+                "heartbeat_s": 30.0,
+                "guard_trials": null,
+                "guard_stochastic": null,
+                "guard_margin": 0.0,
+                "bus": true,
+                "challenger": "det"
+              },
+              "overrides": {},
+              "ignored_overrides": {},
+              "estimate": {
+                "formula": "(aa_repeats + rounds * arms) * cases * k",
+                "cases": 26,
+                "k": 1,
+                "arms": 2,
+                "rounds": 1,
+                "aa_repeats": 5,
+                "evaluations": 182,
+                "breakdown": {
+                  "aa_calibration": 130,
+                  "arms": 52,
+                  "incumbent_reevaluation": 26
+                },
+                "evaluations_with_incumbent": 208,
+                "heldout_confirm_per_look": 22,
+                "notes": [
+                  "cases = evolve-split cases of the frozen ASSERT sets",
+                  "each evaluation is one agent rollout plus judging; guard arms run paired guard-off/on trials and may cost more",
+                  "the held-out confirm look (`campaign confirm`) is not part of the launch chain"
+                ]
+              },
+              "profile": "fake",
+              "created": 0,
+              "warnings": [],
+              "commands": [
+                [
+                  "<python>",
+                  "-m",
+                  "ci_lab.cli",
+                  "campaign",
+                  "new",
+                  "chat-demo",
+                  "--profile",
+                  "fake",
+                  "--run-dir",
+                  "<tmp>/runs",
+                  "--dry-run-publish"
+                ],
+                [
+                  "<python>",
+                  "-m",
+                  "ci_lab.cli",
+                  "campaign",
+                  "calibrate",
+                  "chat-demo",
+                  "--profile",
+                  "fake",
+                  "--run-dir",
+                  "<tmp>/runs",
+                  "--dry-run-publish"
+                ],
+                [
+                  "<python>",
+                  "-m",
+                  "ci_lab.cli",
+                  "campaign",
+                  "run",
+                  "chat-demo",
+                  "--profile",
+                  "fake",
+                  "--run-dir",
+                  "<tmp>/runs",
+                  "--dry-run-publish",
+                  "--rounds",
+                  "1"
+                ]
+              ]
+            },
+            "launches": []
+          }
+        },
+        {
+          "type": "TEXT_MESSAGE_START",
+          "messageId": "<uuid-7>",
+          "role": "assistant"
+        },
+        {
+          "type": "TOOL_CALL_START",
+          "toolCallId": "<call-3>",
+          "toolCallName": "launch_campaign",
+          "parentMessageId": "<uuid-7>"
+        },
+        {
+          "type": "TOOL_CALL_ARGS",
+          "toolCallId": "<call-3>",
+          "delta": "{\"cid\": \"chat-demo\"}"
+        },
+        {
+          "type": "TOOL_CALL_END",
+          "toolCallId": "<call-3>"
+        },
+        {
+          "type": "CUSTOM",
+          "name": "function_approval_request",
+          "value": {
+            "id": "<interrupt-2>",
+            "function_call": {
+              "call_id": "<call-3>",
+              "name": "launch_campaign",
+              "arguments": {
+                "cid": "chat-demo"
+              }
+            }
+          }
+        },
+        {
+          "type": "TEXT_MESSAGE_END",
+          "messageId": "<uuid-7>"
+        },
+        {
+          "type": "MESSAGES_SNAPSHOT",
+          "messages": [
+            {
+              "id": "user-1",
+              "role": "user",
+              "content": "Please draft chat-demo: 2 arms, 1 round, local."
+            },
+            {
+              "id": "<uuid-1>",
+              "role": "assistant",
+              "content": "",
+              "toolCalls": [
+                {
+                  "id": "<call-1>",
+                  "type": "function",
+                  "function": {
+                    "name": "draft_campaign",
+                    "arguments": "{\"cid\": \"chat-demo\", \"hyper\": {\"arms\": 2}, \"rounds\": 1, \"target\": \"local\", \"rationale\": \"scripted fake-profile draft\"}"
+                  }
+                }
+              ]
+            },
+            {
+              "id": "<uuid-2>",
+              "role": "tool",
+              "content": "{\"draft\": {\"cid\": \"chat-demo\", \"commands\": [[\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"new\", \"chat-demo\", \"--profile\", \"fake\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\"], [\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"calibrate\", \"chat-demo\", \"--profile\", \"fake\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\"], [\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"run\", \"chat-demo\", \"--profile\", \"fake\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\", \"--rounds\", \"1\"]], \"created\": 0, \"estimate\": {\"aa_repeats\": 5, \"arms\": 2, \"breakdown\": {\"aa_calibration\": 130, \"arms\": 52, \"incumbent_reevaluation\": 26}, \"cases\": 26, \"evaluations\": 182, \"evaluations_with_incumbent\": 208, \"formula\": \"(aa_repeats + rounds * arms) * cases * k\", \"heldout_confirm_per_look\": 22, \"k\": 1, \"notes\": [\"cases = evolve-split cases of the frozen ASSERT sets\", \"each evaluation is one agent rollout plus judging; guard arms run paired guard-off/on trials and may cost more\", \"the held-out confirm look (`campaign confirm`) is not part of the launch chain\"], \"rounds\": 1}, \"hyper\": {\"aa_repeats\": 5, \"arm_budget_tokens\": null, \"arms\": 2, \"b_max\": null, \"b_min\": null, \"budget\": null, \"budget_tokens\": null, \"bus\": true, \"challenger\": \"det\", \"draft_prs\": true, \"guard_margin\": 0.0, \"guard_stochastic\": null, \"guard_trials\": null, \"heartbeat_s\": 30.0, \"holdout_looks\": 1, \"k\": 1, \"max_arm_attempts\": 2, \"max_parallel_arms\": 2, \"max_rounds\": 8, \"rrsi\": {}, \"rrsi_profile\": \"local\", \"seed\": 0, \"strategies\": [\"agent\", \"gepa\", \"skillopt\", \"guard\"]}, \"ignored_overrides\": {}, \"overrides\": {}, \"profile\": \"fake\", \"rationale\": \"scripted fake-profile draft\", \"rounds\": 1, \"target\": \"local\", \"warnings\": []}, \"ok\": true, \"path\": \"<tmp>/chat/drafts/chat-demo.json\", \"warnings\": []}",
+              "toolCallId": "<call-1>"
+            },
+            {
+              "id": "<uuid-3>",
+              "role": "assistant",
+              "content": "Drafted chat-demo: 1 round(s), target local, about 182 evaluations. Say \"launch chat-demo\" to start it."
+            },
+            {
+              "id": "user-2",
+              "role": "user",
+              "content": "launch chat-demo"
+            },
+            {
+              "id": "<uuid-7>",
+              "role": "assistant",
+              "toolCalls": [
+                {
+                  "id": "<call-3>",
+                  "type": "function",
+                  "function": {
+                    "name": "launch_campaign",
+                    "arguments": "{\"cid\": \"chat-demo\"}"
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "RUN_FINISHED",
+          "threadId": "thread-reject",
+          "runId": "run-2",
+          "outcome": {
+            "type": "interrupt",
+            "interrupts": [
+              {
+                "id": "<interrupt-2>",
+                "reason": "tool_call",
+                "message": "Approve running launch_campaign?",
+                "toolCallId": "<call-3>",
+                "responseSchema": {
+                  "type": "object",
+                  "properties": {
+                    "approved": {
+                      "type": "boolean",
+                      "description": "Whether the requested tool call is approved."
+                    },
+                    "accepted": {
+                      "type": "boolean",
+                      "description": "Legacy alias for approved."
+                    },
+                    "cid": {
+                      "type": "string",
+                      "description": "Optional edited value for the 'cid' tool argument."
+                    },
+                    "editedArgs": {
+                      "type": "object",
+                      "description": "Full replacement of the tool arguments. Not merged.",
+                      "properties": {
+                        "cid": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "cid"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "anyOf": [
+                    {
+                      "required": [
+                        "approved"
+                      ]
+                    },
+                    {
+                      "required": [
+                        "accepted"
+                      ]
+                    }
+                  ],
+                  "additionalProperties": false
+                },
+                "metadata": {
+                  "agent_framework": {
+                    "type": "function_approval_request",
+                    "function_call": {
+                      "call_id": "<call-3>",
+                      "name": "launch_campaign",
+                      "arguments": {
+                        "cid": "chat-demo"
+                      }
+                    },
+                    "value": {
+                      "type": "function_approval_request",
+                      "function_call": {
+                        "call_id": "<call-3>",
+                        "name": "launch_campaign",
+                        "arguments": {
+                          "cid": "chat-demo"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "3_resume_rejected": {
+      "request": {
+        "method": "POST",
+        "path": "/agui",
+        "headers": {
+          "content-type": "application/json",
+          "accept": "text/event-stream",
+          "x-ci-chat-token": "<CI_CHAT_TOKEN>"
+        },
+        "body": {
+          "threadId": "thread-reject",
+          "runId": "run-3",
+          "messages": [
+            {
+              "id": "user-1",
+              "role": "user",
+              "content": "Please draft chat-demo: 2 arms, 1 round, local."
+            },
+            {
+              "id": "<uuid-1>",
+              "role": "assistant",
+              "content": "",
+              "toolCalls": [
+                {
+                  "id": "<call-1>",
+                  "type": "function",
+                  "function": {
+                    "name": "draft_campaign",
+                    "arguments": "{\"cid\": \"chat-demo\", \"hyper\": {\"arms\": 2}, \"rounds\": 1, \"target\": \"local\", \"rationale\": \"scripted fake-profile draft\"}"
+                  }
+                }
+              ]
+            },
+            {
+              "id": "<uuid-2>",
+              "role": "tool",
+              "content": "{\"draft\": {\"cid\": \"chat-demo\", \"commands\": [[\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"new\", \"chat-demo\", \"--profile\", \"fake\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\"], [\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"calibrate\", \"chat-demo\", \"--profile\", \"fake\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\"], [\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"run\", \"chat-demo\", \"--profile\", \"fake\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\", \"--rounds\", \"1\"]], \"created\": 0, \"estimate\": {\"aa_repeats\": 5, \"arms\": 2, \"breakdown\": {\"aa_calibration\": 130, \"arms\": 52, \"incumbent_reevaluation\": 26}, \"cases\": 26, \"evaluations\": 182, \"evaluations_with_incumbent\": 208, \"formula\": \"(aa_repeats + rounds * arms) * cases * k\", \"heldout_confirm_per_look\": 22, \"k\": 1, \"notes\": [\"cases = evolve-split cases of the frozen ASSERT sets\", \"each evaluation is one agent rollout plus judging; guard arms run paired guard-off/on trials and may cost more\", \"the held-out confirm look (`campaign confirm`) is not part of the launch chain\"], \"rounds\": 1}, \"hyper\": {\"aa_repeats\": 5, \"arm_budget_tokens\": null, \"arms\": 2, \"b_max\": null, \"b_min\": null, \"budget\": null, \"budget_tokens\": null, \"bus\": true, \"challenger\": \"det\", \"draft_prs\": true, \"guard_margin\": 0.0, \"guard_stochastic\": null, \"guard_trials\": null, \"heartbeat_s\": 30.0, \"holdout_looks\": 1, \"k\": 1, \"max_arm_attempts\": 2, \"max_parallel_arms\": 2, \"max_rounds\": 8, \"rrsi\": {}, \"rrsi_profile\": \"local\", \"seed\": 0, \"strategies\": [\"agent\", \"gepa\", \"skillopt\", \"guard\"]}, \"ignored_overrides\": {}, \"overrides\": {}, \"profile\": \"fake\", \"rationale\": \"scripted fake-profile draft\", \"rounds\": 1, \"target\": \"local\", \"warnings\": []}, \"ok\": true, \"path\": \"<tmp>/chat/drafts/chat-demo.json\", \"warnings\": []}",
+              "toolCallId": "<call-1>"
+            },
+            {
+              "id": "<uuid-3>",
+              "role": "assistant",
+              "content": "Drafted chat-demo: 1 round(s), target local, about 182 evaluations. Say \"launch chat-demo\" to start it."
+            },
+            {
+              "id": "user-2",
+              "role": "user",
+              "content": "launch chat-demo"
+            },
+            {
+              "id": "<uuid-7>",
+              "role": "assistant",
+              "toolCalls": [
+                {
+                  "id": "<call-3>",
+                  "type": "function",
+                  "function": {
+                    "name": "launch_campaign",
+                    "arguments": "{\"cid\": \"chat-demo\"}"
+                  }
+                }
+              ]
+            }
+          ],
+          "state": {
+            "draft": {
+              "cid": "chat-demo",
+              "target": "local",
+              "rounds": 1,
+              "rationale": "scripted fake-profile draft",
+              "hyper": {
+                "arms": 2,
+                "k": 1,
+                "max_rounds": 8,
+                "aa_repeats": 5,
+                "max_parallel_arms": 2,
+                "seed": 0,
+                "budget": null,
+                "b_min": null,
+                "b_max": null,
+                "rrsi_profile": "local",
+                "rrsi": {},
+                "budget_tokens": null,
+                "max_arm_attempts": 2,
+                "holdout_looks": 1,
+                "draft_prs": true,
+                "strategies": [
+                  "agent",
+                  "gepa",
+                  "skillopt",
+                  "guard"
+                ],
+                "arm_budget_tokens": null,
+                "heartbeat_s": 30.0,
+                "guard_trials": null,
+                "guard_stochastic": null,
+                "guard_margin": 0.0,
+                "bus": true,
+                "challenger": "det"
+              },
+              "overrides": {},
+              "ignored_overrides": {},
+              "estimate": {
+                "formula": "(aa_repeats + rounds * arms) * cases * k",
+                "cases": 26,
+                "k": 1,
+                "arms": 2,
+                "rounds": 1,
+                "aa_repeats": 5,
+                "evaluations": 182,
+                "breakdown": {
+                  "aa_calibration": 130,
+                  "arms": 52,
+                  "incumbent_reevaluation": 26
+                },
+                "evaluations_with_incumbent": 208,
+                "heldout_confirm_per_look": 22,
+                "notes": [
+                  "cases = evolve-split cases of the frozen ASSERT sets",
+                  "each evaluation is one agent rollout plus judging; guard arms run paired guard-off/on trials and may cost more",
+                  "the held-out confirm look (`campaign confirm`) is not part of the launch chain"
+                ]
+              },
+              "profile": "fake",
+              "created": 0,
+              "warnings": [],
+              "commands": [
+                [
+                  "<python>",
+                  "-m",
+                  "ci_lab.cli",
+                  "campaign",
+                  "new",
+                  "chat-demo",
+                  "--profile",
+                  "fake",
+                  "--run-dir",
+                  "<tmp>/runs",
+                  "--dry-run-publish"
+                ],
+                [
+                  "<python>",
+                  "-m",
+                  "ci_lab.cli",
+                  "campaign",
+                  "calibrate",
+                  "chat-demo",
+                  "--profile",
+                  "fake",
+                  "--run-dir",
+                  "<tmp>/runs",
+                  "--dry-run-publish"
+                ],
+                [
+                  "<python>",
+                  "-m",
+                  "ci_lab.cli",
+                  "campaign",
+                  "run",
+                  "chat-demo",
+                  "--profile",
+                  "fake",
+                  "--run-dir",
+                  "<tmp>/runs",
+                  "--dry-run-publish",
+                  "--rounds",
+                  "1"
+                ]
+              ]
+            },
+            "launches": []
+          },
+          "tools": [],
+          "context": [],
+          "forwardedProps": {},
+          "resume": [
+            {
+              "interruptId": "<interrupt-2>",
+              "status": "resolved",
+              "payload": {
+                "approved": false
+              }
+            }
+          ]
+        }
+      },
+      "events": [
+        {
+          "type": "RUN_STARTED",
+          "threadId": "thread-reject",
+          "runId": "run-3"
+        },
+        {
+          "type": "STATE_SNAPSHOT",
+          "snapshot": {
+            "draft": {
+              "cid": "chat-demo",
+              "target": "local",
+              "rounds": 1,
+              "rationale": "scripted fake-profile draft",
+              "hyper": {
+                "arms": 2,
+                "k": 1,
+                "max_rounds": 8,
+                "aa_repeats": 5,
+                "max_parallel_arms": 2,
+                "seed": 0,
+                "budget": null,
+                "b_min": null,
+                "b_max": null,
+                "rrsi_profile": "local",
+                "rrsi": {},
+                "budget_tokens": null,
+                "max_arm_attempts": 2,
+                "holdout_looks": 1,
+                "draft_prs": true,
+                "strategies": [
+                  "agent",
+                  "gepa",
+                  "skillopt",
+                  "guard"
+                ],
+                "arm_budget_tokens": null,
+                "heartbeat_s": 30.0,
+                "guard_trials": null,
+                "guard_stochastic": null,
+                "guard_margin": 0.0,
+                "bus": true,
+                "challenger": "det"
+              },
+              "overrides": {},
+              "ignored_overrides": {},
+              "estimate": {
+                "formula": "(aa_repeats + rounds * arms) * cases * k",
+                "cases": 26,
+                "k": 1,
+                "arms": 2,
+                "rounds": 1,
+                "aa_repeats": 5,
+                "evaluations": 182,
+                "breakdown": {
+                  "aa_calibration": 130,
+                  "arms": 52,
+                  "incumbent_reevaluation": 26
+                },
+                "evaluations_with_incumbent": 208,
+                "heldout_confirm_per_look": 22,
+                "notes": [
+                  "cases = evolve-split cases of the frozen ASSERT sets",
+                  "each evaluation is one agent rollout plus judging; guard arms run paired guard-off/on trials and may cost more",
+                  "the held-out confirm look (`campaign confirm`) is not part of the launch chain"
+                ]
+              },
+              "profile": "fake",
+              "created": 0,
+              "warnings": [],
+              "commands": [
+                [
+                  "<python>",
+                  "-m",
+                  "ci_lab.cli",
+                  "campaign",
+                  "new",
+                  "chat-demo",
+                  "--profile",
+                  "fake",
+                  "--run-dir",
+                  "<tmp>/runs",
+                  "--dry-run-publish"
+                ],
+                [
+                  "<python>",
+                  "-m",
+                  "ci_lab.cli",
+                  "campaign",
+                  "calibrate",
+                  "chat-demo",
+                  "--profile",
+                  "fake",
+                  "--run-dir",
+                  "<tmp>/runs",
+                  "--dry-run-publish"
+                ],
+                [
+                  "<python>",
+                  "-m",
+                  "ci_lab.cli",
+                  "campaign",
+                  "run",
+                  "chat-demo",
+                  "--profile",
+                  "fake",
+                  "--run-dir",
+                  "<tmp>/runs",
+                  "--dry-run-publish",
+                  "--rounds",
+                  "1"
+                ]
+              ]
+            },
+            "launches": []
+          }
+        },
+        {
+          "type": "TEXT_MESSAGE_START",
+          "messageId": "<uuid-8>",
+          "role": "assistant"
+        },
+        {
+          "type": "TEXT_MESSAGE_CONTENT",
+          "messageId": "<uuid-8>",
+          "delta": "The launch was not approved, so "
+        },
+        {
+          "type": "TEXT_MESSAGE_CONTENT",
+          "messageId": "<uuid-8>",
+          "delta": "nothing was launched."
+        },
+        {
+          "type": "TEXT_MESSAGE_END",
+          "messageId": "<uuid-8>"
+        },
+        {
+          "type": "MESSAGES_SNAPSHOT",
+          "messages": [
+            {
+              "id": "user-1",
+              "role": "user",
+              "content": "Please draft chat-demo: 2 arms, 1 round, local."
+            },
+            {
+              "id": "<uuid-1>",
+              "role": "assistant",
+              "content": "",
+              "toolCalls": [
+                {
+                  "id": "<call-1>",
+                  "type": "function",
+                  "function": {
+                    "name": "draft_campaign",
+                    "arguments": "{\"cid\": \"chat-demo\", \"hyper\": {\"arms\": 2}, \"rounds\": 1, \"target\": \"local\", \"rationale\": \"scripted fake-profile draft\"}"
+                  }
+                }
+              ]
+            },
+            {
+              "id": "<uuid-2>",
+              "role": "tool",
+              "content": "{\"draft\": {\"cid\": \"chat-demo\", \"commands\": [[\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"new\", \"chat-demo\", \"--profile\", \"fake\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\"], [\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"calibrate\", \"chat-demo\", \"--profile\", \"fake\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\"], [\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"run\", \"chat-demo\", \"--profile\", \"fake\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\", \"--rounds\", \"1\"]], \"created\": 0, \"estimate\": {\"aa_repeats\": 5, \"arms\": 2, \"breakdown\": {\"aa_calibration\": 130, \"arms\": 52, \"incumbent_reevaluation\": 26}, \"cases\": 26, \"evaluations\": 182, \"evaluations_with_incumbent\": 208, \"formula\": \"(aa_repeats + rounds * arms) * cases * k\", \"heldout_confirm_per_look\": 22, \"k\": 1, \"notes\": [\"cases = evolve-split cases of the frozen ASSERT sets\", \"each evaluation is one agent rollout plus judging; guard arms run paired guard-off/on trials and may cost more\", \"the held-out confirm look (`campaign confirm`) is not part of the launch chain\"], \"rounds\": 1}, \"hyper\": {\"aa_repeats\": 5, \"arm_budget_tokens\": null, \"arms\": 2, \"b_max\": null, \"b_min\": null, \"budget\": null, \"budget_tokens\": null, \"bus\": true, \"challenger\": \"det\", \"draft_prs\": true, \"guard_margin\": 0.0, \"guard_stochastic\": null, \"guard_trials\": null, \"heartbeat_s\": 30.0, \"holdout_looks\": 1, \"k\": 1, \"max_arm_attempts\": 2, \"max_parallel_arms\": 2, \"max_rounds\": 8, \"rrsi\": {}, \"rrsi_profile\": \"local\", \"seed\": 0, \"strategies\": [\"agent\", \"gepa\", \"skillopt\", \"guard\"]}, \"ignored_overrides\": {}, \"overrides\": {}, \"profile\": \"fake\", \"rationale\": \"scripted fake-profile draft\", \"rounds\": 1, \"target\": \"local\", \"warnings\": []}, \"ok\": true, \"path\": \"<tmp>/chat/drafts/chat-demo.json\", \"warnings\": []}",
+              "toolCallId": "<call-1>"
+            },
+            {
+              "id": "<uuid-2>",
+              "role": "tool",
+              "content": "{\"draft\": {\"cid\": \"chat-demo\", \"commands\": [[\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"new\", \"chat-demo\", \"--profile\", \"fake\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\"], [\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"calibrate\", \"chat-demo\", \"--profile\", \"fake\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\"], [\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"run\", \"chat-demo\", \"--profile\", \"fake\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\", \"--rounds\", \"1\"]], \"created\": 0, \"estimate\": {\"aa_repeats\": 5, \"arms\": 2, \"breakdown\": {\"aa_calibration\": 130, \"arms\": 52, \"incumbent_reevaluation\": 26}, \"cases\": 26, \"evaluations\": 182, \"evaluations_with_incumbent\": 208, \"formula\": \"(aa_repeats + rounds * arms) * cases * k\", \"heldout_confirm_per_look\": 22, \"k\": 1, \"notes\": [\"cases = evolve-split cases of the frozen ASSERT sets\", \"each evaluation is one agent rollout plus judging; guard arms run paired guard-off/on trials and may cost more\", \"the held-out confirm look (`campaign confirm`) is not part of the launch chain\"], \"rounds\": 1}, \"hyper\": {\"aa_repeats\": 5, \"arm_budget_tokens\": null, \"arms\": 2, \"b_max\": null, \"b_min\": null, \"budget\": null, \"budget_tokens\": null, \"bus\": true, \"challenger\": \"det\", \"draft_prs\": true, \"guard_margin\": 0.0, \"guard_stochastic\": null, \"guard_trials\": null, \"heartbeat_s\": 30.0, \"holdout_looks\": 1, \"k\": 1, \"max_arm_attempts\": 2, \"max_parallel_arms\": 2, \"max_rounds\": 8, \"rrsi\": {}, \"rrsi_profile\": \"local\", \"seed\": 0, \"strategies\": [\"agent\", \"gepa\", \"skillopt\", \"guard\"]}, \"ignored_overrides\": {}, \"overrides\": {}, \"profile\": \"fake\", \"rationale\": \"scripted fake-profile draft\", \"rounds\": 1, \"target\": \"local\", \"warnings\": []}, \"ok\": true, \"path\": \"<tmp>/chat/drafts/chat-demo.json\", \"warnings\": []}",
+              "toolCallId": "<call-1>"
+            },
+            {
+              "id": "<uuid-3>",
+              "role": "assistant",
+              "content": "Drafted chat-demo: 1 round(s), target local, about 182 evaluations. Say \"launch chat-demo\" to start it."
+            },
+            {
+              "id": "user-2",
+              "role": "user",
+              "content": "launch chat-demo"
+            },
+            {
+              "id": "<uuid-7>",
+              "role": "assistant",
+              "content": "",
+              "toolCalls": [
+                {
+                  "id": "<call-3>",
+                  "type": "function",
+                  "function": {
+                    "name": "launch_campaign",
+                    "arguments": "{\"cid\": \"chat-demo\"}"
+                  }
+                }
+              ]
+            },
+            {
+              "id": "approval-response-<interrupt-2>",
+              "role": "tool",
+              "content": "Error: Tool call invocation was rejected by user.",
+              "toolCallId": "<call-3>"
+            },
+            {
+              "id": "<uuid-8>",
+              "role": "assistant",
+              "content": "The launch was not approved, so nothing was launched."
+            }
+          ]
+        },
+        {
+          "type": "RUN_FINISHED",
+          "threadId": "thread-reject",
+          "runId": "run-3"
+        }
+      ]
+    },
+    "2_launch_interrupt_approved_legacy": {
+      "request": {
+        "method": "POST",
+        "path": "/agui",
+        "headers": {
+          "content-type": "application/json",
+          "accept": "text/event-stream",
+          "x-ci-chat-token": "<CI_CHAT_TOKEN>"
+        },
+        "body": {
+          "threadId": "thread-legacy",
+          "runId": "run-2",
+          "messages": [
+            {
+              "id": "user-1",
+              "role": "user",
+              "content": "Please draft chat-demo: 2 arms, 1 round, local."
+            },
+            {
+              "id": "<uuid-1>",
+              "role": "assistant",
+              "toolCalls": [
+                {
+                  "id": "<call-1>",
+                  "type": "function",
+                  "function": {
+                    "name": "draft_campaign",
+                    "arguments": "{\"cid\": \"chat-demo\", \"hyper\": {\"arms\": 2}, \"rounds\": 1, \"target\": \"local\", \"rationale\": \"scripted fake-profile draft\"}"
+                  }
+                }
+              ]
+            },
+            {
+              "id": "<uuid-2>",
+              "role": "tool",
+              "content": "{\"draft\": {\"cid\": \"chat-demo\", \"commands\": [[\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"new\", \"chat-demo\", \"--profile\", \"fake\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\"], [\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"calibrate\", \"chat-demo\", \"--profile\", \"fake\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\"], [\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"run\", \"chat-demo\", \"--profile\", \"fake\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\", \"--rounds\", \"1\"]], \"created\": 0, \"estimate\": {\"aa_repeats\": 5, \"arms\": 2, \"breakdown\": {\"aa_calibration\": 130, \"arms\": 52, \"incumbent_reevaluation\": 26}, \"cases\": 26, \"evaluations\": 182, \"evaluations_with_incumbent\": 208, \"formula\": \"(aa_repeats + rounds * arms) * cases * k\", \"heldout_confirm_per_look\": 22, \"k\": 1, \"notes\": [\"cases = evolve-split cases of the frozen ASSERT sets\", \"each evaluation is one agent rollout plus judging; guard arms run paired guard-off/on trials and may cost more\", \"the held-out confirm look (`campaign confirm`) is not part of the launch chain\"], \"rounds\": 1}, \"hyper\": {\"aa_repeats\": 5, \"arm_budget_tokens\": null, \"arms\": 2, \"b_max\": null, \"b_min\": null, \"budget\": null, \"budget_tokens\": null, \"bus\": true, \"challenger\": \"det\", \"draft_prs\": true, \"guard_margin\": 0.0, \"guard_stochastic\": null, \"guard_trials\": null, \"heartbeat_s\": 30.0, \"holdout_looks\": 1, \"k\": 1, \"max_arm_attempts\": 2, \"max_parallel_arms\": 2, \"max_rounds\": 8, \"rrsi\": {}, \"rrsi_profile\": \"local\", \"seed\": 0, \"strategies\": [\"agent\", \"gepa\", \"skillopt\", \"guard\"]}, \"ignored_overrides\": {}, \"overrides\": {}, \"profile\": \"fake\", \"rationale\": \"scripted fake-profile draft\", \"rounds\": 1, \"target\": \"local\", \"warnings\": []}, \"ok\": true, \"path\": \"<tmp>/chat/drafts/chat-demo.json\", \"warnings\": []}",
+              "toolCallId": "<call-1>"
+            },
+            {
+              "id": "<uuid-3>",
+              "role": "assistant",
+              "content": "Drafted chat-demo: 1 round(s), target local, about 182 evaluations. Say \"launch chat-demo\" to start it."
+            },
+            {
+              "id": "user-2",
+              "role": "user",
+              "content": "launch chat-demo"
+            }
+          ],
+          "state": {
+            "draft": {
+              "cid": "chat-demo",
+              "target": "local",
+              "rounds": 1,
+              "rationale": "scripted fake-profile draft",
+              "hyper": {
+                "arms": 2,
+                "k": 1,
+                "max_rounds": 8,
+                "aa_repeats": 5,
+                "max_parallel_arms": 2,
+                "seed": 0,
+                "budget": null,
+                "b_min": null,
+                "b_max": null,
+                "rrsi_profile": "local",
+                "rrsi": {},
+                "budget_tokens": null,
+                "max_arm_attempts": 2,
+                "holdout_looks": 1,
+                "draft_prs": true,
+                "strategies": [
+                  "agent",
+                  "gepa",
+                  "skillopt",
+                  "guard"
+                ],
+                "arm_budget_tokens": null,
+                "heartbeat_s": 30.0,
+                "guard_trials": null,
+                "guard_stochastic": null,
+                "guard_margin": 0.0,
+                "bus": true,
+                "challenger": "det"
+              },
+              "overrides": {},
+              "ignored_overrides": {},
+              "estimate": {
+                "formula": "(aa_repeats + rounds * arms) * cases * k",
+                "cases": 26,
+                "k": 1,
+                "arms": 2,
+                "rounds": 1,
+                "aa_repeats": 5,
+                "evaluations": 182,
+                "breakdown": {
+                  "aa_calibration": 130,
+                  "arms": 52,
+                  "incumbent_reevaluation": 26
+                },
+                "evaluations_with_incumbent": 208,
+                "heldout_confirm_per_look": 22,
+                "notes": [
+                  "cases = evolve-split cases of the frozen ASSERT sets",
+                  "each evaluation is one agent rollout plus judging; guard arms run paired guard-off/on trials and may cost more",
+                  "the held-out confirm look (`campaign confirm`) is not part of the launch chain"
+                ]
+              },
+              "profile": "fake",
+              "created": 0,
+              "warnings": [],
+              "commands": [
+                [
+                  "<python>",
+                  "-m",
+                  "ci_lab.cli",
+                  "campaign",
+                  "new",
+                  "chat-demo",
+                  "--profile",
+                  "fake",
+                  "--run-dir",
+                  "<tmp>/runs",
+                  "--dry-run-publish"
+                ],
+                [
+                  "<python>",
+                  "-m",
+                  "ci_lab.cli",
+                  "campaign",
+                  "calibrate",
+                  "chat-demo",
+                  "--profile",
+                  "fake",
+                  "--run-dir",
+                  "<tmp>/runs",
+                  "--dry-run-publish"
+                ],
+                [
+                  "<python>",
+                  "-m",
+                  "ci_lab.cli",
+                  "campaign",
+                  "run",
+                  "chat-demo",
+                  "--profile",
+                  "fake",
+                  "--run-dir",
+                  "<tmp>/runs",
+                  "--dry-run-publish",
+                  "--rounds",
+                  "1"
+                ]
+              ]
+            },
+            "launches": []
+          },
+          "tools": [],
+          "context": [],
+          "forwardedProps": {}
+        }
+      },
+      "events": [
+        {
+          "type": "RUN_STARTED",
+          "threadId": "thread-legacy",
+          "runId": "run-2"
+        },
+        {
+          "type": "STATE_SNAPSHOT",
+          "snapshot": {
+            "draft": {
+              "cid": "chat-demo",
+              "target": "local",
+              "rounds": 1,
+              "rationale": "scripted fake-profile draft",
+              "hyper": {
+                "arms": 2,
+                "k": 1,
+                "max_rounds": 8,
+                "aa_repeats": 5,
+                "max_parallel_arms": 2,
+                "seed": 0,
+                "budget": null,
+                "b_min": null,
+                "b_max": null,
+                "rrsi_profile": "local",
+                "rrsi": {},
+                "budget_tokens": null,
+                "max_arm_attempts": 2,
+                "holdout_looks": 1,
+                "draft_prs": true,
+                "strategies": [
+                  "agent",
+                  "gepa",
+                  "skillopt",
+                  "guard"
+                ],
+                "arm_budget_tokens": null,
+                "heartbeat_s": 30.0,
+                "guard_trials": null,
+                "guard_stochastic": null,
+                "guard_margin": 0.0,
+                "bus": true,
+                "challenger": "det"
+              },
+              "overrides": {},
+              "ignored_overrides": {},
+              "estimate": {
+                "formula": "(aa_repeats + rounds * arms) * cases * k",
+                "cases": 26,
+                "k": 1,
+                "arms": 2,
+                "rounds": 1,
+                "aa_repeats": 5,
+                "evaluations": 182,
+                "breakdown": {
+                  "aa_calibration": 130,
+                  "arms": 52,
+                  "incumbent_reevaluation": 26
+                },
+                "evaluations_with_incumbent": 208,
+                "heldout_confirm_per_look": 22,
+                "notes": [
+                  "cases = evolve-split cases of the frozen ASSERT sets",
+                  "each evaluation is one agent rollout plus judging; guard arms run paired guard-off/on trials and may cost more",
+                  "the held-out confirm look (`campaign confirm`) is not part of the launch chain"
+                ]
+              },
+              "profile": "fake",
+              "created": 0,
+              "warnings": [],
+              "commands": [
+                [
+                  "<python>",
+                  "-m",
+                  "ci_lab.cli",
+                  "campaign",
+                  "new",
+                  "chat-demo",
+                  "--profile",
+                  "fake",
+                  "--run-dir",
+                  "<tmp>/runs",
+                  "--dry-run-publish"
+                ],
+                [
+                  "<python>",
+                  "-m",
+                  "ci_lab.cli",
+                  "campaign",
+                  "calibrate",
+                  "chat-demo",
+                  "--profile",
+                  "fake",
+                  "--run-dir",
+                  "<tmp>/runs",
+                  "--dry-run-publish"
+                ],
+                [
+                  "<python>",
+                  "-m",
+                  "ci_lab.cli",
+                  "campaign",
+                  "run",
+                  "chat-demo",
+                  "--profile",
+                  "fake",
+                  "--run-dir",
+                  "<tmp>/runs",
+                  "--dry-run-publish",
+                  "--rounds",
+                  "1"
+                ]
+              ]
+            },
+            "launches": []
+          }
+        },
+        {
+          "type": "TEXT_MESSAGE_START",
+          "messageId": "<uuid-9>",
+          "role": "assistant"
+        },
+        {
+          "type": "TOOL_CALL_START",
+          "toolCallId": "<call-4>",
+          "toolCallName": "launch_campaign",
+          "parentMessageId": "<uuid-9>"
+        },
+        {
+          "type": "TOOL_CALL_ARGS",
+          "toolCallId": "<call-4>",
+          "delta": "{\"cid\": \"chat-demo\"}"
+        },
+        {
+          "type": "TOOL_CALL_END",
+          "toolCallId": "<call-4>"
+        },
+        {
+          "type": "CUSTOM",
+          "name": "function_approval_request",
+          "value": {
+            "id": "<interrupt-3>",
+            "function_call": {
+              "call_id": "<call-4>",
+              "name": "launch_campaign",
+              "arguments": {
+                "cid": "chat-demo"
+              }
+            }
+          }
+        },
+        {
+          "type": "TEXT_MESSAGE_END",
+          "messageId": "<uuid-9>"
+        },
+        {
+          "type": "MESSAGES_SNAPSHOT",
+          "messages": [
+            {
+              "id": "user-1",
+              "role": "user",
+              "content": "Please draft chat-demo: 2 arms, 1 round, local."
+            },
+            {
+              "id": "<uuid-1>",
+              "role": "assistant",
+              "content": "",
+              "toolCalls": [
+                {
+                  "id": "<call-1>",
+                  "type": "function",
+                  "function": {
+                    "name": "draft_campaign",
+                    "arguments": "{\"cid\": \"chat-demo\", \"hyper\": {\"arms\": 2}, \"rounds\": 1, \"target\": \"local\", \"rationale\": \"scripted fake-profile draft\"}"
+                  }
+                }
+              ]
+            },
+            {
+              "id": "<uuid-2>",
+              "role": "tool",
+              "content": "{\"draft\": {\"cid\": \"chat-demo\", \"commands\": [[\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"new\", \"chat-demo\", \"--profile\", \"fake\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\"], [\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"calibrate\", \"chat-demo\", \"--profile\", \"fake\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\"], [\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"run\", \"chat-demo\", \"--profile\", \"fake\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\", \"--rounds\", \"1\"]], \"created\": 0, \"estimate\": {\"aa_repeats\": 5, \"arms\": 2, \"breakdown\": {\"aa_calibration\": 130, \"arms\": 52, \"incumbent_reevaluation\": 26}, \"cases\": 26, \"evaluations\": 182, \"evaluations_with_incumbent\": 208, \"formula\": \"(aa_repeats + rounds * arms) * cases * k\", \"heldout_confirm_per_look\": 22, \"k\": 1, \"notes\": [\"cases = evolve-split cases of the frozen ASSERT sets\", \"each evaluation is one agent rollout plus judging; guard arms run paired guard-off/on trials and may cost more\", \"the held-out confirm look (`campaign confirm`) is not part of the launch chain\"], \"rounds\": 1}, \"hyper\": {\"aa_repeats\": 5, \"arm_budget_tokens\": null, \"arms\": 2, \"b_max\": null, \"b_min\": null, \"budget\": null, \"budget_tokens\": null, \"bus\": true, \"challenger\": \"det\", \"draft_prs\": true, \"guard_margin\": 0.0, \"guard_stochastic\": null, \"guard_trials\": null, \"heartbeat_s\": 30.0, \"holdout_looks\": 1, \"k\": 1, \"max_arm_attempts\": 2, \"max_parallel_arms\": 2, \"max_rounds\": 8, \"rrsi\": {}, \"rrsi_profile\": \"local\", \"seed\": 0, \"strategies\": [\"agent\", \"gepa\", \"skillopt\", \"guard\"]}, \"ignored_overrides\": {}, \"overrides\": {}, \"profile\": \"fake\", \"rationale\": \"scripted fake-profile draft\", \"rounds\": 1, \"target\": \"local\", \"warnings\": []}, \"ok\": true, \"path\": \"<tmp>/chat/drafts/chat-demo.json\", \"warnings\": []}",
+              "toolCallId": "<call-1>"
+            },
+            {
+              "id": "<uuid-3>",
+              "role": "assistant",
+              "content": "Drafted chat-demo: 1 round(s), target local, about 182 evaluations. Say \"launch chat-demo\" to start it."
+            },
+            {
+              "id": "user-2",
+              "role": "user",
+              "content": "launch chat-demo"
+            },
+            {
+              "id": "<uuid-9>",
+              "role": "assistant",
+              "toolCalls": [
+                {
+                  "id": "<call-4>",
+                  "type": "function",
+                  "function": {
+                    "name": "launch_campaign",
+                    "arguments": "{\"cid\": \"chat-demo\"}"
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "RUN_FINISHED",
+          "threadId": "thread-legacy",
+          "runId": "run-2",
+          "outcome": {
+            "type": "interrupt",
+            "interrupts": [
+              {
+                "id": "<interrupt-3>",
+                "reason": "tool_call",
+                "message": "Approve running launch_campaign?",
+                "toolCallId": "<call-4>",
+                "responseSchema": {
+                  "type": "object",
+                  "properties": {
+                    "approved": {
+                      "type": "boolean",
+                      "description": "Whether the requested tool call is approved."
+                    },
+                    "accepted": {
+                      "type": "boolean",
+                      "description": "Legacy alias for approved."
+                    },
+                    "cid": {
+                      "type": "string",
+                      "description": "Optional edited value for the 'cid' tool argument."
+                    },
+                    "editedArgs": {
+                      "type": "object",
+                      "description": "Full replacement of the tool arguments. Not merged.",
+                      "properties": {
+                        "cid": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "cid"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "anyOf": [
+                    {
+                      "required": [
+                        "approved"
+                      ]
+                    },
+                    {
+                      "required": [
+                        "accepted"
+                      ]
+                    }
+                  ],
+                  "additionalProperties": false
+                },
+                "metadata": {
+                  "agent_framework": {
+                    "type": "function_approval_request",
+                    "function_call": {
+                      "call_id": "<call-4>",
+                      "name": "launch_campaign",
+                      "arguments": {
+                        "cid": "chat-demo"
+                      }
+                    },
+                    "value": {
+                      "type": "function_approval_request",
+                      "function_call": {
+                        "call_id": "<call-4>",
+                        "name": "launch_campaign",
+                        "arguments": {
+                          "cid": "chat-demo"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "3_resume_approved_legacy": {
+      "request": {
+        "method": "POST",
+        "path": "/agui",
+        "headers": {
+          "content-type": "application/json",
+          "accept": "text/event-stream",
+          "x-ci-chat-token": "<CI_CHAT_TOKEN>"
+        },
+        "body": {
+          "threadId": "thread-legacy",
+          "runId": "run-3",
+          "messages": [
+            {
+              "id": "user-1",
+              "role": "user",
+              "content": "Please draft chat-demo: 2 arms, 1 round, local."
+            },
+            {
+              "id": "<uuid-1>",
+              "role": "assistant",
+              "content": "",
+              "toolCalls": [
+                {
+                  "id": "<call-1>",
+                  "type": "function",
+                  "function": {
+                    "name": "draft_campaign",
+                    "arguments": "{\"cid\": \"chat-demo\", \"hyper\": {\"arms\": 2}, \"rounds\": 1, \"target\": \"local\", \"rationale\": \"scripted fake-profile draft\"}"
+                  }
+                }
+              ]
+            },
+            {
+              "id": "<uuid-2>",
+              "role": "tool",
+              "content": "{\"draft\": {\"cid\": \"chat-demo\", \"commands\": [[\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"new\", \"chat-demo\", \"--profile\", \"fake\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\"], [\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"calibrate\", \"chat-demo\", \"--profile\", \"fake\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\"], [\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"run\", \"chat-demo\", \"--profile\", \"fake\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\", \"--rounds\", \"1\"]], \"created\": 0, \"estimate\": {\"aa_repeats\": 5, \"arms\": 2, \"breakdown\": {\"aa_calibration\": 130, \"arms\": 52, \"incumbent_reevaluation\": 26}, \"cases\": 26, \"evaluations\": 182, \"evaluations_with_incumbent\": 208, \"formula\": \"(aa_repeats + rounds * arms) * cases * k\", \"heldout_confirm_per_look\": 22, \"k\": 1, \"notes\": [\"cases = evolve-split cases of the frozen ASSERT sets\", \"each evaluation is one agent rollout plus judging; guard arms run paired guard-off/on trials and may cost more\", \"the held-out confirm look (`campaign confirm`) is not part of the launch chain\"], \"rounds\": 1}, \"hyper\": {\"aa_repeats\": 5, \"arm_budget_tokens\": null, \"arms\": 2, \"b_max\": null, \"b_min\": null, \"budget\": null, \"budget_tokens\": null, \"bus\": true, \"challenger\": \"det\", \"draft_prs\": true, \"guard_margin\": 0.0, \"guard_stochastic\": null, \"guard_trials\": null, \"heartbeat_s\": 30.0, \"holdout_looks\": 1, \"k\": 1, \"max_arm_attempts\": 2, \"max_parallel_arms\": 2, \"max_rounds\": 8, \"rrsi\": {}, \"rrsi_profile\": \"local\", \"seed\": 0, \"strategies\": [\"agent\", \"gepa\", \"skillopt\", \"guard\"]}, \"ignored_overrides\": {}, \"overrides\": {}, \"profile\": \"fake\", \"rationale\": \"scripted fake-profile draft\", \"rounds\": 1, \"target\": \"local\", \"warnings\": []}, \"ok\": true, \"path\": \"<tmp>/chat/drafts/chat-demo.json\", \"warnings\": []}",
+              "toolCallId": "<call-1>"
+            },
+            {
+              "id": "<uuid-3>",
+              "role": "assistant",
+              "content": "Drafted chat-demo: 1 round(s), target local, about 182 evaluations. Say \"launch chat-demo\" to start it."
+            },
+            {
+              "id": "user-2",
+              "role": "user",
+              "content": "launch chat-demo"
+            },
+            {
+              "id": "<uuid-9>",
+              "role": "assistant",
+              "toolCalls": [
+                {
+                  "id": "<call-4>",
+                  "type": "function",
+                  "function": {
+                    "name": "launch_campaign",
+                    "arguments": "{\"cid\": \"chat-demo\"}"
+                  }
+                }
+              ]
+            }
+          ],
+          "state": {
+            "draft": {
+              "cid": "chat-demo",
+              "target": "local",
+              "rounds": 1,
+              "rationale": "scripted fake-profile draft",
+              "hyper": {
+                "arms": 2,
+                "k": 1,
+                "max_rounds": 8,
+                "aa_repeats": 5,
+                "max_parallel_arms": 2,
+                "seed": 0,
+                "budget": null,
+                "b_min": null,
+                "b_max": null,
+                "rrsi_profile": "local",
+                "rrsi": {},
+                "budget_tokens": null,
+                "max_arm_attempts": 2,
+                "holdout_looks": 1,
+                "draft_prs": true,
+                "strategies": [
+                  "agent",
+                  "gepa",
+                  "skillopt",
+                  "guard"
+                ],
+                "arm_budget_tokens": null,
+                "heartbeat_s": 30.0,
+                "guard_trials": null,
+                "guard_stochastic": null,
+                "guard_margin": 0.0,
+                "bus": true,
+                "challenger": "det"
+              },
+              "overrides": {},
+              "ignored_overrides": {},
+              "estimate": {
+                "formula": "(aa_repeats + rounds * arms) * cases * k",
+                "cases": 26,
+                "k": 1,
+                "arms": 2,
+                "rounds": 1,
+                "aa_repeats": 5,
+                "evaluations": 182,
+                "breakdown": {
+                  "aa_calibration": 130,
+                  "arms": 52,
+                  "incumbent_reevaluation": 26
+                },
+                "evaluations_with_incumbent": 208,
+                "heldout_confirm_per_look": 22,
+                "notes": [
+                  "cases = evolve-split cases of the frozen ASSERT sets",
+                  "each evaluation is one agent rollout plus judging; guard arms run paired guard-off/on trials and may cost more",
+                  "the held-out confirm look (`campaign confirm`) is not part of the launch chain"
+                ]
+              },
+              "profile": "fake",
+              "created": 0,
+              "warnings": [],
+              "commands": [
+                [
+                  "<python>",
+                  "-m",
+                  "ci_lab.cli",
+                  "campaign",
+                  "new",
+                  "chat-demo",
+                  "--profile",
+                  "fake",
+                  "--run-dir",
+                  "<tmp>/runs",
+                  "--dry-run-publish"
+                ],
+                [
+                  "<python>",
+                  "-m",
+                  "ci_lab.cli",
+                  "campaign",
+                  "calibrate",
+                  "chat-demo",
+                  "--profile",
+                  "fake",
+                  "--run-dir",
+                  "<tmp>/runs",
+                  "--dry-run-publish"
+                ],
+                [
+                  "<python>",
+                  "-m",
+                  "ci_lab.cli",
+                  "campaign",
+                  "run",
+                  "chat-demo",
+                  "--profile",
+                  "fake",
+                  "--run-dir",
+                  "<tmp>/runs",
+                  "--dry-run-publish",
+                  "--rounds",
+                  "1"
+                ]
+              ]
+            },
+            "launches": []
+          },
+          "tools": [],
+          "context": [],
+          "forwardedProps": {},
+          "resume": [
+            {
+              "interruptId": "<interrupt-3>",
+              "approved": true
+            }
+          ]
+        }
+      },
+      "events": [
+        {
+          "type": "RUN_STARTED",
+          "threadId": "thread-legacy",
+          "runId": "run-3"
+        },
+        {
+          "type": "STATE_SNAPSHOT",
+          "snapshot": {
+            "draft": {
+              "cid": "chat-demo",
+              "target": "local",
+              "rounds": 1,
+              "rationale": "scripted fake-profile draft",
+              "hyper": {
+                "arms": 2,
+                "k": 1,
+                "max_rounds": 8,
+                "aa_repeats": 5,
+                "max_parallel_arms": 2,
+                "seed": 0,
+                "budget": null,
+                "b_min": null,
+                "b_max": null,
+                "rrsi_profile": "local",
+                "rrsi": {},
+                "budget_tokens": null,
+                "max_arm_attempts": 2,
+                "holdout_looks": 1,
+                "draft_prs": true,
+                "strategies": [
+                  "agent",
+                  "gepa",
+                  "skillopt",
+                  "guard"
+                ],
+                "arm_budget_tokens": null,
+                "heartbeat_s": 30.0,
+                "guard_trials": null,
+                "guard_stochastic": null,
+                "guard_margin": 0.0,
+                "bus": true,
+                "challenger": "det"
+              },
+              "overrides": {},
+              "ignored_overrides": {},
+              "estimate": {
+                "formula": "(aa_repeats + rounds * arms) * cases * k",
+                "cases": 26,
+                "k": 1,
+                "arms": 2,
+                "rounds": 1,
+                "aa_repeats": 5,
+                "evaluations": 182,
+                "breakdown": {
+                  "aa_calibration": 130,
+                  "arms": 52,
+                  "incumbent_reevaluation": 26
+                },
+                "evaluations_with_incumbent": 208,
+                "heldout_confirm_per_look": 22,
+                "notes": [
+                  "cases = evolve-split cases of the frozen ASSERT sets",
+                  "each evaluation is one agent rollout plus judging; guard arms run paired guard-off/on trials and may cost more",
+                  "the held-out confirm look (`campaign confirm`) is not part of the launch chain"
+                ]
+              },
+              "profile": "fake",
+              "created": 0,
+              "warnings": [],
+              "commands": [
+                [
+                  "<python>",
+                  "-m",
+                  "ci_lab.cli",
+                  "campaign",
+                  "new",
+                  "chat-demo",
+                  "--profile",
+                  "fake",
+                  "--run-dir",
+                  "<tmp>/runs",
+                  "--dry-run-publish"
+                ],
+                [
+                  "<python>",
+                  "-m",
+                  "ci_lab.cli",
+                  "campaign",
+                  "calibrate",
+                  "chat-demo",
+                  "--profile",
+                  "fake",
+                  "--run-dir",
+                  "<tmp>/runs",
+                  "--dry-run-publish"
+                ],
+                [
+                  "<python>",
+                  "-m",
+                  "ci_lab.cli",
+                  "campaign",
+                  "run",
+                  "chat-demo",
+                  "--profile",
+                  "fake",
+                  "--run-dir",
+                  "<tmp>/runs",
+                  "--dry-run-publish",
+                  "--rounds",
+                  "1"
+                ]
+              ]
+            },
+            "launches": []
+          }
+        },
+        {
+          "type": "TOOL_CALL_RESULT",
+          "messageId": "<uuid-10>",
+          "toolCallId": "<call-4>",
+          "content": "{\"argv\": [\"<python>\", \"-m\", \"ci_lab.chat.launch\", \"<tmp>/chat/drafts/chat-demo.json\"], \"cid\": \"chat-demo\", \"commands\": [[\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"new\", \"chat-demo\", \"--profile\", \"fake\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\"], [\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"calibrate\", \"chat-demo\", \"--profile\", \"fake\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\"], [\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"run\", \"chat-demo\", \"--profile\", \"fake\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\", \"--rounds\", \"1\"]], \"dry_run\": true, \"launched\": false, \"message\": \"dry-run: recorded the command; nothing was executed\", \"ok\": true, \"status\": \"dry_run\", \"target\": \"local\", \"warnings\": []}",
+          "role": "tool"
+        },
+        {
+          "type": "STATE_SNAPSHOT",
+          "snapshot": {
+            "draft": {
+              "cid": "chat-demo",
+              "target": "local",
+              "rounds": 1,
+              "rationale": "scripted fake-profile draft",
+              "hyper": {
+                "arms": 2,
+                "k": 1,
+                "max_rounds": 8,
+                "aa_repeats": 5,
+                "max_parallel_arms": 2,
+                "seed": 0,
+                "budget": null,
+                "b_min": null,
+                "b_max": null,
+                "rrsi_profile": "local",
+                "rrsi": {},
+                "budget_tokens": null,
+                "max_arm_attempts": 2,
+                "holdout_looks": 1,
+                "draft_prs": true,
+                "strategies": [
+                  "agent",
+                  "gepa",
+                  "skillopt",
+                  "guard"
+                ],
+                "arm_budget_tokens": null,
+                "heartbeat_s": 30.0,
+                "guard_trials": null,
+                "guard_stochastic": null,
+                "guard_margin": 0.0,
+                "bus": true,
+                "challenger": "det"
+              },
+              "overrides": {},
+              "ignored_overrides": {},
+              "estimate": {
+                "formula": "(aa_repeats + rounds * arms) * cases * k",
+                "cases": 26,
+                "k": 1,
+                "arms": 2,
+                "rounds": 1,
+                "aa_repeats": 5,
+                "evaluations": 182,
+                "breakdown": {
+                  "aa_calibration": 130,
+                  "arms": 52,
+                  "incumbent_reevaluation": 26
+                },
+                "evaluations_with_incumbent": 208,
+                "heldout_confirm_per_look": 22,
+                "notes": [
+                  "cases = evolve-split cases of the frozen ASSERT sets",
+                  "each evaluation is one agent rollout plus judging; guard arms run paired guard-off/on trials and may cost more",
+                  "the held-out confirm look (`campaign confirm`) is not part of the launch chain"
+                ]
+              },
+              "profile": "fake",
+              "created": 0,
+              "warnings": [],
+              "commands": [
+                [
+                  "<python>",
+                  "-m",
+                  "ci_lab.cli",
+                  "campaign",
+                  "new",
+                  "chat-demo",
+                  "--profile",
+                  "fake",
+                  "--run-dir",
+                  "<tmp>/runs",
+                  "--dry-run-publish"
+                ],
+                [
+                  "<python>",
+                  "-m",
+                  "ci_lab.cli",
+                  "campaign",
+                  "calibrate",
+                  "chat-demo",
+                  "--profile",
+                  "fake",
+                  "--run-dir",
+                  "<tmp>/runs",
+                  "--dry-run-publish"
+                ],
+                [
+                  "<python>",
+                  "-m",
+                  "ci_lab.cli",
+                  "campaign",
+                  "run",
+                  "chat-demo",
+                  "--profile",
+                  "fake",
+                  "--run-dir",
+                  "<tmp>/runs",
+                  "--dry-run-publish",
+                  "--rounds",
+                  "1"
+                ]
+              ]
+            },
+            "launches": [
+              {
+                "cid": "chat-demo",
+                "target": "local",
+                "status": "dry_run"
+              }
+            ]
+          }
+        },
+        {
+          "type": "TEXT_MESSAGE_START",
+          "messageId": "<uuid-11>",
+          "role": "assistant"
+        },
+        {
+          "type": "TEXT_MESSAGE_CONTENT",
+          "messageId": "<uuid-11>",
+          "delta": "Dry run: recorded the launch command "
+        },
+        {
+          "type": "TEXT_MESSAGE_CONTENT",
+          "messageId": "<uuid-11>",
+          "delta": "for chat-demo; nothing was executed."
+        },
+        {
+          "type": "TEXT_MESSAGE_END",
+          "messageId": "<uuid-11>"
+        },
+        {
+          "type": "MESSAGES_SNAPSHOT",
+          "messages": [
+            {
+              "id": "user-1",
+              "role": "user",
+              "content": "Please draft chat-demo: 2 arms, 1 round, local."
+            },
+            {
+              "id": "<uuid-1>",
+              "role": "assistant",
+              "content": "",
+              "toolCalls": [
+                {
+                  "id": "<call-1>",
+                  "type": "function",
+                  "function": {
+                    "name": "draft_campaign",
+                    "arguments": "{\"cid\": \"chat-demo\", \"hyper\": {\"arms\": 2}, \"rounds\": 1, \"target\": \"local\", \"rationale\": \"scripted fake-profile draft\"}"
+                  }
+                }
+              ]
+            },
+            {
+              "id": "<uuid-2>",
+              "role": "tool",
+              "content": "{\"draft\": {\"cid\": \"chat-demo\", \"commands\": [[\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"new\", \"chat-demo\", \"--profile\", \"fake\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\"], [\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"calibrate\", \"chat-demo\", \"--profile\", \"fake\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\"], [\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"run\", \"chat-demo\", \"--profile\", \"fake\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\", \"--rounds\", \"1\"]], \"created\": 0, \"estimate\": {\"aa_repeats\": 5, \"arms\": 2, \"breakdown\": {\"aa_calibration\": 130, \"arms\": 52, \"incumbent_reevaluation\": 26}, \"cases\": 26, \"evaluations\": 182, \"evaluations_with_incumbent\": 208, \"formula\": \"(aa_repeats + rounds * arms) * cases * k\", \"heldout_confirm_per_look\": 22, \"k\": 1, \"notes\": [\"cases = evolve-split cases of the frozen ASSERT sets\", \"each evaluation is one agent rollout plus judging; guard arms run paired guard-off/on trials and may cost more\", \"the held-out confirm look (`campaign confirm`) is not part of the launch chain\"], \"rounds\": 1}, \"hyper\": {\"aa_repeats\": 5, \"arm_budget_tokens\": null, \"arms\": 2, \"b_max\": null, \"b_min\": null, \"budget\": null, \"budget_tokens\": null, \"bus\": true, \"challenger\": \"det\", \"draft_prs\": true, \"guard_margin\": 0.0, \"guard_stochastic\": null, \"guard_trials\": null, \"heartbeat_s\": 30.0, \"holdout_looks\": 1, \"k\": 1, \"max_arm_attempts\": 2, \"max_parallel_arms\": 2, \"max_rounds\": 8, \"rrsi\": {}, \"rrsi_profile\": \"local\", \"seed\": 0, \"strategies\": [\"agent\", \"gepa\", \"skillopt\", \"guard\"]}, \"ignored_overrides\": {}, \"overrides\": {}, \"profile\": \"fake\", \"rationale\": \"scripted fake-profile draft\", \"rounds\": 1, \"target\": \"local\", \"warnings\": []}, \"ok\": true, \"path\": \"<tmp>/chat/drafts/chat-demo.json\", \"warnings\": []}",
+              "toolCallId": "<call-1>"
+            },
+            {
+              "id": "<uuid-2>",
+              "role": "tool",
+              "content": "{\"draft\": {\"cid\": \"chat-demo\", \"commands\": [[\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"new\", \"chat-demo\", \"--profile\", \"fake\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\"], [\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"calibrate\", \"chat-demo\", \"--profile\", \"fake\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\"], [\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"run\", \"chat-demo\", \"--profile\", \"fake\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\", \"--rounds\", \"1\"]], \"created\": 0, \"estimate\": {\"aa_repeats\": 5, \"arms\": 2, \"breakdown\": {\"aa_calibration\": 130, \"arms\": 52, \"incumbent_reevaluation\": 26}, \"cases\": 26, \"evaluations\": 182, \"evaluations_with_incumbent\": 208, \"formula\": \"(aa_repeats + rounds * arms) * cases * k\", \"heldout_confirm_per_look\": 22, \"k\": 1, \"notes\": [\"cases = evolve-split cases of the frozen ASSERT sets\", \"each evaluation is one agent rollout plus judging; guard arms run paired guard-off/on trials and may cost more\", \"the held-out confirm look (`campaign confirm`) is not part of the launch chain\"], \"rounds\": 1}, \"hyper\": {\"aa_repeats\": 5, \"arm_budget_tokens\": null, \"arms\": 2, \"b_max\": null, \"b_min\": null, \"budget\": null, \"budget_tokens\": null, \"bus\": true, \"challenger\": \"det\", \"draft_prs\": true, \"guard_margin\": 0.0, \"guard_stochastic\": null, \"guard_trials\": null, \"heartbeat_s\": 30.0, \"holdout_looks\": 1, \"k\": 1, \"max_arm_attempts\": 2, \"max_parallel_arms\": 2, \"max_rounds\": 8, \"rrsi\": {}, \"rrsi_profile\": \"local\", \"seed\": 0, \"strategies\": [\"agent\", \"gepa\", \"skillopt\", \"guard\"]}, \"ignored_overrides\": {}, \"overrides\": {}, \"profile\": \"fake\", \"rationale\": \"scripted fake-profile draft\", \"rounds\": 1, \"target\": \"local\", \"warnings\": []}, \"ok\": true, \"path\": \"<tmp>/chat/drafts/chat-demo.json\", \"warnings\": []}",
+              "toolCallId": "<call-1>"
+            },
+            {
+              "id": "<uuid-2>",
+              "role": "tool",
+              "content": "{\"draft\": {\"cid\": \"chat-demo\", \"commands\": [[\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"new\", \"chat-demo\", \"--profile\", \"fake\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\"], [\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"calibrate\", \"chat-demo\", \"--profile\", \"fake\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\"], [\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"run\", \"chat-demo\", \"--profile\", \"fake\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\", \"--rounds\", \"1\"]], \"created\": 0, \"estimate\": {\"aa_repeats\": 5, \"arms\": 2, \"breakdown\": {\"aa_calibration\": 130, \"arms\": 52, \"incumbent_reevaluation\": 26}, \"cases\": 26, \"evaluations\": 182, \"evaluations_with_incumbent\": 208, \"formula\": \"(aa_repeats + rounds * arms) * cases * k\", \"heldout_confirm_per_look\": 22, \"k\": 1, \"notes\": [\"cases = evolve-split cases of the frozen ASSERT sets\", \"each evaluation is one agent rollout plus judging; guard arms run paired guard-off/on trials and may cost more\", \"the held-out confirm look (`campaign confirm`) is not part of the launch chain\"], \"rounds\": 1}, \"hyper\": {\"aa_repeats\": 5, \"arm_budget_tokens\": null, \"arms\": 2, \"b_max\": null, \"b_min\": null, \"budget\": null, \"budget_tokens\": null, \"bus\": true, \"challenger\": \"det\", \"draft_prs\": true, \"guard_margin\": 0.0, \"guard_stochastic\": null, \"guard_trials\": null, \"heartbeat_s\": 30.0, \"holdout_looks\": 1, \"k\": 1, \"max_arm_attempts\": 2, \"max_parallel_arms\": 2, \"max_rounds\": 8, \"rrsi\": {}, \"rrsi_profile\": \"local\", \"seed\": 0, \"strategies\": [\"agent\", \"gepa\", \"skillopt\", \"guard\"]}, \"ignored_overrides\": {}, \"overrides\": {}, \"profile\": \"fake\", \"rationale\": \"scripted fake-profile draft\", \"rounds\": 1, \"target\": \"local\", \"warnings\": []}, \"ok\": true, \"path\": \"<tmp>/chat/drafts/chat-demo.json\", \"warnings\": []}",
+              "toolCallId": "<call-1>"
+            },
+            {
+              "id": "<uuid-3>",
+              "role": "assistant",
+              "content": "Drafted chat-demo: 1 round(s), target local, about 182 evaluations. Say \"launch chat-demo\" to start it."
+            },
+            {
+              "id": "user-2",
+              "role": "user",
+              "content": "launch chat-demo"
+            },
+            {
+              "id": "<uuid-9>",
+              "role": "assistant",
+              "content": "",
+              "toolCalls": [
+                {
+                  "id": "<call-4>",
+                  "type": "function",
+                  "function": {
+                    "name": "launch_campaign",
+                    "arguments": "{\"cid\": \"chat-demo\"}"
+                  }
+                }
+              ]
+            },
+            {
+              "id": "approval-response-<interrupt-3>",
+              "role": "tool",
+              "content": "{\"argv\": [\"<python>\", \"-m\", \"ci_lab.chat.launch\", \"<tmp>/chat/drafts/chat-demo.json\"], \"cid\": \"chat-demo\", \"commands\": [[\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"new\", \"chat-demo\", \"--profile\", \"fake\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\"], [\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"calibrate\", \"chat-demo\", \"--profile\", \"fake\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\"], [\"<python>\", \"-m\", \"ci_lab.cli\", \"campaign\", \"run\", \"chat-demo\", \"--profile\", \"fake\", \"--run-dir\", \"<tmp>/runs\", \"--dry-run-publish\", \"--rounds\", \"1\"]], \"dry_run\": true, \"launched\": false, \"message\": \"dry-run: recorded the command; nothing was executed\", \"ok\": true, \"status\": \"dry_run\", \"target\": \"local\", \"warnings\": []}",
+              "toolCallId": "<call-4>"
+            },
+            {
+              "id": "<uuid-11>",
+              "role": "assistant",
+              "content": "Dry run: recorded the launch command for chat-demo; nothing was executed."
+            }
+          ]
+        },
+        {
+          "type": "RUN_FINISHED",
+          "threadId": "thread-legacy",
+          "runId": "run-3"
+        }
+      ]
+    }
+  }
+}
