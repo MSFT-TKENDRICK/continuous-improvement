@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from ci_lab.agl.export import (
+    METRIC,
     HoldoutViolation,
     eval_result,
     expected_keys,
@@ -129,3 +130,41 @@ def test_oes_metric_values(tmp_path: Path) -> None:
     plain = oes_metric_values([TaskScore("x", 0, "other", 0.5)], primary="score")
     assert plain["score"] == 0.5 and "safety_score" not in plain
     assert oes_metric_values([])["evolve_score"] == 0.0
+
+
+def test_runtime_fallback_from_model_requests(tmp_path: Path) -> None:
+    j = FileRolloutJournal(tmp_path, fsync=False)
+    k = RolloutKey(EXP, VAR, "r", 0)
+    with RolloutScope(j, k) as s:
+        s.record_model_request({"latency_ms": 120.5, "usage": {"prompt_tokens": 10, "completion_tokens": 2}})
+        s.record_model_request({"latency_ms": 79.5})
+        s.record_model_request({"latency_ms": "bad"})
+        s.reward(1.0)
+    ts = task_scores(j, [k])[0]
+    assert (ts.wall_ms, ts.llm_calls, ts.tool_calls, ts.tokens_in, ts.tokens_out) == (200.0, 3, 0, 10, 2)
+
+
+def test_runtime_from_score_attrs_then_metric_events(tmp_path: Path) -> None:
+    j = FileRolloutJournal(tmp_path, fsync=False)
+    k = RolloutKey(EXP, VAR, "m", 0)
+    with RolloutScope(j, k) as s:
+        s.record_model_request({"latency_ms": 5, "usage": {"prompt_tokens": 10, "completion_tokens": 2}})
+        s.score("assert", 1.0, wall_ms=900.0, llm_calls=4, tool_calls=2)
+    ts = task_scores(j, [k], score_name="assert")[0]
+    assert (ts.wall_ms, ts.llm_calls, ts.tool_calls, ts.tokens_in) == (900.0, 4, 2, 10)
+    with RolloutScope(j, RolloutKey(EXP, VAR, "m", 0, attempt=1)) as s:
+        s.score("assert", 1.0, wall_ms=900.0, llm_calls=4, tool_calls=2)
+        s.emit(METRIC, {"wall_ms": 1500.0, "llm_calls": 6, "tool_calls": 3, "tokens_in": 70, "tokens_out": 30})
+        s.emit(METRIC, {"name": "tool_calls", "value": 5})
+        s.emit(METRIC, {"name": "wall_ms", "value": float("nan")})
+    ts = task_scores(j, [k], score_name="assert")[0]
+    assert (ts.wall_ms, ts.llm_calls, ts.tool_calls, ts.tokens_in, ts.tokens_out) == (1500.0, 6, 5, 70, 30)
+
+
+def test_oes_runtime_metric_values() -> None:
+    scores = [TaskScore("a", 0, "s", 1.0, wall_ms=100.0, llm_calls=2, tool_calls=1),
+              TaskScore("b", 0, "s", 0.5, wall_ms=300.0, llm_calls=4, tool_calls=3),
+              TaskScore("c", 0, "s", None, wall_ms=9999.0, llm_calls=99, tool_calls=99)]
+    m = oes_metric_values(scores)
+    assert (m["wall_ms_per_task"], m["llm_calls_per_task"], m["tool_calls_per_task"]) == (200.0, 3.0, 2.0)
+    assert oes_metric_values([])["wall_ms_per_task"] == 0.0
