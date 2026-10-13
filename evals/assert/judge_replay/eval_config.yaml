@@ -21,6 +21,9 @@ default_model:
   temperature: 0
 pipeline:
   judge:
+    # System-1 judge (C21/C25): ASSERT's judge call is answered by the s1 LiteLLM provider.
+    model:
+      name: s1/llamacpp/qwen3.5-4b
     n: 1
     inference_set_path: inference_set.jsonl
     taxonomy_path: taxonomy.json
