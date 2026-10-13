@@ -1,0 +1,10 @@
+# Copilot extension / canvas lessons (design §12.4 C38). Interpreted by `ci-lab lint` (rung R5).
+schema_version: 1
+rules:
+  - id: ext.no-console-log
+    kind: banned_text
+    pattern: "\\bconsole\\.(?:log|info|debug)\\s*\\("
+    include: [".github/extensions/**/*.{mjs,js,cjs}"]
+    message: console.log in a Copilot extension/canvas (extension stdout is the JSON-RPC channel; output corrupts the protocol).
+    fix: Use `await session.log(msg, {level})` (or console.error for crash diagnostics on stderr).
+    see: copilot-sdk docs/agent-author.md Gotchas; design §12.4 C38

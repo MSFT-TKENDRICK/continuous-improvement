@@ -1,0 +1,12 @@
+# Agent governance (AGT/ACS, docs/governance.md). Interpreted by `ci-lab lint` (rung R5).
+schema_version: 1
+rules:
+  - id: agt.governed-agent-factory
+    kind: banned_call
+    names: [agent_framework.Agent, agent_framework.ChatAgent, agent_framework.create_harness_agent,
+            "*.create_agent_from_dict", "*.create_agent_from_yaml", "*.create_agent_from_yaml_path"]
+    include: ["src/**/*.py"]
+    exclude: [src/ci_lab/governance/maf.py]
+    message: MAF agent built outside the governed factory, so no ACS policy middleware or audit trail is attached.
+    fix: Build it with ci_lab.governance.maf.governed_agent / governed_declarative / governed_harness_agent.
+    see: docs/governance.md

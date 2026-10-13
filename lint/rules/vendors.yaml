@@ -1,0 +1,22 @@
+# Vendor lessons: the harness is built on MAF + ASSERT + Agent Lightning + SkillOpt + DSPy; the
+# LangChain/LangSmith/LangGraph stack is deliberately excluded (no SDKs, no hosted gateways).
+schema_version: 1
+rules:
+  - id: vendor.no-langchain-imports
+    kind: banned_import
+    modules: [langchain, langchain_core, langchain_community, langchain_openai, langsmith, langgraph]
+    include: ["**/*.py"]
+    message: LangChain-family package imported; this harness does not depend on LangChain, LangSmith or LangGraph.
+    fix: Use MAF (agent_framework) for agents/workflows, ASSERT for evals and the s1 judge provider for rubric judging.
+    see: docs/lint.md (vendor rules)
+
+  - id: vendor.no-langchain-references
+    kind: banned_text
+    pattern: "(?i)lang(?:chain|smith|graph)"
+    include: ["**/*.{py,toml,yaml,yml,md,mjs,js,json,html,css,cfg,ini,txt}"]
+    exclude:
+      - "lint/rules/vendors.yaml"
+      - "tests/ci_lab/lint/test_vendor_rules.py"
+    message: LangChain/LangSmith/LangGraph referenced (dependency, endpoint, preset or docs).
+    fix: Remove the reference; use the local s1 judge (s1/llamacpp/...) or a vendor-neutral endpoint instead.
+    see: docs/lint.md (vendor rules)

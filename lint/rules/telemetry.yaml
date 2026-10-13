@@ -1,0 +1,63 @@
+# Telemetry lessons (design §12.4 C28, §12.5 D1/D2/D4/D6). Interpreted by `ci-lab lint` (rung R5).
+schema_version: 1
+rules:
+  - id: obs.single-tracer-provider
+    kind: banned_call
+    names:
+      - opentelemetry.trace.set_tracer_provider
+      - opentelemetry.metrics.set_meter_provider
+      - opentelemetry._logs.set_logger_provider
+      - "*.set_tracer_provider"
+      - "*.set_meter_provider"
+      - "*.set_logger_provider"
+    include: ["src/**/*.py"]
+    exclude:
+      - "src/ci_lab/telemetry/**"
+      # Pre-harness L1 agent installs a bare provider for standalone runs; M3 routes it via telemetry.setup.
+      - "src/order_support/agent.py"
+    message: Global OTel provider installed outside ci_lab.telemetry (two providers split traces / 'override not allowed').
+    fix: Call ci_lab.telemetry.setup() at the CLI entry and attach processors via telemetry.span_processors().
+    see: design §12.4 C28, §12.5 D4
+
+  - id: obs.no-stringified-span-attrs
+    kind: banned_attr_arg
+    calls: [set_attribute, set_attributes, span, annotate, add_event, start_as_current_span, start_span]
+    include: ["src/**/*.py"]
+    message: Span attribute built with str()/repr()/f-string/format of an object (may carry PII into telemetry).
+    fix: Pass bounded scalars (ids, enums, counts) via obs.span/obs.annotate; obs._clean maps other objects to <TypeName>.
+    see: design §12.5 D6, §12.4 C29
+
+  - id: obs.no-traceparent-attach-in-services
+    kind: banned_call
+    names: [ci_lab.obs.attach_from_env, "*.attach_from_env"]
+    include: ["src/**/*.py"]
+    exclude:
+      # one-shot child entrypoints only (they run exactly one unit of work, then exit)
+      - "src/order_support/assert_wrapper.py"
+      - "src/order_support/cli.py"
+    message: TRACEPARENT attached from the environment outside an allowlisted one-shot entrypoint (mis-parents later requests in long-lived services).
+    fix: In services wrap each request in obs.use_carrier(obs.carrier()-headers); one-shot children must be added to this rule's allowlist in review.
+    see: design §12.5 D2
+
+  - id: obs.no-raw-traceparent-env
+    kind: banned_text
+    pattern: "[\"']TRACEPARENT[\"']|\\bTRACEPARENT_ENV\\b"
+    include: ["src/**/*.py"]
+    exclude:
+      - "src/ci_lab/obs.py"
+      # Long-lived services strip an inherited startup TRACEPARENT from their child env (the D2 intent;
+      # obs.child_env() would inject one). Per-request context travels via obs.carrier() headers.
+      - "src/ci_lab/agl/server.py"
+      - "src/ci_lab/providers/copilot.py"
+    message: TRACEPARENT read/written directly instead of through the obs facade.
+    fix: Use obs.child_env() for one-shot children, obs.carrier()/obs.use_carrier() per request.
+    see: design §12.5 D2
+
+  - id: obs.status-writes-via-obs
+    kind: banned_text
+    pattern: "[\"']status\\.(?:json|d)[\"'/]|\\bRUN_STATUS_(?:FILE|DIR)\\b"
+    include: ["src/**/*.py"]
+    exclude: ["src/ci_lab/obs.py", "src/ci_lab/contracts.py"]
+    message: Run-status marker path used outside ci_lab.obs (read-merge-replace across processes loses updates).
+    fix: Write with obs.write_status(run_dir, exp, writer=...) and read with obs.read_status(...).
+    see: design §12.5 D1
