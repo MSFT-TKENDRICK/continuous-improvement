@@ -1,0 +1,11 @@
+{
+  "writer": "round",
+  "seq": 3,
+  "experiment_id": "tone-a1-r02",
+  "phase": "evaluate",
+  "updated": 1791434990,
+  "trace": {
+    "trace_id": "0af7651916cd43dd8448eb211c80319c",
+    "span_id": "b7ad6b7169203331"
+  }
+}

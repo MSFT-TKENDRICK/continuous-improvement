@@ -1,0 +1,1 @@
+{"run_id":"1234567","repo":"org/repo","artifact":"ci-telemetry","artifact_id":99,"digest":"sha256:abc123","sha256":"abc123","schemaVersion":1,"files":["files/spans-77.jsonl","../../escape.jsonl"],"spans":1,"skipped_lines":0,"traces":1,"services":["ci-lab.sleep"],"artifact_created":"2026-10-08T05:00:00Z","pulled":"2026-10-08T06:00:00+00:00"}

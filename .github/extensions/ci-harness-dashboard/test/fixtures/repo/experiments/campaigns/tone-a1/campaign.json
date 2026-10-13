@@ -1,0 +1,11 @@
+{
+  "campaignId": "tone-a1",
+  "profile": "fake",
+  "domain": "order_support",
+  "base_commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "base_tree": "d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0",
+  "hyper": {
+    "max_rounds": 5,
+    "token_budget": 100000
+  }
+}

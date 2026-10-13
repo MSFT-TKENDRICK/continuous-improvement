@@ -1,0 +1,13 @@
+{
+  "experiment_id": "tone-a1-r02",
+  "phase": "begin",
+  "updated": 1791434000,
+  "trace_id": "ffffffffffffffffffffffffffffffff",
+  "arms": {
+    "v1": {
+      "strategy": "gepa",
+      "state": "pending",
+      "updated": 1791434000
+    }
+  }
+}

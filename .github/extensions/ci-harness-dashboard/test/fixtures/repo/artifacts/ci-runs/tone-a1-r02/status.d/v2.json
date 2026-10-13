@@ -1,0 +1,15 @@
+{
+  "writer": "v2",
+  "seq": 2,
+  "experiment_id": "tone-a1-r02",
+  "phase": "propose",
+  "updated": 1791434800,
+  "arms": {
+    "v2": {
+      "strategy": "agent",
+      "state": "running",
+      "phase": "propose",
+      "updated": 1791434800
+    }
+  }
+}

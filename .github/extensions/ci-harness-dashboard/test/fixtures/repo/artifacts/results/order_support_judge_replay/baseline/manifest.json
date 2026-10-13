@@ -1,0 +1,18 @@
+{
+  "started_at": "2026-10-08T03:18:00.308950+00:00",
+  "status": "completed",
+  "ended_at": "2026-10-08T04:46:54.905289+00:00",
+  "stages": {
+    "judge": "completed"
+  },
+  "pid": 28560,
+  "host": "DESKTOP-AS4606T",
+  "heartbeat_at": "2026-10-08T04:46:54.610209+00:00",
+  "stage_timings": {
+    "judge": {
+      "started_at": "2026-10-08T03:18:00.313699+00:00",
+      "ended_at": "2026-10-08T04:46:54.610209+00:00",
+      "duration_secs": 5334.078
+    }
+  }
+}
