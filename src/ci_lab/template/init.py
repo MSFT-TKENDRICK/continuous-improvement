@@ -11,7 +11,7 @@ What it changes (docs/template.md):
 * template history: campaign ledgers, sleep night envelopes/lesson proposals, pending harvested tasks,
   the sleep state counters and the lessons registry are reset. They describe the template's own runs
   and reference branches/PRs that do not exist in the copy.
-* ``--reset-state`` additionally empties the example agent's reviewed sleep tasks and the held-out look
+* ``--reset-state`` additionally empties the harness target's reviewed sleep tasks and the held-out look
   ledger (only do that when you also replace the frozen ASSERT test sets: the look budget is keyed by
   dataset hash). Suites, frozen test sets, schemas and rules are never touched.
 * ``.github/template.yml``: the marker (``role: derived``, ``initialized: true``, source template,
@@ -342,9 +342,9 @@ def add_arguments(p: argparse.ArgumentParser) -> None:
                    help='CODEOWNERS owners, e.g. "@my-org/agent-owners" (space/comma separated)')
     scope = p.add_mutually_exclusive_group()
     scope.add_argument("--keep-example", action="store_true",
-                       help="keep the example agent's reviewed sleep tasks and held-out look ledger (default)")
+                       help="keep the harness target's reviewed sleep tasks and held-out look ledger (default)")
     scope.add_argument("--reset-state", action="store_true",
-                       help="also empty the example's reviewed sleep tasks and the held-out look ledger")
+                       help="also empty the harness target's reviewed sleep tasks and the held-out look ledger")
     p.add_argument("--template-commit", default=None,
                    help="template commit the copy was made from (recorded in the marker; default unknown)")
     p.add_argument("--force", action="store_true",

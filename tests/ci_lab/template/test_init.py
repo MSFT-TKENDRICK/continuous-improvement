@@ -59,8 +59,8 @@ def _fake_repo(root: Path) -> Path:
     (sleep / "state.json").write_text(json.dumps({**tinit.DEFAULT_SLEEP_STATE, "night": 7, "accepted_total": 3}),
                                       encoding="utf-8")
     (sleep / "tasks.jsonl").write_text(
-        json.dumps({"format": tinit.TASKS_FORMAT, "project": "order-support", "reviewed": True}) + "\n"
-        + json.dumps({"id": "legacy", "reviewed": True}) + "\n", encoding="utf-8")
+        json.dumps({"format": tinit.TASKS_FORMAT, "project": "harness", "reviewed": True}) + "\n"
+        + json.dumps({"id": "usage-1", "reviewed": True}) + "\n", encoding="utf-8")
     for rel in tinit.HARNESS_SLEEP_TASKS_RELS:
         path = root / rel
         path.write_text(
@@ -125,7 +125,7 @@ def test_apply_resets_history_and_keeps_example(repo: Path) -> None:
     assert (repo / "lessons" / "registry.yaml").read_text() == tinit.EMPTY_REGISTRY
     # kept by default: reviewed example tasks, the held-out look ledger, suites and frozen test sets
     assert all("t1" in (repo / rel).read_text() for rel in tinit.HARNESS_SLEEP_TASKS_RELS)
-    assert "legacy" in (repo / tinit.SLEEP_TASKS_REL).read_text()
+    assert "usage-1" in (repo / tinit.SLEEP_TASKS_REL).read_text()
     assert (repo / "experiments" / "holdout-looks.jsonl").is_file()
     assert (repo / "evals" / "assert" / "s" / "test_set.jsonl").is_file()
 
@@ -200,7 +200,7 @@ def test_reset_state_also_empties_example_state(repo: Path) -> None:
     for rel in tinit.HARNESS_SLEEP_TASKS_RELS:
         lines = (repo / rel).read_text().splitlines()
         assert len(lines) == 1 and json.loads(lines[0])["project"] == "harness"
-    assert "legacy" in (repo / tinit.SLEEP_TASKS_REL).read_text()
+    assert "usage-1" in (repo / tinit.SLEEP_TASKS_REL).read_text()
     assert not (repo / "experiments" / "holdout-looks.jsonl").exists()
     assert (repo / "evals" / "assert" / "s" / "test_set.jsonl").is_file()
     assert read_marker(repo)["reset_state"] is True
@@ -314,6 +314,24 @@ def test_marker_roundtrip_and_errors() -> None:
             parse_marker(bad)
 
 
+def test_template_inventory_contains_frozen_harness_and_fake_ci() -> None:
+    required = [
+        "harness/harness.yaml",
+        "src/ci_lab/harness_tree/manifest.yaml",
+        "src/ci_lab/governance/policies/harness.acs.yaml",
+        "evals/datasets/harness.yaml",
+        ".github/workflows/campaign-scheduled.yml",
+        ".github/workflows/sleep-nightly.yml",
+        ".github/workflows/tests.yml",
+    ]
+    assert all((REPO / rel).is_file() for rel in required)
+    assert {path.parent.name for path in (REPO / "evals/assert").glob("harness_*/eval_config.yaml")} == {
+        "harness_injection", "harness_proposal", "harness_taskgraph", "harness_tool_use", "harness_triage",
+    }
+    dataset = __import__("yaml").safe_load((REPO / "evals/datasets/harness.yaml").read_text(encoding="utf-8"))
+    assert dataset["tiers"]["ci"] == {"profile": "fake", "k": 1, "selection": "all", "judge": "fake"}
+
+
 def test_repo_marker_is_the_template() -> None:
     marker = read_marker(REPO)
     assert marker is not None and marker["role"] in ("template", "derived")
@@ -326,7 +344,7 @@ def test_package_metadata_defaults_to_the_harness() -> None:
 
     project = tomllib.loads((REPO / "pyproject.toml").read_text(encoding="utf-8"))["project"]
     assert project["name"] == "ci-lab-harness"
-    assert "order-support" not in project["description"].lower()
+    assert "harness" in project["description"].lower()
 
 
 def test_parse_owners() -> None:
