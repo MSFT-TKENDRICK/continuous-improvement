@@ -366,3 +366,260 @@ class LlamaCppLogprobBackend:
 
 # ------------------------------------------------------------------ System One endpoints
 
+class SystemOneBackend:
+    def __init__(self, base_url: str, model: str, api_key: str | None = None, *,
+                 max_questions_per_request: int = 32, timeout: float = 120.0, max_retries: int = 4,
+                 backoff_base: float = 1.0, transport: httpx.BaseTransport | None = None,
+                 name: str | None = None) -> None:
+        self.base_url = base_url.rstrip("/")
+        self.model = model
+        self.max_q = max_questions_per_request
+        self.max_retries = max_retries
+        self.backoff_base = backoff_base
+        self.name = name or f"systemone:{model}"
+        headers = {"Content-Type": "application/json", "Accept": "application/json"}
+        if api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
+        self._client = httpx.Client(base_url=self.base_url, headers=headers, timeout=timeout, transport=transport)
+        self._secrets = [api_key] if api_key else []
+        self._served_model: str | None = None
+
+    def _sleep(self, attempt: int, retry_after: str | None) -> None:
+        delay = self.backoff_base * (2 ** (attempt - 1)) * (0.5 + random.random())
+        if retry_after:
+            try:
+                delay = max(delay, float(retry_after))
+            except ValueError:
+                pass
+        time.sleep(min(delay, 60.0))
+
+    def _post(self, body: dict[str, Any]) -> tuple[dict[str, Any], int]:
+        attempts = 0
+        while True:
+            attempts += 1
+            try:
+                r = self._client.post("/v1/systemone", json=body)
+            except httpx.TransportError as e:
+                if attempts > self.max_retries:
+                    raise BackendError(f"transport error after {attempts} attempts: {type(e).__name__}") from e
+                self._sleep(attempts, None)
+                continue
+            if r.status_code in RETRY_STATUSES and attempts <= self.max_retries:
+                self._sleep(attempts, r.headers.get("retry-after"))
+                continue
+            if r.status_code != 200:
+                raise BackendError(f"HTTP {r.status_code} from {self.base_url}/v1/systemone: "
+                                   f"{_redact(r.text, self._secrets)[:300]}")
+            try:
+                return r.json(), attempts
+            except ValueError as e:
+                raise BackendError("response was not JSON") from e
+
+    def decide(self, state: Any, questions: dict[str, Question]) -> Decision:
+        t0 = time.perf_counter()
+        names = list(questions)
+        answers: dict[str, Answer] = {}
+        usage = {"input_tokens": 0, "output_tokens": 0}
+        http_calls = 0
+        for i in range(0, len(names), self.max_q):
+            chunk = {k: questions[k] for k in names[i: i + self.max_q]}
+            data, attempts = self._post({"model": self.model, "state": state,
+                                         "questions": questions_to_wire(chunk)})
+            http_calls += attempts
+            if not isinstance(data, dict) or not isinstance(data.get("answers"), dict):
+                raise BackendError("response missing 'answers' object")
+            self._served_model = data.get("model", self._served_model)
+            for k, q in chunk.items():
+                if k not in data["answers"]:
+                    raise BackendError(f"response missing answer for question {k!r}")
+                try:
+                    answers[k] = Answer.from_wire(data["answers"][k], q, where=f"answers.{k}")
+                except WireError as e:
+                    raise BackendError(str(e)) from e
+            u = data.get("usage") or {}
+            for key in usage:
+                if isinstance(u.get(key), int):
+                    usage[key] += u[key]
+        return Decision(answers=answers, model=self._served_model or self.model, usage=usage,
+                        http_calls=http_calls, model_calls=http_calls, latency_s=time.perf_counter() - t0)
+
+    def provenance(self) -> dict[str, Any]:
+        return {"backend": "systemone", "base_url": self.base_url, "requested_model": self.model,
+                "served_model": self._served_model}
+
+
+# ------------------------------------------------------------------ OpenAI Decisions
+
+def _openai_instructions(q: Question) -> str:
+    text = render_text(q.instructions)
+    if q.type == "noul" and q.criteria:
+        parts = [text] if text else []
+        if q.criteria.get("true") is not None:
+            parts.append(f"True when: {render_text(q.criteria['true'])}")
+        if q.criteria.get("false") is not None:
+            parts.append(f"False when: {render_text(q.criteria['false'])}")
+        text = "\n".join(parts)
+    return text
+
+
+def level_label(i: int) -> str:
+    return f"level_{i}"
+
+
+def question_to_openai(name: str, q: Question) -> dict[str, Any]:
+    d: dict[str, Any] = {"name": name, "instructions": _openai_instructions(q)}
+    if q.type == "noul":
+        d["type"] = "predicate"
+    elif q.type == "choice":
+        d["type"] = "choice"
+        d["choices"] = [{"value": opt, **({"description": render_text(desc)} if desc is not None else {})}
+                        for opt, desc in q.criteria.items()]
+    else:
+        d["type"] = "score"
+        d["levels"] = [{"label": level_label(i), "description": render_text(desc)}
+                       for i, desc in enumerate(q.criteria)]
+    return d
+
+
+def answer_from_openai(a: dict[str, Any], q: Question) -> Answer:
+    t = a.get("type")
+    if t == "refusal":
+        return Answer.non_answer(q.type, "refusal", provider="openai")
+    if q.type == "noul":
+        if t != "predicate":
+            raise WireError(f"expected predicate answer, got {t!r}")
+        return Answer.from_noul_probability(a.get("probability"))  # type: ignore[arg-type]
+    if t != q.type:
+        raise WireError(f"expected {q.type} answer, got {t!r}")
+    plist = a.get("probabilities")
+    if not isinstance(plist, list):
+        raise WireError("probabilities must be a list")
+    if q.type == "choice":
+        probs = {str(p["value"]): float(p["probability"]) for p in plist}
+        if set(probs) != set(q.criteria):
+            raise WireError(f"choice probabilities {sorted(probs)} != options {sorted(q.criteria)}")
+        if abs(sum(probs.values()) - 1) > 0.02:
+            raise WireError("choice probabilities do not sum to ~1")
+        ans = Answer.from_choice_distribution({k: probs[k] for k in q.criteria}, provider="openai")
+        if isinstance(a.get("confidence"), (int, float)):
+            ans.confidence = float(a["confidence"])
+        return ans
+    n = len(q.criteria)
+    by_label = {level_label(i): i for i in range(n)}
+    probs_l = [0.0] * n
+    seen: set[int] = set()
+    for p in plist:
+        idx = by_label.get(p.get("label"), p.get("value"))
+        if not isinstance(idx, int) or not 0 <= idx < n or idx in seen:
+            raise WireError(f"bad score probability entry {p!r}")
+        seen.add(idx)
+        probs_l[idx] = float(p["probability"])
+    if len(seen) != n or abs(sum(probs_l) - 1) > 0.02:
+        raise WireError("score probabilities incomplete or do not sum to ~1")
+    ans = Answer.from_score_distribution(probs_l, list(q.criteria), provider="openai")
+    if isinstance(a.get("confidence"), (int, float)):
+        ans.confidence = float(a["confidence"])
+    return ans
+
+
+class OpenAIDecisionsBackend:
+    def __init__(self, model: str = "gpt-6-luna", api_key: str | None = None,
+                 base_url: str = "https://api.openai.com", *, timeout: float = 120.0, max_retries: int = 4,
+                 transport: httpx.BaseTransport | None = None) -> None:
+        self.model = model
+        self.name = f"openai-decisions:{model}"
+        self.base_url = base_url.rstrip("/")
+        self.max_retries = max_retries
+        self._secrets = [api_key] if api_key else []
+        headers = {"Content-Type": "application/json"}
+        if api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
+        self._client = httpx.Client(base_url=self.base_url, headers=headers, timeout=timeout, transport=transport)
+
+    def decide(self, state: Any, questions: dict[str, Question]) -> Decision:
+        t0 = time.perf_counter()
+        text = state if isinstance(state, str) else json.dumps(state, ensure_ascii=False, indent=1)
+        body = {"model": self.model, "input": text,
+                "questions": [question_to_openai(k, q) for k, q in questions.items()]}
+        attempts = 0
+        while True:
+            attempts += 1
+            try:
+                r = self._client.post("/v1/decisions", json=body)
+            except httpx.TransportError as e:
+                if attempts > self.max_retries:
+                    raise BackendError(f"transport error after {attempts} attempts: {type(e).__name__}") from e
+                time.sleep(min(2 ** (attempts - 1), 30))
+                continue
+            if r.status_code in RETRY_STATUSES and attempts <= self.max_retries:
+                time.sleep(min(2 ** (attempts - 1), 30))
+                continue
+            break
+        if r.status_code != 200:
+            raise BackendError(f"HTTP {r.status_code} from OpenAI decisions: {_redact(r.text, self._secrets)[:300]}")
+        try:
+            data = r.json()
+        except ValueError as e:
+            raise BackendError("response was not JSON") from e
+        raw = data.get("answers") if isinstance(data, dict) else None
+        if not isinstance(raw, list):
+            raise BackendError("response missing answers list")
+        by_name = {a.get("name"): a for a in raw if isinstance(a, dict)}
+        answers: dict[str, Answer] = {}
+        for k, q in questions.items():
+            if k not in by_name:
+                raise BackendError(f"missing answer for {k!r}")
+            try:
+                answers[k] = answer_from_openai(by_name[k], q)
+            except (WireError, KeyError, TypeError, ValueError) as e:
+                raise BackendError(f"answers.{k}: {e}") from e
+        u = data.get("usage") or {}
+        return Decision(answers=answers, model=data.get("model", self.model),
+                        usage={"input_tokens": u.get("input_tokens"), "output_tokens": u.get("output_tokens")},
+                        http_calls=attempts, model_calls=attempts, latency_s=time.perf_counter() - t0)
+
+    def provenance(self) -> dict[str, Any]:
+        return {"backend": "openai-decisions", "base_url": self.base_url, "model": self.model}
+
+
+# ------------------------------------------------------------------ registry
+
+PRESETS: dict[str, dict[str, str]] = {
+    "typesafe": {"base_url": "https://api.typesafe.ai", "model": "jev-latest", "key_env": "TYPESAFE_API_KEY"},
+    "openrouter": {"base_url": "https://openrouter.ai/api", "model": "~typesafe/jev-latest",
+                   "key_env": "OPENROUTER_API_KEY"},
+}
+BACKENDS = ("llamacpp", "openai_decisions", "systemone", "scripted", *PRESETS)
+_LOCAL_PREFIXES = ("http://127.0.0.1", "http://localhost", "http://[::1]")
+
+
+def make_backend(kind: str, model: str = "", *, api_base: str | None = None, api_key: str | None = None,
+                 transport: httpx.BaseTransport | None = None) -> Any:
+    """Build a backend for ``s1/<kind>/<model>``."""
+    if kind == "scripted":
+        fn = SCRIPTS.get(model or "default")
+        if fn is None:
+            raise BackendError(f"unknown scripted judge {model!r}; register_script() it first")
+        return ScriptedBackend(fn, name=f"scripted/{model or 'default'}")
+    if kind in ("llamacpp", "local"):
+        base = api_base or os.environ.get(LLAMA_URL_ENV) or DEFAULT_LLAMA_URL
+        return LlamaCppLogprobBackend(base, api_key=api_key, transport=transport,
+                                      choice_permutations=int(os.environ.get("CI_S1_CHOICE_PERMUTATIONS", "1")))
+    if kind in ("openai_decisions", "openai"):
+        key = api_key or os.environ.get("OPENAI_API_KEY")
+        if not key:
+            raise BackendError("OPENAI_API_KEY is not set")
+        return OpenAIDecisionsBackend(model=model or "gpt-6-luna", api_key=key,
+                                      base_url=api_base or "https://api.openai.com", transport=transport)
+    if kind == "systemone" or kind in PRESETS:
+        preset = PRESETS.get(kind, {})
+        base = api_base or os.environ.get("CI_S1_SYSTEMONE_URL") or preset.get("base_url")
+        mdl = model or preset.get("model")
+        if not base or not mdl:
+            raise BackendError("systemone backend needs api_base (or CI_S1_SYSTEMONE_URL) and a model")
+        key_env = preset.get("key_env") or "CI_S1_API_KEY"
+        key = api_key or os.environ.get(key_env)
+        if not key and not base.startswith(_LOCAL_PREFIXES):
+            raise BackendError(f"{key_env} is not set")
+        return SystemOneBackend(base, mdl, key, transport=transport)
+    raise BackendError(f"unknown s1 backend {kind!r}; choose one of {sorted(BACKENDS)}")
