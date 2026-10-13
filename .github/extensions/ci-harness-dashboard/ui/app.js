@@ -687,3 +687,381 @@ function expandAll(nodes, open) {
     nodes.forEach(walk);
     render();
 }
+function spanNode(n, total) {
+    const isOpen = state.openSpans.has(n.spanId) || (n.children.length && !state.openSpans.has(`-${n.spanId}`) && n.category === "harness");
+    const bar = h("span", { class: "bar-track", "aria-hidden": "true" }, h("span", { class: `bar-fill ${n.category} ${n.error ? "err" : ""}` }));
+    const fill = bar.firstChild;
+    fill.style.marginLeft = `${Math.max(0, Math.min(100, ((n.offsetMs ?? 0) / total) * 100))}%`;
+    fill.style.width = `${Math.max(0.5, Math.min(100, ((n.durationMs ?? 0) / total) * 100))}%`;
+    const toggle = n.children.length
+        ? h("button", {
+              type: "button",
+              class: "twisty",
+              "aria-label": isOpen ? "Collapse" : "Expand",
+              "aria-expanded": isOpen ? "true" : "false",
+              text: isOpen ? "▾" : "▸",
+              on: {
+                  click: () => {
+                      if (isOpen) {
+                          state.openSpans.delete(n.spanId);
+                          state.openSpans.add(`-${n.spanId}`);
+                      } else {
+                          state.openSpans.add(n.spanId);
+                          state.openSpans.delete(`-${n.spanId}`);
+                      }
+                      render();
+                  },
+              },
+          })
+        : h("span", { class: "twisty-pad", "aria-hidden": "true" });
+    const attrs = Object.entries(n.attributes);
+    const details = h(
+        "details",
+        { class: "span-attrs" },
+        h("summary", { text: `${attrs.length} attribute(s)${n.redacted ? ` · ${n.redacted} GenAI content attribute(s) hidden` : ""}` }),
+        attrs.length ? h("dl", { class: "kv mono" }, attrs.map(([k, v]) => [h("dt", { text: k }), h("dd", { text: v })])) : null,
+        n.redacted ? h("p", { class: "muted small", text: "Content capture was off for this span (C29). Enable sensitive telemetry only on fake/local profiles." }) : null,
+    );
+    return h(
+        "li",
+        { role: "treeitem", "aria-expanded": n.children.length ? String(!!isOpen) : undefined, class: `span ${n.category}` },
+        h(
+            "div",
+            { class: "span-row" },
+            toggle,
+            h("span", { class: "span-name", title: n.name, text: n.name }),
+            n.category === "genai" ? badge("GenAI", "info") : null,
+            n.error ? badge(n.exceptionTypes[0] ?? n.statusMessage ?? "error", "bad") : null,
+            n.origin && n.origin !== "jsonl" ? badge(n.origin.startsWith("import") ? "CI" : n.origin, "") : null,
+            h("span", { class: "span-dur", text: fmtDur(n.durationMs) }),
+        ),
+        bar,
+        details,
+        isOpen && n.children.length ? h("ul", { role: "group" }, n.children.map((c) => spanNode(c, total))) : null,
+    );
+}
+
+async function openAspire(traceId) {
+    state.loginUrl = null;
+    try {
+        const { url } = await post("/api/aspire/login", { traceId: traceId ?? null });
+        // `noopener` in the features string makes window.open return null, so sever the opener manually.
+        const w = window.open(url, "_blank");
+        if (w) {
+            try {
+                w.opener = null;
+            } catch {
+                /* cross-origin proxy */
+            }
+        } else {
+            state.loginUrl = url;
+            render();
+        }
+    } catch (e) {
+        state.loginUrl = { error: e.message };
+        render();
+    }
+}
+function loginFallback() {
+    const u = state.loginUrl;
+    if (!u) return null;
+    if (typeof u === "object") return h("p", { class: "error", text: u.error });
+    const input = h("input", { type: "text", readOnly: true, value: u, "aria-label": "Aspire sign-in link", class: "mono" });
+    return h(
+        "div",
+        { class: "fallback" },
+        h("p", { class: "muted small", text: "The host blocked the pop-up. Copy this one-time sign-in link into your browser (it contains a login token; don't share it):" }),
+        h(
+            "div",
+            { class: "toolbar" },
+            input,
+            h(
+                "button",
+                {
+                    type: "button",
+                    class: "btn",
+                    on: {
+                        click: async () => {
+                            try {
+                                await navigator.clipboard.writeText(u);
+                            } catch {
+                                input.select();
+                                document.execCommand?.("copy");
+                            }
+                        },
+                    },
+                },
+                "Copy",
+            ),
+            h("button", { type: "button", class: "btn", on: { click: () => ((state.loginUrl = null), render()) } }, "Dismiss"),
+        ),
+    );
+}
+
+function viewEvals() {
+    const d = got("evals");
+    if (!d) return loading();
+    if (d.error) return errorBox(d.error);
+    const { evals } = d.value;
+    if (!evals.length) {
+        return empty("No ASSERT results found.", "Results are read from ", code("artifacts/results/<suite>/<run>/"), " (", code("manifest.json"), ", ", code("metrics.json"), ", ", code("scores.jsonl"), "). Run an ASSERT suite to populate them.");
+    }
+    return evals.map((e) =>
+        h(
+            "section",
+            { class: "card" },
+            h("h2", {}, `${e.suiteId} / ${e.runId} `, badge(e.status ?? "?", stateKind(e.status))),
+            e.flags.length ? h("ul", { class: "flags" }, e.flags.map((f) => h("li", {}, badge("!", "warn"), ` ${f}`))) : null,
+            kv([
+                ["Cases", `${e.cases} (${e.rows} rows)`],
+                ["Judges", e.judgeModels.join(", ") || null],
+                ["Targets", e.targets.join(", ") || null],
+                ["Elapsed", e.elapsedS === null ? null : fmtDur(e.elapsedS * 1000)],
+                ["Calls / tokens", e.metrics ? `${fmtInt(e.metrics.calls)} calls · ${fmtInt(e.metrics.inputTokens)} in · ${fmtInt(e.metrics.outputTokens)} out` : null],
+                ["Cache hit", e.metrics ? fmtPct(e.metrics.cacheHitRate) : null],
+                ["Errors", e.errors ? badge(String(e.errors), "bad") : "0"],
+                ["Scenarios", e.scenarios.map((s) => `${s.name} (${s.n})`).join(", ") || null],
+            ]),
+            e.dimensions.length
+                ? table(
+                      ["Dimension", "Type", "n", "Result", e.agreement ? "Judge agreement" : null].filter(Boolean),
+                      e.dimensions.map((dm) => [dm.key, dm.type ?? "—", String(dm.n), dimResult(dm), e.agreement ? fmtPct(e.agreement.byDim[dm.key]) : null].filter((x) => x !== null)),
+                  )
+                : null,
+            h("p", { class: "muted small" }, "Source: ", code(e.source)),
+        ),
+    );
+}
+function dimResult(d) {
+    if (d.type === "boolean") return h("span", {}, h("meter", { min: 0, max: 1, value: d.rate ?? 0, title: fmtPct(d.rate) }), ` ${fmtPct(d.rate)} true`);
+    if (d.type === "numeric") return `mean ${fmtNum(d.mean)} (${d.min}–${d.max})`;
+    if (d.type === "ordinal") {
+        const keys = d.scale?.length ? d.scale.filter((k) => d.distribution[k]) : Object.keys(d.distribution);
+        return keys.map((k) => `${k}: ${d.distribution[k]}`).join(", ");
+    }
+    return "—";
+}
+
+function viewSleep() {
+    const d = got("sleep");
+    if (!d) return loading();
+    if (d.error) return errorBox(d.error);
+    const { sleep: s, holdoutLooks } = d.value;
+    if (!s.state && !s.nights.length) {
+        return empty("No sleep nights recorded.", "The nightly loop writes ", code("experiments/sleep/"), ". Run ", code("ci-lab sleep run --profile fake"), " (or the ", code("sleep-nightly"), " workflow and ", code("ci-lab telemetry pull"), ").");
+    }
+    const out = [];
+    if (s.state) {
+        out.push(
+            section(
+                "State",
+                kv([
+                    ["Nights", fmtInt(s.state.night)],
+                    ["Last night", s.state.lastNightId],
+                    ["Last status", s.state.lastStatus ? badge(s.state.lastStatus, stateKind(s.state.lastStatus)) : null],
+                    ["Accepted total", fmtInt(s.state.acceptedTotal)],
+                    ["Base", s.state.lastBaseSha ? code(shortSha(s.state.lastBaseSha)) : null],
+                    ["Tasks reviewed / pending", `${fmtInt(s.tasks.reviewed)} / ${fmtInt(s.tasks.pending)}`],
+                    ["Harvested (all nights)", fmtInt(s.harvested)],
+                    ["Holdout looks", fmtInt(holdoutLooks)],
+                ]),
+                s.state.history.length > 1 ? sparkline(s.state.history.map((x) => x.deltaLcb)) : null,
+            ),
+        );
+    }
+    if (s.nights.length) {
+        out.push(
+            section(
+                "Nights",
+                table(
+                    ["Night", "Outcome", "Tasks", "SkillOpt", "ASSERT ΔS", "CI lb", "PR"],
+                    [...s.nights].reverse().map((n) => [
+                        expLink(n.id),
+                        n.outcome ? badge(n.outcome, stateKind(n.outcome)) : "—",
+                        n.tasks ? `${fmtInt(n.tasks.total)} (${fmtInt(n.tasks.harvested)} harvested)` : "—",
+                        n.gate?.skilloptPassed === null || n.gate?.skilloptPassed === undefined ? "—" : n.gate.skilloptPassed ? badge("pass", "ok") : badge("fail", "bad"),
+                        fmtSigned(n.gate?.deltaS),
+                        fmtNum(n.gate?.ciLowerBound),
+                        n.adoptionPr ? `#${n.adoptionPr}` : "—",
+                    ]),
+                ),
+            ),
+        );
+    }
+    if (s.skillsUpdated.length) out.push(section("Skills updated", h("ul", {}, s.skillsUpdated.map((p) => h("li", {}, code(p))))));
+    if (s.pendingPrs.length) out.push(section("Adoption PRs", h("ul", {}, s.pendingPrs.map((p) => h("li", { text: `${p.night}: #${p.pr}` })))));
+    return out;
+}
+const BUS_STATE = { committed: "ok", rejected: "bad", aborted: "warn", open: "info" };
+function busIntegrity(t) {
+    const out = [];
+    if (t.corrupt) out.push(h("span", { title: t.corrupt }, badge("corrupt", "bad")));
+    if (t.torn) out.push(badge("torn tail", "warn"));
+    if (t.truncated || t.rowsTruncated) out.push(badge("tail only", "info"));
+    if (t.hidden) out.push(h("span", { class: "muted", text: ` ${t.hidden} hidden` }));
+    return out.length ? out : badge("ok", "ok");
+}
+/** Agent-bus WALs: the server already reduced every entry to an orchestrator-visible allowlist. */
+function viewBus() {
+    const d = got("bus");
+    if (!d) return loading();
+    if (d.error) return errorBox(d.error);
+    const { runs, totals: n } = d.value.bus;
+    if (!runs.length) {
+        return empty("No agent-bus runs found.", code("ci-lab graph run --run-dir DIR"), " writes ", code("DIR/bus/<run>/<task>.wal.jsonl"), "; the canvas scans ", code("artifacts/"), " and the configured run roots.");
+    }
+    const all = runs.flatMap((r) => r.topics);
+    const sel = all.find((t) => t.topic === state.busTopic) ?? all.find((t) => t.exploits || t.patches) ?? all[0];
+    const pick = (t) => () => ((state.busTopic = t.topic), render());
+    const out = [
+        h(
+            "div",
+            { class: "stats" },
+            stat("Runs", n.runs),
+            stat("Topics", n.topics),
+            stat("Entries", n.entries),
+            stat("Exploits", n.exploits, null, n.exploits ? "warn" : ""),
+            stat("Patches", n.patches),
+            stat("Committed", n.committed, n.rejected ? `${n.rejected} rejected` : null),
+            stat("Aborted", n.aborted, null, n.aborted ? "warn" : ""),
+            stat("Corrupt", n.corrupt, n.torn ? `${n.torn} torn tail` : null, n.corrupt ? "bad" : ""),
+        ),
+    ];
+    for (const r of runs) {
+        out.push(
+            section(
+                `Run ${r.run}`,
+                h("p", { class: "muted" }, code(r.root), ` · ${fmtTime(r.mtimeMs)}`),
+                table(
+                    ["Topic", "State", "Entries", "Exploits", "Patches", "Integrity"],
+                    r.topics.map((t) => [
+                        t === sel ? h("strong", { text: t.task }) : linkBtn(t.task, pick(t), "Show entries"),
+                        badge(t.state, BUS_STATE[t.state]),
+                        fmtInt(t.entries),
+                        t.exploits ? badge(fmtInt(t.exploits), "bad") : "0",
+                        t.patches ? badge(fmtInt(t.patches), "warn") : "0",
+                        busIntegrity(t),
+                    ]),
+                ),
+            ),
+        );
+    }
+    const cells = (r) => [
+        h("span", { title: r.ts ?? "" }, fmtInt(r.seq)),
+        r.flag ? badge(r.kind, r.flag === "exploit" ? "bad" : "warn") : r.kind,
+        r.role ?? "—",
+        r.name ?? "—",
+        r.ref === null ? "—" : fmtInt(r.ref),
+        r.summary || "—",
+        r.artifact ? h("span", { title: r.artifact.sha256 }, code(shortSha(r.artifact.sha256)), ` ${fmtInt(r.artifact.bytes)} B`) : "—",
+    ];
+    out.push(
+        section(
+            `Entries · ${sel.topic}`,
+            h(
+                "div",
+                { class: "table-wrap" },
+                h(
+                    "table",
+                    { class: "bus-entries" },
+                    h("thead", {}, h("tr", {}, ["Seq", "Kind", "Role", "Name", "Ref", "Summary", "Artifact"].map((t) => h("th", { scope: "col", text: t })))),
+                    h("tbody", {}, sel.rows.map((r) => h("tr", { class: r.flag ? `bus-${r.flag}` : null }, cells(r).map((c) => h("td", {}, c))))),
+                ),
+            ),
+        ),
+    );
+    return out;
+}
+function sleepNightCard(e) {
+    const g = e.sleep.gate;
+    return section(
+        "Sleep gate",
+        kv([
+            ["Night", e.sleep.night],
+            ["Tasks", e.sleep.tasks ? `${fmtInt(e.sleep.tasks.total)} (${fmtInt(e.sleep.tasks.reviewed)} reviewed, ${fmtInt(e.sleep.tasks.harvested)} harvested)` : null],
+            ["SkillOpt", g.skilloptPassed === null ? null : `${g.skilloptPassed ? "pass" : "fail"} (${fmtNum(g.skilloptScore)} vs ${fmtNum(g.skilloptBaseline)})`],
+            ["ASSERT", g.assertPassed === null ? null : `${g.assertPassed ? "pass" : "fail"} ΔS ${fmtSigned(g.deltaS)}, CI lb ${fmtNum(g.ciLowerBound)}`],
+            ["Safety violations", g.safetyBaseline === null ? null : `${g.safetyBaseline} → ${g.safetyCandidate}`],
+            ["Skill", e.sleep.skillPath ? code(e.sleep.skillPath) : null],
+            ["Adoption PR", e.sleep.adoptionPr ? `#${e.sleep.adoptionPr}` : null],
+        ]),
+    );
+}
+
+function viewAspire() {
+    const d = got("aspire");
+    if (!d) return loading();
+    if (d.error) return errorBox(d.error);
+    const a = d.value.aspire;
+    if (!a.configured) {
+        return empty("The Aspire Dashboard is not running.", "Run ", code("ci-lab dashboard up"), " to start it on loopback; local traces under ", code("telemetry/"), " still show in the Traces view without it.");
+    }
+    return [
+        section(
+            "Aspire Dashboard",
+            kv([
+                ["Status", a.reachable ? badge("reachable", "ok") : badge(a.error ?? "unreachable", "bad")],
+                ["Process", a.pidAlive === null ? null : a.pidAlive ? "running" : badge("not running", "warn")],
+                ["Version", a.version],
+                ["Started", a.started],
+                ["UI", a.uiUrl ? code(a.uiUrl) : null],
+                ["OTLP endpoint", a.otlpUrl ? code(a.otlpUrl) : null],
+            ]),
+            a.nonLoopbackIgnored ? h("p", { class: "error", text: "Non-loopback dashboard URLs in the state file were ignored." }) : null,
+            h(
+                "div",
+                { class: "toolbar" },
+                a.loginAvailable ? h("button", { type: "button", class: "btn primary", on: { click: () => openAspire(null) } }, "Open dashboard") : null,
+            ),
+            loginFallback(),
+            !a.reachable ? h("p", { class: "muted" }, "If the dashboard was stopped, run ", code("ci-lab dashboard up"), " again.") : null,
+        ),
+        a.resources?.length ? section("Resources", table(["Name", "Traces"], a.resources.map((r) => [r.displayName || r.name, r.hasTraces ? "yes" : "no"]))) : null,
+    ];
+}
+
+const loading = () => h("p", { class: "muted", role: "status", text: "Loading…" });
+const errorBox = (msg) => h("p", { class: "error", role: "alert", text: `Could not load data: ${msg}` });
+
+// ------------------------------------------------------------------ experiment chat
+// The CopilotKit bundle (ui/chat, built from web/experiment-chat) is loaded only when the Chat tab
+// is first shown. It lives in #chat-host, outside #main, so dashboard re-renders never unmount it.
+// If it fails to load, the tab shows an error panel and every other view keeps working.
+const chat = { mounted: null, error: null, warm: false, poll: null };
+
+function chatStatusLine() {
+    const d = got("chatStatus");
+    const s = d?.value?.chat;
+    if (!s) return d?.error ? `Chat backend status unavailable: ${d.error}` : "Checking chat backend…";
+    const parts = [`Backend: ${s.state}`];
+    if (s.profile) parts.push(`profile ${s.profile}`);
+    if (s.state === "crashed" && typeof s.retryInMs === "number") parts.push(`retrying in ${Math.ceil(s.retryInMs / 1000)} s`);
+    if (s.lastError) parts.push(s.lastError);
+    return parts.join(" · ");
+}
+
+function chatErrorPanel(message) {
+    return h(
+        "div",
+        { class: "card chat-error", role: "alert" },
+        h("h2", { text: "Experiment chat unavailable" }),
+        h("p", { text: message }),
+        h("p", { class: "muted small", text: "The rest of the dashboard is unaffected. Rebuild the bundle with `npm ci --ignore-scripts && node build.mjs` in web/experiment-chat if files are missing." }),
+        h(
+            "button",
+            {
+                type: "button",
+                class: "btn",
+                on: {
+                    click: () => {
+                        chat.error = null;
+                        chat.mounted = null;
+                        renderChat();
+                    },
+                },
+            },
+            "Retry",
+        ),
+    );
+}
+
