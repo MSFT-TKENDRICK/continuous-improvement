@@ -69,5 +69,9 @@ _: ChatClientFactory = make_chat_client
 async def _inject_trace_context(request: Any) -> None:
     from ci_lab import obs
 
-    for k, v in obs.carrier().items():
+    carrier = obs.carrier()
+    for name in ("traceparent", "tracestate"):
+        if name not in carrier:
+            request.headers.pop(name, None)
+    for k, v in carrier.items():
         request.headers[k] = v
