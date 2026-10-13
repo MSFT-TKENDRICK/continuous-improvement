@@ -10,8 +10,16 @@ by (case, trial); no cross-round cache — C8):
 * Guards (non-compensatory): any increase in critical safety violations, a critic
   rejection, a stale base commit, or a domain guard failure make the arm inadmissible.
 * Floor: S' >= S* - delta (Eq. 5).
-* Winner = argmax S' over admissible arms (ties: lower cost, higher CI lower bound, arm
-  name); S* <- max(S*, S_{t+1}).
+* Resources (A14-A16; S stays quality-only): dX = relative change of the evaluated
+  surface ``complexity``, dCalls of mean (LLM + tool) calls per completed trial, dWall of
+  median wall ms. Set caps (``x_cap``, ``calls_cap``, ``wall_cap``) are non-compensatory
+  gates in both branches; ``require_resource_metrics`` makes missing surface/runtime
+  data inadmissible; the weighted rule gains ``- w_x max(dX, 0)`` plus a simplicity
+  credit ``w_x max(-dX, 0)`` only for arms with dS >= 0, no critical-safety increase and
+  a valid tree. ``surface["tree_valid"] < 1`` is always inadmissible. Every default
+  knob is off, so the paper/local/smoke profiles decide exactly as before.
+* Winner = argmax S' over admissible arms (ties: lower cost, lower complexity when the
+  profile is resource-aware, higher CI lower bound, arm name); S* <- max(S*, S_{t+1}).
 
 Round-level quality failures (incumbent missing-trial rate > ``missing_invalid_frac``,
 evaluator-pin or split mismatch, no trials) yield decision ``rerun`` and change nothing.
@@ -31,6 +39,7 @@ from dataclasses import dataclass, field
 from typing import Any, Literal
 
 from ci_lab.contracts import ArmResult, EvalResult
+from ci_lab.metrics.simplicity import relative_change, simplicity_score
 
 from . import stats
 from .attribution import novelty
@@ -91,6 +100,14 @@ class ArmTrace:
     guards: Mapping[str, Any] = field(default_factory=dict)
     admissible: bool = False
     reasons: tuple[str, ...] = ()
+    delta_x: float | None = None           # relative change of surface complexity (A14)
+    delta_calls: float | None = None       # relative change of mean (llm + tool) calls per completed trial
+    delta_wall: float | None = None        # relative change of median wall ms
+    complexity: float | None = None
+    calls_per_task: float | None = None
+    wall_ms_p50: float | None = None
+    simplicity_score: float | None = None  # only for credit-eligible arms with surface data (A16)
+    resources: Mapping[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return _jsonable({"arm": self.arm, "evaluated": self.evaluated, "components": list(self.components),
@@ -98,7 +115,10 @@ class ArmTrace:
                           "novelty": self.novelty, "missing_rate": self.missing_rate, "critical": self.critical,
                           "branch": self.branch, "rule": dict(self.rule), "ci": dict(self.ci),
                           "floor": dict(self.floor), "guards": dict(self.guards), "admissible": self.admissible,
-                          "reasons": list(self.reasons)})
+                          "reasons": list(self.reasons), "delta_x": self.delta_x, "delta_calls": self.delta_calls,
+                          "delta_wall": self.delta_wall, "complexity": self.complexity,
+                          "calls_per_task": self.calls_per_task, "wall_ms_p50": self.wall_ms_p50,
+                          "simplicity_score": self.simplicity_score, "resources": dict(self.resources)})
 
 
 @dataclass(frozen=True)
@@ -142,7 +162,8 @@ def _params(hp: Hyperparams) -> dict[str, Any]:
     return {"beta0": hp.beta0, "beta1": hp.beta1, "w_s": hp.w_s, "w_c": hp.w_c, "w_n": hp.w_n,
             "missing_invalid_frac": hp.missing_invalid_frac, "require_ci_lower": hp.require_ci_lower,
             "ci_lower_threshold": hp.ci_lower_threshold, "ci_level": hp.ci_level, "n_bootstrap": hp.n_bootstrap,
-            "seed": hp.seed, "k": hp.k}
+            "seed": hp.seed, "k": hp.k, "w_x": hp.w_x, "x_cap": hp.x_cap, "calls_cap": hp.calls_cap,
+            "wall_cap": hp.wall_cap, "require_resource_metrics": hp.require_resource_metrics}
 
 
 def _quality_failures(inp: SelectionInputs, keys: Sequence[stats.Key], inc_missing: float) -> list[str]:
@@ -198,11 +219,67 @@ def select(inp: SelectionInputs, *, guard: DomainGuard | None = None) -> Selecti
         traces.append(_judge_arm(a, inp, keys, inc_idx, inc_means, s_t, c_t, crit_t, counts, guard))
 
     admissible = [t for t in traces if t.admissible]
-    win = max(admissible, key=lambda t: (t.score, -t.cost, t.ci.get("lower", -math.inf), _rev(t.arm)), default=None)
+    win = max(admissible, key=lambda t: (t.score, -t.cost, _simpler(t, hp), t.ci.get("lower", -math.inf),
+                                         _rev(t.arm)), default=None)
     score_next = win.score if win is not None else s_t
     return SelectionDecision(decision="ship" if win else "do_not_ship", winner=win.arm if win else None,
                              s_star_after=max(inp.s_star, score_next), score_next=score_next, arms=tuple(traces),
                              **common)
+
+
+def _simpler(t: ArmTrace, hp: Hyperparams) -> float:
+    """Tie-break key preferring lower surface complexity; constant unless the profile is resource-aware."""
+    if not hp.resource_aware:
+        return 0.0
+    return -t.complexity if t.complexity is not None else -math.inf
+
+
+def _complexity(ev: EvalResult) -> float | None:
+    v = (ev.surface or {}).get("complexity")
+    return float(v) if isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v) else None
+
+
+def _rel(new: float | None, base: float | None) -> float | None:
+    return None if new is None or base is None else relative_change(new, base)
+
+
+def _resources(a: ArmResult, inp: SelectionInputs, keys: Sequence[stats.Key], idx: Mapping, inc_idx: Mapping,
+               d_s: float, crit_ok: bool) -> dict[str, Any]:
+    """Resource deltas, caps, missing-metric and tree-validity gates and simplicity-credit eligibility."""
+    hp = inp.hp
+    assert a.eval is not None
+    x_new, x_inc = _complexity(a.eval), _complexity(inp.incumbent)
+    rt_new, rt_inc = stats.runtime_observed(idx, keys), stats.runtime_observed(inc_idx, keys)
+    calls_new = stats.mean_calls(idx, keys) if rt_new else None
+    calls_inc = stats.mean_calls(inc_idx, keys) if rt_inc else None
+    wall_new = stats.median_wall_ms(idx, keys) if rt_new else None
+    wall_inc = stats.median_wall_ms(inc_idx, keys) if rt_inc else None
+    deltas = {"x": _rel(x_new, x_inc), "calls": _rel(calls_new, calls_inc), "wall": _rel(wall_new, wall_inc)}
+    tree_valid = float((a.eval.surface or {}).get("tree_valid", 1.0))
+    reasons: list[str] = []
+    if not tree_valid >= 1.0:
+        reasons.append("tree_invalid")
+    missing = [n for n, ok in (("surface:arm", x_new is not None), ("surface:incumbent", x_inc is not None),
+                               ("runtime:arm", rt_new), ("runtime:incumbent", rt_inc)) if not ok]
+    if hp.require_resource_metrics and missing:
+        reasons.append("resource_metrics_missing")
+    caps: dict[str, Any] = {}
+    for name, cap, label in (("x_cap", hp.x_cap, "dX"), ("calls_cap", hp.calls_cap, "dCalls"),
+                             ("wall_cap", hp.wall_cap, "dWall")):
+        if cap is None:
+            continue
+        d = deltas[name.removesuffix("_cap")]
+        ok = d is None or d <= cap
+        caps[name] = {"cap": cap, "value": d, "passed": ok}
+        if not ok:
+            reasons.append(f"{name}: {label} {d:.4f} > {cap:.4f}")
+    eligible = d_s >= 0 and crit_ok and tree_valid >= 1.0
+    return {"deltas": deltas, "complexity": x_new, "calls": calls_new, "wall": wall_new,
+            "simplicity_score": simplicity_score(a.eval.surface, inp.incumbent.surface)
+            if eligible and x_new is not None and x_inc is not None else None,
+            "record": {"tree_valid": tree_valid, "required": hp.require_resource_metrics, "missing": missing,
+                       "caps": caps, "credit_eligible": eligible, "passed": not reasons},
+            "reasons": reasons}
 
 
 def _rev(name: str) -> tuple[int, ...]:
@@ -223,6 +300,7 @@ def _judge_arm(a: ArmResult, inp: SelectionInputs, keys: Sequence[stats.Key], in
     boot = stats.paired_bootstrap(stats.case_means(idx, keys), inc_means, n_resamples=hp.n_bootstrap,
                                   level=hp.ci_level, seed=stats.derive_seed(hp.seed, inp.round, a.arm))
     reasons: list[str] = []
+    res = _resources(a, inp, keys, idx, inc_idx, d_s, crit <= crit_t)
 
     ci_threshold = 0.0 if hp.ci_lower_threshold == "zero" else delta
     ci = {"lower": boot.lower, "upper": boot.upper, "mean": boot.mean, "level": boot.level,
@@ -248,8 +326,14 @@ def _judge_arm(a: ArmResult, inp: SelectionInputs, keys: Sequence[stats.Key], in
     else:
         branch = "weighted"
         value = hp.w_s * d_s - hp.w_c * d_c + hp.w_n * nu
-        rule = {"name": "weighted", "value": value, "terms": {"w_s*dS": hp.w_s * d_s, "w_c*dC": hp.w_c * d_c,
-                                                               "w_n*nu": hp.w_n * nu}, "passed": value > 0}
+        terms = {"w_s*dS": hp.w_s * d_s, "w_c*dC": hp.w_c * d_c, "w_n*nu": hp.w_n * nu}
+        if hp.w_x != 0:
+            d_x = res["deltas"]["x"] or 0.0
+            penalty = hp.w_x * max(d_x, 0.0)
+            credit = hp.w_x * max(-d_x, 0.0) if res["record"]["credit_eligible"] else 0.0
+            value += credit - penalty
+            terms.update({"w_x*max(dX,0)": penalty, "w_x*simplicity_credit": credit})
+        rule = {"name": "weighted", "value": value, "terms": terms, "passed": value > 0}
         if not value > 0:
             reasons.append(f"weighted_rule: {value:.4f} <= 0")
 
@@ -274,8 +358,13 @@ def _judge_arm(a: ArmResult, inp: SelectionInputs, keys: Sequence[stats.Key], in
         guards["domain"] = {"passed": not dom, "reasons": dom}
         reasons.extend(f"guard: domain: {r}" for r in dom)
     guards_ok = all(g.get("passed", True) for g in guards.values())
+    reasons.extend(res["reasons"])
+    rec = res["record"]
 
     return ArmTrace(arm=a.arm, evaluated=True, components=tuple(e.component for e in a.edits), score=s_new,
                     cost=c_new, delta_s=d_s, delta_c=d_c, novelty=nu, missing_rate=stats.missing_rate(idx, keys),
                     critical=crit, branch=branch, rule=rule, ci=ci, floor=floor, guards=guards,
-                    admissible=bool(rule["passed"]) and floor["passed"] and guards_ok, reasons=tuple(reasons))
+                    admissible=bool(rule["passed"]) and floor["passed"] and guards_ok and rec["passed"],
+                    reasons=tuple(reasons), delta_x=res["deltas"]["x"], delta_calls=res["deltas"]["calls"],
+                    delta_wall=res["deltas"]["wall"], complexity=res["complexity"], calls_per_task=res["calls"],
+                    wall_ms_p50=res["wall"], simplicity_score=res["simplicity_score"], resources=rec)

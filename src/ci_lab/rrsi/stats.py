@@ -18,6 +18,7 @@ from typing import Any
 import numpy as np
 
 from ci_lab.contracts import EvalResult, TaskScore
+from ci_lab.metrics.runtime import percentile
 
 Key = tuple[str, int]  # (case_id, trial)
 SeedLike = int | Sequence[int]
@@ -107,6 +108,29 @@ def relative_cost(c_new: float, c_old: float) -> float:
 
 def critical_count(idx: Mapping[Key, TaskScore], keys: Sequence[Key]) -> int:
     return sum(1 for k in keys if k in idx for v in idx[k].violations if v.severity == "critical")
+
+
+# ---------------------------------------------------------------- runtime resources (A14; never part of S)
+
+def completed(idx: Mapping[Key, TaskScore], keys: Sequence[Key]) -> list[TaskScore]:
+    """Completed trials (``score`` not None) among ``keys``."""
+    return [idx[k] for k in keys if k in idx and idx[k].score is not None]
+
+
+def runtime_observed(idx: Mapping[Key, TaskScore], keys: Sequence[Key]) -> bool:
+    """True when some completed trial carries runtime metrics (wall ms or LLM/tool calls)."""
+    return any(s.wall_ms > 0 or s.llm_calls > 0 or s.tool_calls > 0 for s in completed(idx, keys))
+
+
+def mean_calls(idx: Mapping[Key, TaskScore], keys: Sequence[Key]) -> float:
+    """Mean ``llm_calls + tool_calls`` per completed trial (0 when none)."""
+    vals = [s.llm_calls + s.tool_calls for s in completed(idx, keys)]
+    return sum(vals) / len(vals) if vals else 0.0
+
+
+def median_wall_ms(idx: Mapping[Key, TaskScore], keys: Sequence[Key]) -> float:
+    """Median ``wall_ms`` over completed trials (0 when none)."""
+    return percentile([float(s.wall_ms) for s in completed(idx, keys)], 50)
 
 
 # ---------------------------------------------------------------- bootstrap
