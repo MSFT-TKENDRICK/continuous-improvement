@@ -392,3 +392,378 @@ def _step(night: _Night, name: str, fn: Callable[..., dict[str, Any]]) -> Callab
     return run
 
 
+def _row_target(row: Mapping[str, Any]) -> str | None:
+    for key in ("target", "skill_target"):
+        if row.get(key):
+            return str(row[key])
+    body = row.get("task") if isinstance(row.get("task"), Mapping) else row
+    return str(body["project"]) if body.get("project") else None
+
+
+def _route_rows(rows: list[Mapping[str, Any]], runs: list[_TargetRun]) -> dict[str, list[Mapping[str, Any]]]:
+    """AGL rows go to the target named by ``target``/``project`` (unlabelled -> first target).
+    Rows for unknown targets are still split-checked (C15), then dropped."""
+    routed: dict[str, list[Mapping[str, Any]]] = {r.name: [] for r in runs}
+    alias = {key: r.name for r in reversed(runs) for key in (r.target.owner_agent, r.name)}
+    unknown = []
+    for row in rows:
+        label = _row_target(row) if isinstance(row, Mapping) else None
+        name = runs[0].name if label is None else alias.get(label)
+        (routed[name] if name else unknown).append(row)
+    if unknown:
+        from_agl_exports(unknown)
+    return routed
+
+
+def _harvest(night: _Night, split: str) -> dict[str, Any]:
+    if split != "evolve":
+        raise ValueError(f"sleep harvest split must be 'evolve' (got {split!r}; C15)")
+    cfg = night.cfg
+    rows = list(night.deps.agl_records()) if night.deps.agl_records else []
+    routed = _route_rows(rows, night.runs)
+    remaining = cfg.limits.max_tasks
+    counts: dict[str, int] = {}
+    for run in night.runs:
+        with _target_span(night, run, "harvest", **{ATTR_SPLIT: split}) as s:
+            extra = []
+            if run.deps is not night.deps and run.deps.agl_records is not None:
+                extra = list(run.deps.agl_records())
+            path = cfg.tasks_path(run.target)
+            run.reviewed_ids = reviewed_ids(path)
+            if remaining <= 0:
+                run.no_tasks = "task budget exhausted by earlier targets"
+                counts[run.name] = 0
+                continue
+            res = harvest(path, [*routed[run.name], *extra], max_tasks=remaining, val_fraction=cfg.val_fraction)
+            run.harvest = res
+            remaining -= len(res.tasks)
+            counts[run.name] = len(res.tasks)
+            s.set_attribute("sleep.n_tasks", len(res.tasks))
+            if not res.tasks or not {"train", "val"} <= {t.split for t in res.tasks}:
+                run.no_tasks = "no reviewed/evolve tasks with both train and val splits"
+    night.budget.admit_tasks(sum(counts.values()))
+    if all(r.no_tasks for r in night.runs):
+        night.status = "no_tasks"
+    _status(night, tasks=counts)
+    return {"n_tasks": sum(counts.values()), "targets": counts}
+
+
+def _consolidate(night: _Night, gate_mode: str) -> dict[str, Any]:
+    if gate_mode != "on":
+        raise ValueError("SkillOpt gate must stay on for nightly sleep")
+    cfg = night.cfg
+    out: dict[str, Any] = {}
+    for run in night.runs:
+        if run.no_tasks:
+            continue
+        assert run.harvest is not None
+        d = run.deps
+        with _target_span(night, run, "consolidate"):
+            run.backend = OrderSupportSleepBackend(run_target=d.run_target, oracle=d.oracle,
+                                                   reflector=d.reflector, scorer=d.scorer, budget=night.budget)
+            tasks: list[TaskRecord] = run.harvest.tasks
+            with obs.span(SPAN_OPTIMIZER, {ATTR_STRATEGY: "skillopt", ATTR_COMPONENT: run.name,
+                                           ATTR_TARGET: run.name, ATTR_NIGHT: night.night_no}) as s:
+                res = dream_consolidate(
+                    run.backend, tasks, run.skill, run.memory,
+                    history_tasks=None, recall_k=cfg.recall_k, dream_rollouts=cfg.dream_rollouts,
+                    dream_factor=cfg.dream_factor, edit_budget=cfg.edit_budget, gate_metric=cfg.gate_metric,
+                    gate_mixed_weight=cfg.gate_mixed_weight, gate_mode=gate_mode, evolve_skill=True,
+                    evolve_memory=cfg.evolve_memory, night=night.night_no)
+                s.set_attribute("skillopt.accepted", bool(res.accepted))
+                s.set_attribute("skillopt.gate_action", res.gate_action)
+        run.consolidation = res
+        run.candidate_skill, run.candidate_memory = res.new_skill, res.new_memory
+        if cfg.lessons_hook:
+            _lessons(night, run)
+        out[run.name] = {"accepted": bool(res.accepted), "gate_action": str(res.gate_action)}
+    _status(night, skillopt={k: v["accepted"] for k, v in out.items()})
+    return out
+
+
+def _lessons(night: _Night, run: _TargetRun) -> None:
+    """HOOK(M16): mine lesson candidates from this target's judged rollouts (design §13.3).
+
+    Runs after ``dream_consolidate`` because the trajectories are the rollouts it judged. The hook
+    keeps raw trajectories in a local store (B8) and returns only sanitized typed candidates, which
+    ``_record`` proposes in the draft-PR bundle. Nothing is adopted or enforced here. Failures are
+    soft: the error type is counted and the night continues."""
+    from ci_lab.sleep.lessons_hook import LessonsReport, LessonsRequest
+
+    hook = run.deps.lessons or night.deps.lessons
+    if hook is None or run.backend is None:
+        return
+    with _target_span(night, run, "lessons") as s:
+        req = LessonsRequest(target=run.name, night_id=night.night_id, date=night.date,
+                             profile=night.cfg.profile, rollouts=tuple(run.backend.judged_rollouts()))
+        try:
+            report = hook(req)
+        except BudgetExceeded:
+            raise
+        except Exception as exc:  # noqa: BLE001 - proposals must never fail the night
+            s.set_attribute("error.type", type(exc).__name__)
+            report = LessonsReport(counts={"error": type(exc).__name__})
+        run.lessons = report
+        s.set_attribute("ci.lessons.candidates", len(report.candidates))
+
+
+def _gate_target(night: _Night, run: _TargetRun, suite_split: str) -> None:
+    res = run.consolidation
+    changed = res is not None and (run.candidate_skill != run.skill or run.candidate_memory != run.memory)
+    if res is None or not res.accepted or not changed:
+        run.gate_skipped = "SkillOpt pre-filter produced no candidate"
+        return
+    night.budget.check_time()
+    deps = run.deps
+    inc = deps.assert_eval(run.skill, run.memory, "incumbent")
+    cand = deps.assert_eval(run.candidate_skill, run.candidate_memory, "candidate")
+    for r in (inc, cand):
+        if r.split != suite_split:
+            raise ValueError(f"ASSERT gate for {run.name} ran on split {r.split!r}, expected {suite_split!r}")
+    run.evals = {"incumbent": inc, "candidate": cand}
+    canaries = static_canaries(run.skill, run.candidate_skill, run.memory, run.candidate_memory)
+    if deps.run_canaries is not None:
+        canaries += list(deps.run_canaries(run.candidate_skill, run.candidate_memory))
+    delta = deps.latest_delta() if deps.latest_delta else None
+    cfg = night.cfg
+    run.decision = decide(inc, cand, delta=cfg.delta_default if delta is None else float(delta),
+                          canaries=canaries, alpha=cfg.alpha, n_boot=cfg.n_boot, seed=cfg.seed)
+
+
+def _assert_gate(night: _Night, suite_split: str) -> dict[str, Any]:
+    out: dict[str, Any] = {}
+    for run in night.runs:
+        if run.no_tasks:
+            continue
+        with _target_span(night, run, "assert_gate", **{ATTR_SPLIT: suite_split,
+                                                        "sleep.eval_suite": run.target.eval_suite}) as s:
+            _gate_target(night, run, suite_split)
+            s.set_attribute(ATTR_DECISION, run.status)
+        out[run.name] = {"evaluated": run.decision is not None, "accepted": run.status == "accepted"}
+    _status(night, gate={k: v["accepted"] for k, v in out.items()})
+    return out
+
+
+def _final_status(night: _Night) -> str:
+    if night.status in ("error", "no_tasks", "budget_exceeded"):
+        return night.status
+    return "accepted" if any(r.status == "accepted" for r in night.runs) else "rejected"
+
+
+def _reasons(night: _Night) -> list[str]:
+    if night.status == "error":
+        return [night.error]
+    if night.budget_exceeded is not None:
+        return [str(night.budget_exceeded)]
+    return [f"{r.name}: {reason}" for r in night.runs for reason in r.reasons()]
+
+
+def _target_summary(run: _TargetRun) -> dict[str, Any]:
+    return {**run.target.to_dict(), "status": run.status, "reasons": run.reasons(),
+            "harvest": run.harvest.summary() if run.harvest else None,
+            "skillopt": _consolidation_summary(run.consolidation),
+            "gate": run.decision.to_dict() if run.decision else None}
+
+
+def _record(night: _Night, envelope_kind: str) -> dict[str, Any]:
+    if envelope_kind != "sleep":
+        raise ValueError("unknown envelope kind")
+    if night.status == "error":
+        return {"skipped": "error"}
+    cfg, deps = night.cfg, night.deps
+    status = _final_status(night)
+    accepted = status == "accepted"
+    night_no = night.night_no
+    exported_at = deps.clock().strftime("%Y-%m-%dT%H:%M:%SZ")
+    payload: dict[str, Any] = {
+        "night_id": night.night_id, "night": night_no, "date": night.date, "status": status,
+        "accepted": accepted, "reasons": _reasons(night), "base_sha": night.base_sha, "profile": cfg.profile,
+        "exported_at": exported_at, "budget": night.budget.snapshot(),
+        "targets": {r.name: _target_summary(r) for r in night.runs},
+    }
+    if deps.build_envelope is not None:
+        night.envelope = dict(deps.build_envelope(payload))
+    else:
+        night.envelope = oes_envelope(night, payload)
+    from ci_lab.oes import validate_envelope
+
+    if errors := validate_envelope(night.envelope):
+        raise ValueError(f"invalid OES envelope ({len(errors)} errors): {'; '.join(errors[:3])}")
+    state = dict(night.state)
+    history = list(state.get("history") or [])
+    history.append({"night_id": night.night_id, "night": night_no, "status": status,
+                    "targets": {r.name: {"status": r.status,
+                                         "delta_lcb": r.decision.delta_lcb if r.decision else None,
+                                         "n_tasks": len(r.harvest.tasks) if r.harvest else 0}
+                                for r in night.runs}})
+    per_target = dict(state.get("targets") or {})
+    for r in night.runs:
+        prev = dict(per_target.get(r.name) or {})
+        per_target[r.name] = {"last_status": r.status,
+                              "accepted_total": int(prev.get("accepted_total", 0)) + (r.status == "accepted")}
+    state.update({"format": STATE_FORMAT, "night": night_no, "last_night_id": night.night_id,
+                  "last_date": night.date, "last_status": status, "last_base_sha": night.base_sha,
+                  "accepted_total": int(state.get("accepted_total", 0)) + (1 if accepted else 0),
+                  "targets": per_target,
+                  # usage watermark: the nightly gate counts reviewed tasks added after this night
+                  "watermark": {"at": exported_at, "task_ids": {r.name: r.reviewed_ids for r in night.runs}},
+                  "history": history[-HISTORY_KEEP:]})
+    repo = cfg.repo_root
+    state_new = json.dumps(state, indent=2, sort_keys=True) + "\n"
+    env_new = json.dumps(night.envelope, indent=2, sort_keys=True, ensure_ascii=False) + "\n"
+    env_rel = f"{ENVELOPES_REL}/{night.night_id}.json"
+    env_old = _read(repo / env_rel)
+    changes = [FileChange(STATE_REL, night.state_text, _match_eol(night.state_text, state_new)),
+               FileChange(env_rel, env_old, _match_eol(env_old, env_new))]
+    for r in night.runs:
+        if r.status != "accepted":
+            continue
+        changes.append(FileChange(r.target.skill_path, r.skill, _match_eol(r.skill, r.candidate_skill)))
+        if r.candidate_memory != r.memory:
+            if not r.target.memory_path:
+                raise ValueError(f"target {r.name} evolved memory but has no memory path")
+            changes.append(FileChange(r.target.memory_path, r.memory if r.memory_exists else None,
+                                      _match_eol(r.memory, r.candidate_memory)))
+    lessons = {r.name: r.lessons for r in night.runs if r.lessons is not None}
+    if lessons:
+        from ci_lab.sleep.lessons_hook import LESSONS_REL, proposal_document
+
+        doc = proposal_document(night.night_id, lessons)
+        if doc is not None:
+            rel = f"{LESSONS_REL}/{night.night_id}.json"
+            old = _read(repo / rel)
+            new = json.dumps(doc, indent=2, sort_keys=True, ensure_ascii=False) + "\n"
+            changes.append(FileChange(rel, old, _match_eol(old, new)))
+    night.changes = changes
+    return {"status": status, "night": night_no}
+
+
+def _bundle(night: _Night, layout: str) -> dict[str, Any]:
+    if layout != "v1":
+        raise ValueError("unknown bundle layout")
+    cfg = night.cfg
+    status = _final_status(night)
+    patch = make_patch(night.changes) if status != "error" else ""
+    ledger_update = bool(patch) and status != "error"
+    experiment = {
+        "night_id": night.night_id, "night": night.night_no, "date": night.date, "profile": cfg.profile,
+        "base_sha": night.base_sha,
+        "config": {k: (str(v) if isinstance(v, Path) else v) for k, v in asdict(cfg).items()
+                   if k not in ("repo_root", "out_dir", "work_dir", "run_dir", "tasks_file", "targets")},
+        "targets": {r.name: {**r.target.to_dict(),
+                             "harvest": r.harvest.summary() if r.harvest else None,
+                             "skillopt": _consolidation_summary(r.consolidation),
+                             "reflect_log": r.backend.reflect_log if r.backend else [],
+                             "lessons": dict(r.lessons.counts) if r.lessons else None}
+                    for r in night.runs},
+        "budget": night.budget.snapshot(),
+        "steps": list(night.steps_run),
+        "envelope": night.envelope,
+    }
+    results = {
+        "status": status, "accepted": status == "accepted", "reasons": _reasons(night),
+        "targets": {r.name: {"status": r.status, "reasons": r.reasons(),
+                             "gate": r.decision.to_dict() if r.decision else None,
+                             "evals": {k: _eval_summary(v) for k, v in r.evals.items()}}
+                    for r in night.runs},
+        "error": night.error or None,
+        "changed_files": sorted(c.path for c in night.changes if c.old != c.new) if patch else [],
+    }
+    night.manifest = write_bundle(cfg.out_dir, patch=patch, experiment=experiment, results=results,
+                                  base_sha=night.base_sha, night_id=night.night_id, date=night.date,
+                                  accepted=status == "accepted", ledger_update=ledger_update, status=status)
+    return {"status": status}
+
+
+# ----------------------------------------------------------------- entry point
+
+def _setup(night: _Night) -> None:
+    cfg, deps = night.cfg, night.deps
+    try:
+        night.state_text = _read(cfg.repo_root / STATE_REL)
+        night.state = json.loads(night.state_text) if night.state_text else default_state()
+        if not isinstance(night.state.get("night", 0), int):
+            raise ValueError("state.json night counter must be an int")
+        assert cfg.targets is not None
+        for target in cfg.targets:
+            tdeps = deps.per_target(target) if deps.per_target is not None else deps
+            run = _TargetRun(target=target, deps=tdeps)
+            skill = _read(cfg.repo_root / target.skill_path)
+            if skill is None:
+                raise FileNotFoundError(f"incumbent skill not found: {target.skill_path}")
+            run.skill = skill
+            mem = _read(cfg.repo_root / target.memory_path) if target.memory_path else None
+            run.memory, run.memory_exists = mem or "", mem is not None
+            night.runs.append(run)
+    except Exception as exc:  # noqa: BLE001
+        night.status, night.error = "error", f"setup: {type(exc).__name__}: {exc}"
+        night.runs = []
+
+
+def run_night(cfg: SleepConfig, deps: SleepDeps) -> NightResult:
+    date = cfg.night_date or deps.clock().strftime("%Y%m%d")
+    base_sha = cfg.base_sha or (deps.git_head or git_head)(cfg.repo_root)
+    if not re.fullmatch(r"[0-9a-f]{40}", base_sha or ""):
+        raise ValueError(f"base sha must be 40 hex chars, got {base_sha!r}")
+    night = _Night(cfg=cfg, deps=deps, budget=Budget(cfg.limits, clock=deps.monotonic),
+                   night_id=f"sleep-{date}-{int(cfg.run_attempt)}", date=date, base_sha=base_sha)
+    _setup(night)
+
+    harvest_step = _step(night, "harvest", lambda split: _harvest(night, split))
+    consolidate_step = _step(night, "consolidate", lambda gate_mode: _consolidate(night, gate_mode))
+    gate_step = _step(night, "assert_gate", lambda suite_split: _assert_gate(night, suite_split))
+    record_step = _step(night, "record", lambda envelope_kind: _record(night, envelope_kind))
+    bundle_step = _step(night, "bundle", lambda layout: _bundle(night, layout))
+
+    # Explicit keyword signatures: MAF binds the YAML's literal arguments by parameter name.
+    def sleep_harvest(split: str) -> dict:
+        return harvest_step(split=split)
+
+    def sleep_consolidate(gate_mode: str) -> dict:
+        return consolidate_step(gate_mode=gate_mode)
+
+    def sleep_assert_gate(suite_split: str) -> dict:
+        return gate_step(suite_split=suite_split)
+
+    def sleep_record(envelope_kind: str) -> dict:
+        return record_step(envelope_kind=envelope_kind)
+
+    def sleep_bundle(layout: str) -> dict:
+        return bundle_step(layout=layout)
+
+    tools = {f.__name__: f for f in (sleep_harvest, sleep_consolidate, sleep_assert_gate,
+                                     sleep_record, sleep_bundle)}
+    runner = deps.run_workflow or default_runner(cfg.profile)
+    assert cfg.work_dir is not None
+    ckpt = Path(cfg.work_dir) / "checkpoints" / night.night_id
+    attrs = {ATTR_EXPERIMENT: night.night_id, ATTR_NIGHT: night.night_no, ATTR_PROFILE: cfg.profile,
+             "sleep.date": date, "sleep.targets": ",".join(r.name for r in night.runs)}
+    # one trace per night (C27); re-running a night links to the interrupted trace
+    links = obs.previous_link(Path(cfg.run_dir or cfg.out_dir), night.night_id)
+    with obs.span(SPAN_SLEEP_NIGHT, attrs, links=links or None, new_trace=True) as root:
+        night.otel_ctx = otel_context.get_current()
+        _status(night, phase="start", state="running", profile=cfg.profile, base_sha=base_sha,
+                targets=[r.name for r in night.runs])
+        try:
+            runner(WORKFLOW_PATH, tools, ckpt)
+        except Exception as exc:  # noqa: BLE001 - runner failure is a night error
+            if night.status != "error":
+                night.status, night.error = "error", f"workflow: {type(exc).__name__}: {exc}"
+        if tuple(night.steps_run) != STEPS and night.status != "error":
+            night.status, night.error = "error", f"workflow ran steps {night.steps_run}, expected {list(STEPS)}"
+        if night.manifest is None or night.status == "error":
+            night.changes = []
+            _bundle(night, "v1")
+        assert night.manifest is not None
+        status = _final_status(night)
+        root.set_attribute(ATTR_DECISION, status)
+        if night.error:
+            root.set_attribute("error.type", night.error.split(":", 1)[0])
+        _status(night, phase="done", state=status, accepted=status == "accepted",
+                ledger_update=bool(night.manifest["ledger_update"]),
+                target_status={r.name: r.status for r in night.runs})
+    return NightResult(status=status, accepted=status == "accepted",
+                       ledger_update=bool(night.manifest["ledger_update"]), bundle_dir=cfg.out_dir,
+                       manifest=night.manifest, night_id=night.night_id, error=night.error,
+                       targets={r.name: r.status for r in night.runs},
+                       decisions={r.name: r.decision.to_dict() for r in night.runs if r.decision})
