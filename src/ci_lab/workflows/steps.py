@@ -387,3 +387,251 @@ def _done(path: Path) -> dict[str, Any] | None:
     return records.read_json(path)
 
 
+def _changed_files(worktree: Path, base: str) -> list[str]:
+    """``git diff --name-only base HEAD`` for git worktrees; ``[]`` otherwise (fake repos)."""
+    if not (Path(worktree) / ".git").exists() or not base:
+        return []
+    proc = subprocess.run(["git", "-C", str(worktree), "diff", "--name-only", "--no-renames", base, "HEAD"],
+                          capture_output=True, text=True, check=False)
+    if proc.returncode != 0:
+        raise RuntimeError(f"git diff {base[:12]}..HEAD failed in {worktree}: {proc.stderr.strip()[:200]}")
+    return [line for line in proc.stdout.splitlines() if line]
+
+
+# ------------------------------------------------------------------ arm.yaml
+
+def arm_tools(ctx: ArmRun) -> dict[str, Callable[..., Awaitable[Any]]]:
+    deps = ctx.round.env.deps
+    hyper = ctx.round.env.hyper
+
+    def provision_slot() -> dict[str, Any]:
+        marker = ctx.dir / "slot.json"
+        if (data := _done(marker)) is not None:
+            return data
+        base = ctx.base_commit
+        worktree = deps.provision_slot(ctx.eid, ctx.arm, base)
+        data = {"worktree": str(worktree), "base_commit": base, "branch": arm_branch(ctx.eid, ctx.arm)}
+        records.write_json(marker, data)
+        return data
+
+    async def critique(attempt: int) -> dict[str, Any]:
+        attempt = int(attempt)
+        marker = ctx.dir / f"critique_{attempt}.json"
+        if (data := _done(marker)) is not None:
+            return data
+        prev = ctx.verdict(attempt - 1) if attempt > 1 else None
+        if prev is not None and prev.passed:
+            verdict = prev  # no-op gate: already passed
+        elif not ctx.proposal_path.exists():
+            verdict = CriticVerdict(False, ["proposer did not call submit_proposal"])
+        else:
+            verdict = await bus_adapter.critique(ctx, attempt)
+        verdict = CriticVerdict(verdict.passed, list(verdict.reasons),
+                                verdict.repairs if prev is not None and prev.passed else attempt - 1)
+        data = records.verdict_to_dict(verdict)
+        records.write_json(marker, data)
+        return data
+
+    async def repair(attempt: int) -> dict[str, Any]:
+        attempt = int(attempt)
+        marker = ctx.dir / f"repair_{attempt}.json"
+        if (data := _done(marker)) is not None:
+            return data
+        verdict = ctx.verdict(attempt)
+        if verdict is None:
+            raise RuntimeError(f"repair_{attempt} before critique_{attempt}")
+        if verdict.passed:
+            data = {"repaired": False, "reason": "critique passed"}
+        elif (succession := await bus_adapter.repair(ctx, attempt)) is not None:
+            data = {**succession, "reasons": verdict.reasons}
+        else:
+            if ctx.reinvoke_proposer is None:
+                raise RuntimeError("no proposer bound for repair")
+            corpus = failure_corpus(records.failure_from_dict(f) for f in ctx.round.begin()["failures"])
+            text = sanitize_correction(list(verdict.reasons), None, attempt=arm_attempt(ctx.arm, attempt),
+                                       extra_corpus=corpus).text
+            await ctx.reinvoke_proposer(
+                text + "\nRepair the edits with your tools, then call submit_proposal again.",
+                list(verdict.reasons))
+            data = {"repaired": True, "reasons": verdict.reasons}
+        records.write_json(marker, data)
+        return data
+
+    async def evaluate(split: str = "evolve") -> dict[str, Any]:
+        marker = ctx.dir / "eval.json"
+        if (data := _done(marker)) is not None:
+            return {k: v for k, v in data.items() if k != "eval"}
+        verdict = ctx.verdict(FINAL_CRITIQUE)
+        if verdict is None:
+            raise RuntimeError("evaluate before critique_final")
+        head = deps.head_commit(ctx.worktree)
+        if not verdict.passed:
+            data = {"skipped": True, "reason": "critic_rejected", "head": head}
+        elif head == ctx.base_commit:
+            data = {"skipped": True, "reason": "no_edits", "head": head}
+        elif bad := ctx.edit_scope_violations((_done(ctx.proposal_path) or {}).get("edits", ())):
+            data = {"skipped": True, "reason": f"edit_scope: {ctx.strategy} may not write {', '.join(bad[:5])}",
+                    "head": head}
+        else:
+            tree = deps.harness_tree(ctx.worktree)
+            result = await bus_adapter.evaluate(ctx, split, head, functools.partial(
+                deps.domain.evaluate, ctx.worktree, split, int(hyper["k"]), experiment_id=ctx.eid, variant=ctx.arm))
+            data = {"skipped": False, "head": head, "tree": tree, "eval": records.eval_to_dict(result)}
+        records.write_json(marker, data)
+        return {k: v for k, v in data.items() if k != "eval"}
+
+    async def guard_paired_eval(split: str = "evolve") -> dict[str, Any]:
+        """``arm_guard.yaml`` (v2.4 §13, B1/B4): paired guard-off/on eval of the arm, gated against
+        the incumbent's paired metrics (marker ``guard_eval.json``; skipped with ``evaluate``)."""
+        from ci_lab.lessons_arm.envelope import holdout_look_required
+        from ci_lab.lessons_arm.paired import GUARD_EVAL_FILE, guard_paired_eval_step
+
+        data = _done(ctx.dir / GUARD_EVAL_FILE)
+        if data is None:
+            ev = _done(ctx.dir / "eval.json")
+            if ev is None:
+                raise RuntimeError("guard_paired_eval before evaluate")
+            if not ev.get("skipped"):
+                env = ctx.round.env
+                info: dict[str, Any] = {"split": split, "holdout_look": holdout_look_required(split),
+                                        "planned_looks": int(env.hyper["holdout_looks"])}
+                if info["holdout_look"]:  # C15: one look per round, shared by the round's guard arms
+                    info.update(reserve_holdout_look(env, ctx.eid, split))
+                else:
+                    info["dataset_hash"] = dataset_hash(deps.domain.splits()[split])
+                records.write_json(ctx.dir / GUARD_SPLIT_FILE, info)
+            incumbent = None if ev.get("skipped") else await ctx.round.incumbent_guard_metrics(split)
+            data = await guard_paired_eval_step(domain=deps.domain, worktree=ctx.worktree, run_dir=ctx.dir,
+                                                split=split, experiment_id=ctx.eid, variant=ctx.arm,
+                                                incumbent=incumbent, **guard_eval_options(ctx.round.env))
+        return {"skipped": bool(data.get("skipped")), "ship": (data.get("ship") or {}).get("ok")}
+
+    def finalize_arm() -> dict[str, Any]:
+        marker = ctx.dir / "arm.done"
+        if (data := _done(marker)) is not None:
+            return {"arm": ctx.arm, "status": data["result"]["status"]}
+        ev = _done(ctx.dir / "eval.json")
+        verdict = ctx.verdict(FINAL_CRITIQUE)
+        if ev is None or verdict is None:
+            raise RuntimeError("finalize_arm before evaluate")
+        proposal = _done(ctx.proposal_path) or {}
+        edits = [Edit(e["component"], e.get("hypothesis", ""), tuple(e.get("files", ())), e.get("commit", ""))
+                 for e in proposal.get("edits", ())]
+        reason = ev.get("reason")
+        status = "evaluated" if not ev["skipped"] else "rejected"
+        guard = None
+        if ctx.strategy == "guard":
+            from ci_lab.lessons_arm.paired import GUARD_EVAL_FILE
+
+            guard = _done(ctx.dir / GUARD_EVAL_FILE)
+            if guard is None:
+                raise RuntimeError("finalize_arm before guard_paired_eval")
+            ship = guard.get("ship")
+            if status == "evaluated" and ship is not None and not ship.get("ok"):
+                status, reason = "rejected", "guard_ship_rule: " + "; ".join(ship.get("reasons") or ())
+        result = ArmResult(
+            arm=ctx.arm, base_commit=ctx.base_commit, head_commit=ev.get("head"), harness_tree=ev.get("tree"),
+            edits=edits, critic=verdict,
+            eval=records.eval_from_dict(ev["eval"]) if ev.get("eval") else None,
+            status=status, strategy=ctx.strategy, cost=ctx.optimizer_cost())
+        done = {"result": records.arm_to_dict(result), "reason": reason, "directive": dict(ctx.directive)}
+        if guard is not None:
+            done["guard"] = {**guard, **(_done(ctx.dir / GUARD_SPLIT_FILE) or {})}
+        records.write_json(marker, done)
+        return {"arm": ctx.arm, "status": result.status}
+
+    async def propose(strategy: str = "") -> dict[str, Any]:
+        """Non-agent strategies: run ``ArmStrategy.propose`` once (marker: proposal.json)."""
+        if (data := _done(ctx.proposal_path)) is not None:
+            return {"strategy": data.get("strategy", ctx.strategy), "edits": len(data.get("edits", ()))}
+        if strategy and strategy != ctx.strategy:
+            raise ValueError(f"workflow strategy {strategy!r} != directive strategy {ctx.strategy!r}")
+        edits = await ctx.run_strategy()
+        return {"strategy": ctx.strategy, "edits": len(edits)}
+
+    tracker = ctx.tracker
+    return {name: step(name, fn, tracker) for name, fn in {
+        "provision_slot": provision_slot, "propose": propose, "critique": critique, "repair": repair,
+        "evaluate": evaluate, "guard_paired_eval": guard_paired_eval, "finalize_arm": finalize_arm}.items()}
+
+
+async def run_arm(rctx: RoundContext, name: str) -> None:
+    """Launch (or resume) the arm workflow of the directive's strategy
+    (``arm_<strategy>.yaml``) with its own checkpoint dir (C5, section 11.2)."""
+    env = rctx.env
+    deps = env.deps
+    ctx = rctx.arm(name)
+    strategy = ctx.strategy
+    with obs.span(SPAN_ARM, ctx.span_attrs):
+        ctx.state("running", "start")
+        agents: dict[str, Any] = {}
+        if strategy == "agent":
+            proposer = deps.make_agent("proposer", ctx)
+
+            async def reinvoke(message: str, reasons: list[str]) -> Any:
+                async with ctx.tracker.phase("propose"):
+                    return await proposer.run(message)
+
+            agents["Proposer"] = GatedAgent(proposer, ctx.proposal_path, wrap=lambda: ctx.tracker.phase("propose"))
+        else:
+            ctx.strategy_impl = deps.get_strategy(strategy, **dict(deps.strategy_kwargs))
+
+            async def reinvoke(message: str, reasons: list[str]) -> Any:
+                return await ctx.run_strategy(reasons)
+
+        ctx.reinvoke_proposer = reinvoke
+        workflow = deps.build_workflow(ARM_YAMLS[strategy], agents, arm_tools(ctx), ctx.ckpt)
+        try:
+            await deps.run_or_resume(workflow, ctx.ckpt, "start")
+        except Exception as exc:
+            attempts_path = ctx.dir / "attempts.json"
+            attempts = (_done(attempts_path) or {"failures": []})["failures"]
+            attempts.append(f"{type(exc).__name__}: {exc}")
+            records.write_json(attempts_path, {"failures": attempts})
+            if len(attempts) < int(env.hyper["max_arm_attempts"]):
+                ctx.state("error", getattr(exc, "step", None))
+                raise
+            result = ArmResult(arm=name, base_commit=ctx.base_commit, status="failed", strategy=strategy)
+            records.write_json(ctx.dir / "arm.done", {"result": records.arm_to_dict(result),
+                                                      "reason": attempts[-1], "directive": dict(ctx.directive)})
+            ctx.state("failed", "done")
+            return
+        result = rctx.arm_result(name)
+        if result is None:
+            raise RuntimeError(f"{rctx.eid}/{name}: workflow completed without arm.done")
+        obs.annotate({ATTR_SCORE: records.mean_score(result.eval)} if result.eval else {})
+        ctx.state(result.status, "done")
+
+
+async def run_incumbent(rctx: RoundContext) -> None:
+    """Re-evaluate the incumbent this round (C8); cached by tree off the Copilot profile."""
+    env = rctx.env
+    begin = rctx.begin()
+    base, tree = begin["base_commit"], begin["base_tree"]
+    cache = env.campaign_dir / "inc-cache" / f"{tree}.json"
+    reuse = env.profile is not Profile.COPILOT and env.hyper.get("cache_incumbent", True)
+    with obs.span(SPAN_ARM, {**env.span_attrs(rctx.eid), ATTR_VARIANT: INCUMBENT,
+                             ATTR_STRATEGY: INCUMBENT_STRATEGY}):
+        rctx.arm_state(INCUMBENT, INCUMBENT_STRATEGY, "running", "evaluate")
+        if reuse and (cached := _done(cache)) is not None:
+            result = records.eval_from_dict(cached)
+        else:
+            tracker = Tracker(rctx.progress.as_writer(INCUMBENT),
+                              {**env.span_attrs(rctx.eid), ATTR_VARIANT: INCUMBENT},
+                              lambda p: {"arms": {INCUMBENT: {"strategy": INCUMBENT_STRATEGY, "state": "running",
+                                                              "phase": p}}})
+            async with tracker.phase("evaluate"):
+                worktree = env.deps.provision_slot(rctx.eid, INCUMBENT, base)
+                result = await env.deps.domain.evaluate(worktree, "evolve", int(env.hyper["k"]),
+                                                        experiment_id=rctx.eid, variant=INCUMBENT)
+            env.remember_incumbent(tree, result)
+        arm = ArmResult(arm=INCUMBENT, base_commit=base, head_commit=base, harness_tree=tree, eval=result,
+                        status="evaluated")
+        records.write_json(rctx.dir / INCUMBENT / "arm.done",
+                           {"result": records.arm_to_dict(arm), "reason": None, "directive": {}})
+        obs.annotate({ATTR_SCORE: records.mean_score(result)})
+        rctx.arm_state(INCUMBENT, INCUMBENT_STRATEGY, "evaluated", "done")
+
+
+# ------------------------------------------------------------------ round.yaml
+
