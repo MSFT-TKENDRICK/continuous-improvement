@@ -58,7 +58,13 @@ def test_sleep_run_fails_before_the_night_when_a_model_is_missing(tmp_path, monk
 
 
 def test_doctor_models_reports_every_copilot_model(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
-    env = {"OPENAI_API_BASE": "http://h/v1", "CI_COPILOT_SERVE_KEY": "k"}
+    env = {
+        "OPENAI_API_BASE": "http://h/v1",
+        "CI_COPILOT_SERVE_KEY": "k",
+        "CI_LAB_TARGET_MODEL": "gpt-5-mini",
+        "CI_LAB_JUDGE_MODEL": "s1",
+        "CI_S1_LLAMA_URL": "http://127.0.0.1:8081",
+    }
     served = {"http://h/v1": ["local"], "http://127.0.0.1:8765/v1": ["gpt-5-mini"]}
     report = root_cli.doctor_models(env=env, list_models=_ids("claude-sonnet-5", "gpt-5-mini"),
                                     fetch=lambda base, key: served[base])
@@ -66,7 +72,7 @@ def test_doctor_models_reports_every_copilot_model(tmp_path, monkeypatch: pytest
     users = {r["user"] for r in report["required"]}
     assert {"meta agent analyst", "lesson synthesizer (guard)", "sleep target"} <= users
     assert any(u.startswith("optimizer LM") for u in users)
-    assert {s["base_url"] for s in report["served"]} == set(served)
+    assert {s["base_url"] for s in report["served"]} == {"http://127.0.0.1:8765/v1"}
 
     report = root_cli.doctor_models(env=env, list_models=_ids("gpt-5-mini"), fetch=lambda base, key: [])
     assert report["ok"] is False

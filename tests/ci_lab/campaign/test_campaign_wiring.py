@@ -84,10 +84,17 @@ class GitDomain:
         self.harness_dirs.append(Path(harness_dir))
         text = (Path(harness_dir) / "prompts" / "system.md").read_text(encoding="utf-8")
         score = 0.9 if "verify identity" in text else 0.1
-        return EvalResult(tree_hash(Path(harness_dir)), split,  # type: ignore[arg-type]
-                          EvaluatorPin("5eedc0de", "stub-judge", "fake"),
-                          [TaskScore(c, t, "stub", score, tokens_in=5) for c in self.splits()[split]
-                           for t in range(k)])
+        return EvalResult(
+            tree_hash(Path(harness_dir)),
+            split,  # type: ignore[arg-type]
+            EvaluatorPin("5eedc0de", "stub-judge", "fake"),
+            [
+                TaskScore(c, t, "stub", score, tokens_in=5, wall_ms=1.0, llm_calls=1)
+                for c in self.splits()[split]
+                for t in range(k)
+            ],
+            surface={"complexity": 10.0, "tree_valid": 1.0},
+        )
 
     def failures(self, result: EvalResult) -> list[FailureRecord]:
         assert result.harness_tree.startswith("sha256:"), "failures() must see the domain's own tree label"
@@ -407,8 +414,25 @@ class SkillDomain(GitDomain):
             return res
         from ci_lab.contracts import EvalResult, TaskScore
 
-        return EvalResult(res.harness_tree, res.split, res.pin,
-                          [TaskScore(s.case_id, s.trial, s.suite, 0.9, tokens_in=5) for s in res.scores])
+        return EvalResult(
+            res.harness_tree,
+            res.split,
+            res.pin,
+            [
+                TaskScore(
+                    s.case_id,
+                    s.trial,
+                    s.suite,
+                    0.9,
+                    tokens_in=s.tokens_in,
+                    wall_ms=s.wall_ms,
+                    llm_calls=s.llm_calls,
+                    tool_calls=s.tool_calls,
+                )
+                for s in res.scores
+            ],
+            surface=res.surface,
+        )
 
 
 @pytest.fixture

@@ -511,7 +511,8 @@ def harness_builder(spec: MetaAgentSpec, *, client: Any, bindings: Mapping[str, 
             kwargs["background_agents_instructions"] = spec.subagent_instructions
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")  # MAF harness APIs emit ExperimentalWarning
-        return governed_harness_agent(client, name=spec.name, description=spec.description,
+        policy = "harness" if spec.harness_root is not None else "meta_agents"
+        return governed_harness_agent(client, name=spec.name, description=spec.description, policy=policy,
                                       agent_instructions=spec.instructions,
                                       tools=[_described(bindings[t], t, spec.tool_descriptions.get(t))
                                              for t in spec.tools],
