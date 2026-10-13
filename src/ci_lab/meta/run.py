@@ -139,14 +139,17 @@ async def run_meta_agent(key: str, run_dir: Path | str, client: Any, bindings: M
                          builder: AgentBuilder | None = None, spec: MetaAgentSpec | None = None,
                          reuse: bool = True,
                          subagent_bindings: Mapping[str, Mapping[str, Callable[..., Any]]] | None = None,
-                         middleware: Sequence[Any] = ()) -> BaseModel:
+                         middleware: Sequence[Any] = (), harness_dir: Path | str | None = None) -> BaseModel:
     """Build agent ``key`` with ``bindings`` (+ its terminal submit tool), run it, return the submission.
+
+    Evolvable specs load from ``harness_dir`` (``None`` = the repo-root ``harness/``) unless
+    ``spec`` is given.
 
     ``subagent_bindings`` (subagent key -> read-only tools) is required when the spec declares
     subagents; they run as MAF background agents on the same ``client``. ``middleware`` is
     installed after the terminal-submit middleware.
     """
-    spec = spec or load_spec(key)
+    spec = spec or load_spec(key, harness_dir=harness_dir)
     root = Path(run_dir)
     root.mkdir(parents=True, exist_ok=True)
     terminal = spec.terminal_tool
@@ -184,9 +187,9 @@ async def run_meta_agent(key: str, run_dir: Path | str, client: Any, bindings: M
 
 
 async def run_analyst(run_dir: Path | str, client: Any, *, builder: AgentBuilder | None = None,
-                      reuse: bool = True) -> AnalysisSubmission:
+                      reuse: bool = True, harness_dir: Path | str | None = None) -> AnalysisSubmission:
     """Analyst over ``failures.json`` (+ brief/history) in ``run_dir`` -> ``analysis.json``."""
-    spec = load_spec("analyst")
+    spec = load_spec("analyst", harness_dir=harness_dir)
     tools = make_brief_tools(run_dir, allowed=spec.documents or None)
     with obs.span(SPAN_STEP, {ATTR_PHASE: "analyze", ATTR_PURPOSE: "analyst"}):
         return await run_meta_agent("analyst", run_dir, client, tools, builder=builder, spec=spec,
@@ -194,9 +197,9 @@ async def run_analyst(run_dir: Path | str, client: Any, *, builder: AgentBuilder
 
 
 async def run_reflector(run_dir: Path | str, client: Any, *, builder: AgentBuilder | None = None,
-                        reuse: bool = True) -> ReflectionSubmission:
+                        reuse: bool = True, harness_dir: Path | str | None = None) -> ReflectionSubmission:
     """Reflector over ``results.json`` (+ brief/analysis/history) -> ``reflection.json``."""
-    spec = load_spec("reflector")
+    spec = load_spec("reflector", harness_dir=harness_dir)
     tools = make_brief_tools(run_dir, allowed=spec.documents or None)
     with obs.span(SPAN_STEP, {ATTR_PHASE: "reflect", ATTR_PURPOSE: "reflector"}):
         return await run_meta_agent("reflector", run_dir, client, tools, builder=builder, spec=spec,
@@ -274,7 +277,7 @@ class ProposalResult:
 
 
 async def run_proposer(ctx: ArmContext, client: Any, *, surface: ArmSurface, builder: AgentBuilder | None = None,
-                       reuse: bool = True) -> ProposalResult:
+                       reuse: bool = True, harness_dir: Path | str | None = None) -> ProposalResult:
     """Proposer for one arm: edits the directive's components in ``ctx.worktree`` via ``commit_edit``.
 
     Writes a default ``brief.md`` / ``failures.json`` into ``ctx.run_dir`` when absent. The
@@ -288,7 +291,7 @@ async def run_proposer(ctx: ArmContext, client: Any, *, surface: ArmSurface, bui
             write_brief(run_dir, default_arm_brief(ctx, components))
         if ctx.failures and not (run_dir / "failures.json").is_file():
             write_failures(run_dir, ctx.failures)
-        spec = load_spec("proposer")
+        spec = load_spec("proposer", harness_dir=harness_dir)
         attempt = arm_attempt(ctx.directive.arm)
         tools: dict[str, Callable[..., Any]] = {
             **student_brief_tools(run_dir, ctx.failures, attempt=attempt, allowed=spec.documents or None)}
@@ -318,7 +321,8 @@ class ProposerStrategy:
     name = "agent"
 
     def __init__(self, surface: ArmSurface, *, client: Any = None, client_factory: ChatClientFactory | None = None,
-                 builder: AgentBuilder | None = None, model: str | None = None, reuse: bool = True) -> None:
+                 builder: AgentBuilder | None = None, model: str | None = None, reuse: bool = True,
+                 harness_dir: Path | str | None = None) -> None:
         if (client is None) == (client_factory is None):
             raise ValueError("pass exactly one of client= or client_factory=")
         self.surface = surface
@@ -327,11 +331,12 @@ class ProposerStrategy:
         self.builder = builder
         self.model = model
         self.reuse = reuse
+        self.harness_dir = harness_dir
 
     def client_for(self, ctx: ArmContext) -> Any:
         if self.client is not None:
             return self.client
-        model = load_spec("proposer").model
+        model = load_spec("proposer", harness_dir=self.harness_dir).model
         if self.model and self.model != model:
             # The spec (validated + hashed) and the client must name the same model.
             raise MetaAgentError(f"ProposerStrategy(model={self.model!r}) differs from the proposer spec model "
@@ -340,7 +345,7 @@ class ProposerStrategy:
 
     async def propose(self, ctx: ArmContext) -> list[Edit]:
         result = await run_proposer(ctx, self.client_for(ctx), surface=self.surface, builder=self.builder,
-                                    reuse=self.reuse)
+                                    reuse=self.reuse, harness_dir=self.harness_dir)
         return result.edits
 
 
@@ -366,7 +371,8 @@ def _critique(run_dir: Path, *, passed: bool, reasons: Sequence[str], source: st
 
 async def run_critic(ctx: ArmContext, client: Any, *, surface: ArmSurface, builder: AgentBuilder | None = None,
                      leak_corpus: LeakCorpus | None = None, spec_validator: SpecValidator | None = None,
-                     config: CriticConfig | None = None, repairs: int = 0, reuse: bool = True) -> CriticVerdict:
+                     config: CriticConfig | None = None, repairs: int = 0, reuse: bool = True,
+                     harness_dir: Path | str | None = None) -> CriticVerdict:
     """Deterministic checks first (no model call when they fail), then the LLM critic.
 
     Writes ``critique.json`` (read by the proposer on repair) and ``diff.patch`` (read by the
@@ -396,7 +402,7 @@ async def run_critic(ctx: ArmContext, client: Any, *, surface: ArmSurface, build
         same_diff = (prior.get("source") == "critic" and prior.get("head") == diff.head
                      and prior.get("base") == diff.base)
         (run_dir / "diff.patch").write_text(diff_text(ctx.worktree, diff.base, diff.head), encoding="utf-8")
-        spec = load_spec("critic")
+        spec = load_spec("critic", harness_dir=harness_dir)  # frozen: harness_dir is ignored
         tools: dict[str, Callable[..., Any]] = {**make_brief_tools(run_dir, allowed=spec.documents or None)}
         fs = make_arm_fs(ctx.worktree, surface.surface_globs, surface.frozen_globs, surface.max_file_bytes,
                          writable_globs=())

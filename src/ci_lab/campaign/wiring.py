@@ -15,6 +15,7 @@ confirm_test              ``rrsi_wiring.confirm_test`` — paired bootstrap + sa
 build_envelope            ``rrsi_wiring.build_envelope`` — ``oes.build``, schema-validated
 make_agent / critique     :class:`MetaAgents` — ``ci_lab.meta.run`` analyst/proposer/critic
                           over ``client_factory`` (``providers.factory.make_chat_client``)
+                          from the round's pinned meta harness snapshot
 provision_slot ...        :class:`GitOps` — ``ci_lab.gitops.slots.SlotPool`` per campaign;
                           ``resolve_incumbent`` = ``(HEAD commit, harness tree)``
 ledger / outbox           :class:`~ci_lab.campaign.local.FileLedger` / ``FileOutbox``
@@ -61,12 +62,15 @@ from ci_lab.providers.offline import (  # noqa: F401 -- NetworkPolicyError is re
 )
 
 if TYPE_CHECKING:
+    from ci_lab.harness_tree import HarnessSnapshot
     from ci_lab.tools.critic_checks import LeakCorpus
 
 log = logging.getLogger(__name__)
 
 META_DIR = "meta"  # meta-agent run dir inside an arm/round dir (its proposal.json is not the arm's)
 ANALYST_DIR = "analyst"
+META_HARNESS_DIR = "meta-harness"  # per-round copy of the incumbent meta harness tree
+META_HARNESS_RECORD = "meta-harness.json"  # its HarnessSnapshot (root + digest)
 AGL_DIR = "agl"  # campaign rollout journal dir under run_root
 AGL_URL_ENV = "CI_LAB_AGL_URL"
 _EID_RE = re.compile(r"^(?P<cid>.+)-(?:r\d{2}|cal|confirm)$")  # round / calibration / confirm experiment ids
@@ -222,8 +226,10 @@ class _ProposerAgent:
 
         rejected = _latest_rejection(self.arm_run)
         ctx = self.agents.arm_context(self.arm_run, rejected or ())
-        result = await run_proposer(ctx, self.agents.client(ctx.profile, "proposer"), surface=self.agents.surface,
-                                    builder=self.agents.builder, reuse=rejected is None)
+        snap = self.agents.incumbent(self.arm_run.round.dir)
+        result = await run_proposer(ctx, self.agents.client(ctx.profile, "proposer", snap.root),
+                                    surface=self.agents.surface, builder=self.agents.builder, reuse=rejected is None,
+                                    harness_dir=snap.root)
         write_proposal(self.arm_run, result.edits)
         return result.submission.summary
 
@@ -245,8 +251,9 @@ class _AnalystAgent:
         brief = {k: v for k, v in rctx.brief().items() if k not in ("failures", "analysis")}
         write_brief(run_dir, brief)
         write_failures(run_dir, rctx.brief()["failures"])
-        submission = await run_analyst(run_dir, self.agents.client(rctx.env.profile, "analyst"),
-                                       builder=self.agents.builder)
+        snap = self.agents.incumbent(rctx.dir)
+        submission = await run_analyst(run_dir, self.agents.client(rctx.env.profile, "analyst", snap.root),
+                                       builder=self.agents.builder, harness_dir=snap.root)
         records.write_json(rctx.analysis_path, submission.model_dump(mode="json"))
         return submission.summary
 
@@ -262,21 +269,43 @@ class MetaAgents:
 
     ``client_factory(profile=, model=, purpose=)`` builds each agent's chat client from the
     meta spec's model alias; the spec builder validates against the manifest's
-    ``allowed_models``."""
+    ``allowed_models``.
+
+    The evolvable specs come from the incumbent meta harness tree (``harness_dir``; ``None`` =
+    the repo-root ``harness/``), pinned per round: the first agent of a round copies the tree
+    to ``<round dir>/meta-harness`` and records its :class:`~ci_lab.harness_tree.HarnessSnapshot`
+    in ``meta-harness.json``; the analyst, every proposal/repair and the critic of that round
+    (and a resumed round) load from that copy, which must still match the recorded digest."""
 
     def __init__(self, domain: Domain, client_factory: ClientFactory, *, builder: Any = None,
-                 leak_corpus: Any = None) -> None:
+                 leak_corpus: Any = None, harness_dir: Path | None = None) -> None:
         from ci_lab.meta.run import ArmSurface
 
         self.surface = ArmSurface.from_domain(domain)
         self.client_factory = client_factory
         self.builder = builder
         self.leak_corpus = leak_corpus
+        self.harness_dir = harness_dir
 
-    def client(self, profile: Profile, key: str) -> Any:
+    def client(self, profile: Profile, key: str, harness_dir: Path | None = None) -> Any:
         from ci_lab.meta.spec_loader import load_spec
 
-        return self.client_factory(profile=profile, model=load_spec(key).model, purpose=key)
+        return self.client_factory(profile=profile, model=load_spec(key, harness_dir=harness_dir).model, purpose=key)
+
+    def incumbent(self, round_dir: Path) -> HarnessSnapshot:
+        """The round's pinned meta harness snapshot (recorded on first use, verified after)."""
+        import shutil
+
+        from ci_lab.harness_tree import HarnessSnapshot, materialize, repo_harness_dir
+
+        record = Path(round_dir) / META_HARNESS_RECORD
+        if (data := records.read_json(record)) is not None:
+            return HarnessSnapshot.from_dict(data).verify()
+        dest = Path(round_dir) / META_HARNESS_DIR
+        shutil.rmtree(dest, ignore_errors=True)  # an unrecorded copy from an interrupted round start
+        snap = materialize(self.harness_dir if self.harness_dir is not None else repo_harness_dir(), dest)
+        records.write_json(record, snap.as_dict())
+        return snap
 
     def arm_context(self, arm_run: Any, feedback: Any = ()) -> ArmContext:
         return dataclasses.replace(arm_run.strategy_context(list(feedback)), run_dir=arm_run.dir / META_DIR)
@@ -292,8 +321,10 @@ class MetaAgents:
         from ci_lab.meta.run import run_critic
 
         ctx = self.arm_context(arm_run)
-        return await run_critic(ctx, self.client(ctx.profile, "critic"), surface=self.surface, builder=self.builder,
-                                leak_corpus=self.leak_corpus, repairs=int(attempt) - 1)
+        snap = self.incumbent(arm_run.round.dir)
+        return await run_critic(ctx, self.client(ctx.profile, "critic", snap.root), surface=self.surface,
+                                builder=self.builder, leak_corpus=self.leak_corpus, repairs=int(attempt) - 1,
+                                harness_dir=snap.root)
 
 
 def default_client_factory(profile: Profile) -> ClientFactory:
@@ -352,8 +383,11 @@ def wired_deps(profile: Profile | str, *, run_root: Path, ledger_dir: Path | Non
                repo: str = "example/harness", dry_run_publish: bool = False, repo_root: Path | None = None,
                domain: Domain | None = None, client_factory: ClientFactory | None = None,
                wt_root: Path | None = None, incumbent_ref: str = "HEAD", leak_corpus: LeakCorpus | None = None,
-               **overrides: Any) -> CampaignDeps:
+               meta_harness_dir: Path | None = None, **overrides: Any) -> CampaignDeps:
     """:class:`CampaignDeps` for ``copilot``/``offline`` (``fake`` lives in :mod:`.fakes`).
+
+    The meta agents load their evolvable specs from ``meta_harness_dir`` (default: the
+    repo-root ``harness/``), snapshotted per round (:meth:`MetaAgents.incumbent`).
 
     The critic screens every candidate against ``leak_corpus`` (default:
     :func:`campaign_leak_corpus`, i.e. the frozen ASSERT test sets)."""
@@ -377,7 +411,7 @@ def wired_deps(profile: Profile | str, *, run_root: Path, ledger_dir: Path | Non
     if not isinstance(domain, HarnessDomain):
         domain = HarnessDomain(domain, gitops.harness, gitops.clean_harness_tree)
     client_factory = client_factory or default_client_factory(profile)
-    agents = MetaAgents(domain, client_factory,
+    agents = MetaAgents(domain, client_factory, harness_dir=meta_harness_dir,
                         leak_corpus=leak_corpus if leak_corpus is not None else campaign_leak_corpus(domain, gitops.repo))
     outbox = FileOutbox(run_root / "outbox.jsonl")
     publisher = GitHubPublisher(repo, outbox=outbox, dry_run=dry_run_publish or offline, git_cwd=gitops.repo,
@@ -399,6 +433,7 @@ def wired_deps(profile: Profile | str, *, run_root: Path, ledger_dir: Path | Non
         inner = getattr(domain, "inner", domain)
         kwargs["preflight"] = make_preflight(
             profile, harness_dir=gitops.repo / harness_root(domain), evals_dir=getattr(inner, "evals_dir", None),
-            tester_model=getattr(getattr(inner, "runner", None), "tester_model", None))
+            tester_model=getattr(getattr(inner, "runner", None), "tester_model", None),
+            meta_harness_dir=meta_harness_dir)
     kwargs.update(overrides)
     return CampaignDeps(**kwargs)
