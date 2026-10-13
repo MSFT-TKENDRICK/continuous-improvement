@@ -380,3 +380,225 @@ def pid_alive(pid: int) -> bool:
     return True
 
 
+def process_image(pid: int) -> str | None:
+    """Absolute executable path of ``pid`` (None if unknown)."""
+    if os.name == "nt":
+        with _handle(pid, _QUERY) as h:
+            if not h:
+                return None
+            buf = ctypes.create_unicode_buffer(32768)
+            size = wintypes.DWORD(len(buf))
+            if not _k32.QueryFullProcessImageNameW(h, 0, buf, ctypes.byref(size)):
+                return None
+            return buf.value
+    with contextlib.suppress(OSError):
+        return os.readlink(f"/proc/{pid}/exe")
+    try:
+        out = subprocess.run(["ps", "-p", str(pid), "-o", "comm="], check=False, capture_output=True,
+                             text=True, timeout=5).stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return out or None
+
+
+def _same_file(a: str | os.PathLike[str], b: str | os.PathLike[str]) -> bool:
+    try:
+        return os.path.samefile(a, b)
+    except OSError:
+        return os.path.normcase(os.path.realpath(a)) == os.path.normcase(os.path.realpath(b))
+
+
+def _terminate(pid: int, timeout: float = 10.0) -> None:
+    if os.name == "nt":
+        with _handle(pid, _TERMINATE | _SYNC) as h:
+            if not h:
+                return
+            _k32.TerminateProcess(h, 1)
+            _k32.WaitForSingleObject(h, int(timeout * 1000))
+        return
+    with contextlib.suppress(ProcessLookupError):
+        os.kill(pid, signal.SIGTERM)
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline and pid_alive(pid):
+        time.sleep(0.1)
+    if pid_alive(pid):
+        with contextlib.suppress(ProcessLookupError):
+            os.kill(pid, signal.SIGKILL)
+
+
+def free_port() -> int:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
+
+
+# ---------------------------------------------------------------- HTTP
+
+_LOOPBACK = urllib.request.build_opener(urllib.request.ProxyHandler({}))  # never proxy loopback
+
+
+def http_get(url: str, headers: dict[str, str], timeout: float) -> tuple[int, bytes]:
+    req = urllib.request.Request(url, headers=headers)
+    try:
+        with _LOOPBACK.open(req, timeout=timeout) as r:
+            return r.status, r.read()
+    except urllib.error.HTTPError as e:
+        return e.code, b""
+
+
+def probe(state: dict[str, Any], timeout: float = 1.0) -> bool:
+    """True when the dashboard API answers with the recorded key."""
+    try:
+        code, _ = http_get(f"{state['api_url'].rstrip('/')}/api/telemetry/resources",
+                           {"x-api-key": state["api_key"]}, timeout)
+    except (OSError, KeyError, ValueError):
+        return False
+    return code == 200
+
+
+def live_state(path: Path | None = None, timeout: float = 1.0) -> dict[str, Any] | None:
+    """State of a running, answering dashboard; None if absent or dead."""
+    st = read_state(path)
+    if not st or not pid_alive(int(st.get("pid") or 0)):
+        return None
+    return st if probe(st, timeout) else None
+
+
+def query(path: str, state: dict[str, Any] | None = None, timeout: float = 10.0) -> Any:
+    """GET ``/api/telemetry/<path>`` (traces, spans, logs, resources) as parsed JSON."""
+    st = state or live_state()
+    if not st:
+        raise DashboardError("dashboard is not running (ci-lab dashboard up)")
+    code, body = http_get(f"{st['api_url'].rstrip('/')}/api/telemetry/{path.lstrip('/')}",
+                          {"x-api-key": st["api_key"]}, timeout)
+    if code != 200:
+        raise DashboardError(f"dashboard API returned HTTP {code}")
+    return json.loads(body)
+
+
+# ---------------------------------------------------------------- lifecycle
+
+def build_env(*, ui_port: int, otlp_port: int, browser_token: str, otlp_key: str,
+              api_key: str, grpc_port: int | None = None,
+              base: dict[str, str] | None = None) -> dict[str, str]:
+    env = {k: v for k, v in (os.environ if base is None else base).items()
+           if not k.startswith(("OTEL_", "Dashboard__", "ASPIRE_", "ASPNETCORE_", "DOTNET_DASHBOARD"))}
+    env.update({
+        "ASPNETCORE_URLS": f"http://127.0.0.1:{ui_port}",
+        "ASPIRE_DASHBOARD_OTLP_HTTP_ENDPOINT_URL": f"http://127.0.0.1:{otlp_port}",
+        "ASPIRE_ALLOW_UNSECURED_TRANSPORT": "true",
+        "ASPIRE_DASHBOARD_SUPPRESS_BROWSER_TOKEN_IN_OUTPUT": "true",
+        "Dashboard__Frontend__AuthMode": "BrowserToken",
+        "Dashboard__Frontend__BrowserToken": browser_token,
+        "Dashboard__Otlp__AuthMode": "ApiKey",
+        "Dashboard__Otlp__PrimaryApiKey": otlp_key,
+        "Dashboard__Api__Enabled": "true",
+        "Dashboard__Api__AuthMode": "ApiKey",
+        "Dashboard__Api__PrimaryApiKey": api_key,
+        "AllowedHosts": "127.0.0.1;localhost",
+    })
+    if grpc_port:
+        env["ASPIRE_DASHBOARD_OTLP_ENDPOINT_URL"] = f"http://127.0.0.1:{grpc_port}"
+    for k, v in TELEMETRY_LIMITS.items():
+        env[f"Dashboard__TelemetryLimits__{k}"] = v
+    return env
+
+
+_CHILDREN: list[subprocess.Popen] = []  # keep Popen objects alive (no ResourceWarning on GC)
+
+
+def _spawn(exe: Path, env: dict[str, str], log_path: Path) -> subprocess.Popen:
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    if not log_path.exists():
+        log_path.touch()
+        restrict_permissions(log_path)
+    with open(log_path, "ab") as logf:
+        kw: dict[str, Any] = {"stdin": subprocess.DEVNULL, "stdout": logf, "stderr": subprocess.STDOUT,
+                              "cwd": str(exe.parent), "env": env, "close_fds": True}
+        if os.name == "nt":
+            flags = (subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
+                     | subprocess.CREATE_NO_WINDOW)
+            try:
+                proc = subprocess.Popen([str(exe)], creationflags=flags | subprocess.CREATE_BREAKAWAY_FROM_JOB, **kw)
+            except OSError:
+                proc = subprocess.Popen([str(exe)], creationflags=flags, **kw)
+        else:
+            proc = subprocess.Popen([str(exe)], start_new_session=True, **kw)
+    _CHILDREN.append(proc)
+    return proc
+
+
+def _log_tail(p: Path, n: int = 20) -> str:
+    try:
+        return "\n".join(p.read_text(encoding="utf-8", errors="replace").splitlines()[-n:])
+    except OSError:
+        return ""
+
+
+def up(*, version: str | None = None, rid: str | None = None, trust_new: bool = False,
+       grpc: bool = False, wait: float = 60.0, path: Path | None = None,
+       spawn: Callable[[Path, dict[str, str], Path], Any] = _spawn) -> dict[str, Any]:
+    """Start (or reuse) the dashboard; returns the public (secret-free) state."""
+    sp = path or state_path()
+    cur = live_state(sp)
+    if cur:
+        return {**public(cur), "running": True, "already_running": True}
+    version = version or default_version()
+    rid = rid or detect_rid()
+    exe = ensure_installed(version, rid, trust_new=trust_new)
+    ui_port, otlp_port = free_port(), free_port()
+    grpc_port = free_port() if grpc else None
+    tokens = {f: secrets.token_urlsafe(32) for f in SECRET_FIELDS}
+    env = build_env(ui_port=ui_port, otlp_port=otlp_port, grpc_port=grpc_port, **tokens)
+    log_path = sp.with_name("dashboard.log")
+    proc = spawn(exe, env, log_path)
+    ui = f"http://127.0.0.1:{ui_port}"
+    state: dict[str, Any] = {
+        "pid": proc.pid, "version": version, "rid": rid, "exe": str(exe), "ui_url": ui,
+        "otlp_url": f"http://127.0.0.1:{otlp_port}", "api_url": ui,
+        "otlp_grpc_url": f"http://127.0.0.1:{grpc_port}" if grpc_port else None,
+        "log": str(log_path),
+        "started": _dt.datetime.now(_dt.UTC).isoformat(timespec="seconds"), **tokens,
+    }
+    write_state(state, sp)
+    deadline = time.monotonic() + wait
+    while time.monotonic() < deadline:
+        if proc.poll() is not None:
+            sp.unlink(missing_ok=True)
+            raise DashboardError(f"dashboard exited (rc={proc.returncode}); log tail:\n{_log_tail(log_path)}")
+        if probe(state, timeout=1.0):
+            return {**public(state), "running": True, "already_running": False}
+        time.sleep(0.25)
+    _terminate(proc.pid)
+    sp.unlink(missing_ok=True)
+    raise DashboardError(f"dashboard not ready after {wait:.0f}s; log tail:\n{_log_tail(log_path)}")
+
+
+def down(path: Path | None = None) -> dict[str, Any]:
+    """Stop the recorded dashboard — only if the pid's image is the recorded executable."""
+    sp = path or state_path()
+    st = read_state(sp)
+    if not st:
+        return {"stopped": False, "reason": "not running"}
+    pid = int(st.get("pid") or 0)
+    if not pid_alive(pid):
+        sp.unlink(missing_ok=True)
+        return {"stopped": False, "reason": "stale state removed"}
+    image = process_image(pid)
+    if not image or not st.get("exe") or not _same_file(image, st["exe"]):
+        sp.unlink(missing_ok=True)
+        return {"stopped": False, "reason": f"pid {pid} is not the recorded dashboard; state removed, process left alone"}
+    _terminate(pid)
+    if pid_alive(pid):
+        return {"stopped": False, "reason": f"pid {pid} did not exit"}
+    sp.unlink(missing_ok=True)
+    return {"stopped": True, "pid": pid}
+
+
+def status(path: Path | None = None) -> dict[str, Any]:
+    sp = path or state_path()
+    st = read_state(sp)
+    if not st:
+        return {"running": False, "state_file": str(sp)}
+    alive = pid_alive(int(st.get("pid") or 0))
+    return {**public(st), "running": alive, "ready": alive and probe(st), "state_file": str(sp)}
