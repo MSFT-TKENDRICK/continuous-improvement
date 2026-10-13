@@ -1,7 +1,7 @@
 [project]
-name = "order-support-evals"
+name = "ci-lab-harness"
 version = "0.2.0"
-description = "Self-improving order-support agent harness: Microsoft ASSERT evals, OES/RRSI experiments, Agent Lightning, SkillOpt-Sleep, Microsoft Agent Framework"
+description = "Self-improving agent harness: Microsoft ASSERT evals, OES/RRSI experiments, Agent Lightning, SkillOpt-Sleep, Microsoft Agent Framework"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [

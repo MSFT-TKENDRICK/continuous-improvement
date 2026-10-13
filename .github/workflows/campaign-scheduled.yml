@@ -127,12 +127,15 @@ jobs:
       - name: Run campaign rounds (publishing deferred)
         env:
           COPILOT_GITHUB_TOKEN: ${{ github.token }}
+          CI_LAB_TARGET_MODEL: ${{ vars.CI_LAB_TARGET_MODEL || 'gpt-5-mini' }}
+          CI_LAB_JUDGE_MODEL: ${{ vars.CI_LAB_JUDGE_MODEL || 's1/llamacpp/qwen3.5-4b' }}
+          CI_S1_LLAMA_URL: ${{ vars.CI_S1_LLAMA_URL }}
           CI_TELEMETRY: ${{ vars.CI_TELEMETRY }}
         run: |
           mkdir -p "$OUT"
-          common=(--profile copilot --repo "$REPO" --run-dir "$CI_RUN_DIR")
+          common=(--profile copilot --domain harness --repo "$REPO" --run-dir "$CI_RUN_DIR")
           uv run ci-lab campaign status "$CID" "${common[@]}" > /dev/null 2>&1 \
-            || uv run ci-lab campaign new "$CID" "${common[@]}"
+            || uv run ci-lab campaign new "$CID" "${common[@]}" --hyper 'rrsi_profile="harness"'
           uv run ci-lab campaign calibrate "$CID" "${common[@]}"
           # `--rounds` is absolute (1..N) and recorded rounds are skipped, so run ROUNDS more.
           done_rounds="$(uv run ci-lab campaign status "$CID" "${common[@]}" | jq '.rounds | length')"

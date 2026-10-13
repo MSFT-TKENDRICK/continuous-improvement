@@ -30,6 +30,11 @@ from ci_lab.template.marker import (
 DOC_REL = "docs/template.md"
 WORKFLOWS_REL = ".github/workflows"
 EVALS_REL = "evals/assert"
+HARNESS_MANIFEST_REL = "harness/harness.yaml"
+FROZEN_MANIFEST_REL = "src/ci_lab/harness_tree/manifest.yaml"
+HARNESS_POLICY_REL = "src/ci_lab/governance/policies/harness.acs.yaml"
+HARNESS_DATASET_REL = "evals/datasets/harness.yaml"
+SLEEP_TARGETS_REL = "src/ci_lab/sleep/targets.yaml"
 OPT_IN_VAR = "CI_HARNESS_ENABLED"
 _VARS_RE = re.compile(r"\bvars\.([A-Za-z_][A-Za-z0-9_]*)")
 _SECRETS_RE = re.compile(r"\bsecrets\.([A-Za-z_][A-Za-z0-9_]*)")
@@ -55,6 +60,10 @@ def _warn(name: str, detail: str, fix: str) -> Check:
 
 def _fail(name: str, detail: str, fix: str) -> Check:
     return Check(name, "FAIL", detail, fix)
+
+
+def _norm(text: str) -> str:
+    return text.replace("\r\n", "\n")
 
 
 # ---------------------------------------------------------------- checks
@@ -159,7 +168,7 @@ def check_settings(root: Path) -> list[Check]:
 
 def _suites(root: Path) -> list[tuple[Path, dict[str, Any]]]:
     out = []
-    for cfg in sorted((root / EVALS_REL).glob("*/eval_config.yaml")):
+    for cfg in sorted((root / EVALS_REL).glob("harness_*/eval_config.yaml")):
         try:
             out.append((cfg, yaml.safe_load(cfg.read_text(encoding="utf-8")) or {}))
         except yaml.YAMLError as e:
@@ -220,8 +229,8 @@ def check_test_sets(root: Path) -> list[Check]:
             continue
         rel = cfg.parent.relative_to(root).as_posix()
         pipeline = doc.get("pipeline") if isinstance(doc.get("pipeline"), dict) else {}
-        regen = f"generate and freeze it with ASSERT: `uv run order-support-evals run {rel}/eval_config.yaml`, " \
-                f"then copy artifacts/results/<suite name>/test_set.jsonl to {rel}/test_set.jsonl"
+        regen = (f"generate and freeze it with the configured ASSERT pipeline, then copy "
+                 f"artifacts/results/<suite name>/test_set.jsonl to {rel}/test_set.jsonl")
         if "test_set" in pipeline:
             generating += 1
             ts = cfg.parent / "test_set.jsonl"
@@ -242,13 +251,79 @@ def check_test_sets(root: Path) -> list[Check]:
             inf = judge.get("inference_set_path")
             if inf and not (cfg.parent / str(inf)).is_file():
                 out.append(_fail("test-sets", f"{rel}: judge-only inference set {inf} is missing",
-                                 "rebuild it (e.g. `uv run order-support-evals replay build`)"))
+                                 "rebuild it with the configured ASSERT replay pipeline"))
     if not generating:
         out.append(_fail("test-sets", "no generating ASSERT suite (pipeline.test_set) found",
                          "add a suite for your agent (docs/template.md#swap-in-your-own-agent)"))
     elif not out:
         out.append(_pass("test-sets", f"{generating} generating suites have frozen test sets"))
     return out
+
+
+def check_harness(root: Path) -> list[Check]:
+    """Validate the repo-root harness control plane and its offline/scheduled defaults."""
+    required = (
+        HARNESS_MANIFEST_REL, FROZEN_MANIFEST_REL, HARNESS_POLICY_REL,
+        HARNESS_DATASET_REL, SLEEP_TARGETS_REL,
+        ".github/workflows/campaign-scheduled.yml", ".github/workflows/sleep-nightly.yml",
+    )
+    missing = [rel for rel in required if not (root / rel).is_file()]
+    if missing:
+        return [_fail("harness", f"missing required harness files: {', '.join(missing)}",
+                      "restore the repo-root harness tree, frozen manifest, ACS policy and schedules")]
+    errors: list[str] = []
+    local = _norm((root / HARNESS_MANIFEST_REL).read_text(encoding="utf-8"))
+    frozen = _norm((root / FROZEN_MANIFEST_REL).read_text(encoding="utf-8"))
+    if local != frozen:
+        errors.append(f"{HARNESS_MANIFEST_REL} differs from {FROZEN_MANIFEST_REL}")
+    try:
+        manifest = yaml.safe_load(local) or {}
+        if manifest.get("format") != "ci_lab.harness.v1" or not manifest.get("required_agents"):
+            errors.append(f"{HARNESS_MANIFEST_REL} is not a frozen ci_lab.harness.v1 manifest")
+    except yaml.YAMLError:
+        errors.append(f"{HARNESS_MANIFEST_REL} is invalid YAML")
+    try:
+        from ci_lab.governance.acs import load_manifest
+
+        load_manifest((root / HARNESS_POLICY_REL).read_text(encoding="utf-8"))
+    except Exception as exc:  # noqa: BLE001 - doctor reports a local policy validation failure
+        errors.append(f"{HARNESS_POLICY_REL} is invalid ({type(exc).__name__})")
+    try:
+        dataset = yaml.safe_load((root / HARNESS_DATASET_REL).read_text(encoding="utf-8")) or {}
+        ci = (dataset.get("tiers") or {}).get("ci") or {}
+        if dataset.get("format") != "ci_lab.harness.dataset.v1":
+            errors.append(f"{HARNESS_DATASET_REL} has the wrong format")
+        if ci.get("profile") != "fake" or ci.get("judge") != "fake":
+            errors.append(f"{HARNESS_DATASET_REL} does not provide an offline fake CI tier")
+        suite_root = root / str(dataset.get("suite_root") or EVALS_REL)
+        case_ids = {
+            str(row.get("test_case_id"))
+            for path in suite_root.glob("harness_*/test_set.jsonl")
+            for line in path.read_text(encoding="utf-8").splitlines() if line.strip()
+            for row in [json.loads(line)]
+            if isinstance(row, dict) and row.get("test_case_id")
+        }
+        wanted = {
+            str(case_id)
+            for split in (dataset.get("splits") or {}).values() if isinstance(split, list)
+            for case_id in split
+        }
+        if not wanted or not wanted <= case_ids:
+            errors.append(f"{HARNESS_DATASET_REL} does not resolve to frozen harness cases")
+    except (OSError, ValueError, json.JSONDecodeError, yaml.YAMLError):
+        errors.append(f"{HARNESS_DATASET_REL} or its test sets are invalid")
+    campaign = (root / ".github/workflows/campaign-scheduled.yml").read_text(encoding="utf-8")
+    for token in ("--domain harness", 'rrsi_profile="harness"', "CI_LAB_TARGET_MODEL",
+                  "CI_LAB_JUDGE_MODEL", "CI_S1_LLAMA_URL"):
+        if token not in campaign:
+            errors.append(f"campaign-scheduled.yml is missing {token}")
+    sleep = (root / ".github/workflows/sleep-nightly.yml").read_text(encoding="utf-8")
+    targets = (root / SLEEP_TARGETS_REL).read_text(encoding="utf-8")
+    if "SkillOpt-Sleep v0.2.x" not in sleep or "harness/skills/" not in targets:
+        errors.append("sleep-nightly.yml/targets.yaml do not default to harness SkillOpt-Sleep")
+    if errors:
+        return [_fail("harness", "; ".join(errors), "restore the frozen harness defaults from the template")]
+    return [_pass("harness", "frozen manifest/policy valid; fake CI and scheduled campaign/sleep target harness")]
 
 
 def check_lint(root: Path) -> list[Check]:
@@ -267,7 +342,8 @@ def check_lint(root: Path) -> list[Check]:
 
 CHECKS: tuple[tuple[str, Callable[[Path], list[Check]]], ...] = (
     ("marker", check_marker), ("codeowners", check_codeowners), ("settings", check_settings),
-    ("judge", check_judge), ("test-sets", check_test_sets), ("lint", check_lint),
+    ("harness", check_harness), ("judge", check_judge), ("test-sets", check_test_sets),
+    ("lint", check_lint),
 )
 
 

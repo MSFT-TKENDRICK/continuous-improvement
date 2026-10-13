@@ -59,7 +59,7 @@ def _fake_repo(root: Path) -> Path:
     (sleep / "state.json").write_text(json.dumps({**tinit.DEFAULT_SLEEP_STATE, "night": 7, "accepted_total": 3}),
                                       encoding="utf-8")
     (sleep / "tasks.jsonl").write_text(
-        json.dumps({"format": tinit.TASKS_FORMAT, "project": "order-support", "reviewed": True}) + "\n"
+        json.dumps({"format": tinit.TASKS_FORMAT, "project": "harness", "reviewed": True}) + "\n"
         + json.dumps({"id": "t1", "reviewed": True}) + "\n", encoding="utf-8")
     (root / "experiments" / "holdout-looks.jsonl").write_text('{"dataset": "abc"}\n', encoding="utf-8")
     (root / "lessons").mkdir()
@@ -192,7 +192,7 @@ def test_reset_state_also_empties_example_state(repo: Path) -> None:
     assert any("held-out looks" in n for n in plan.notes)
     tinit.apply_plan(repo, plan)
     lines = (repo / "experiments" / "sleep" / "tasks.jsonl").read_text().splitlines()
-    assert len(lines) == 1 and json.loads(lines[0])["project"] == "order-support"
+    assert len(lines) == 1 and json.loads(lines[0])["project"] == "harness"
     assert not (repo / "experiments" / "holdout-looks.jsonl").exists()
     assert (repo / "evals" / "assert" / "s" / "test_set.jsonl").is_file()
     assert read_marker(repo)["reset_state"] is True
@@ -311,6 +311,14 @@ def test_repo_marker_is_the_template() -> None:
     assert marker is not None and marker["role"] in ("template", "derived")
     if marker["role"] == "template":
         assert marker["initialized"] is False and marker["template_repository"] == TEMPLATE_REPO
+
+
+def test_package_metadata_defaults_to_the_harness() -> None:
+    import tomllib
+
+    project = tomllib.loads((REPO / "pyproject.toml").read_text(encoding="utf-8"))["project"]
+    assert project["name"] == "ci-lab-harness"
+    assert "order-support" not in project["description"].lower()
 
 
 def test_parse_owners() -> None:
