@@ -12,27 +12,33 @@ from ci_lab.lessons_arm import cli
 from ci_lab.lessons_arm.bundle import dump_rule_file, read_rule_file
 from ci_lab.lessons_arm.features import LessonFeatures
 from ci_lab.lessons_arm.promote import PromotionError, gather_evidence, promote
-from ci_lab.lessons_arm.prose import ProseError, apply_deletion, is_redundant, propose_deletions, redundant_vocabulary
+from ci_lab.lessons_arm.prose import (
+    ProseError,
+    apply_deletion,
+    is_redundant,
+    propose_deletions,
+    redundant_vocabulary,
+)
 from ci_lab.lessons_arm.retire import apply_ablation, exposure, retirement_candidates
 from ci_lab.lessons_arm.strategy import COMMIT_TRAILER
 from ci_lab.lessons_arm.synth import synth_prior_call
 from ci_lab.rulespec import Fingerprint, LessonCluster, LessonEntry, RuleSpec
 
-RULE_FILE = "harness/guards/refund.yaml"
-SKILL = "harness/skills/refunds.md"
-SKILL_TEXT = """# Refunds
+RULE_FILE = "harness/guards/change.yaml"
+SKILL = "harness/skills/changes.md"
+SKILL_TEXT = """# Changes
 
-## Order lookup
-Issue_refund requires a prior successful lookup_order for the same order_id. Refund requests need a reason.
-- Call lookup_order for this order_id first, then retry issue_refund.
-- If the lookup fails, escalate to a human agent.
+## Resource inspection
+write_file requires a prior successful read_file for the same resource_id. Edit requests need a reason.
+- Call read_file for this resource_id first, then retry write_file.
+- If the inspection fails, escalate to a human agent.
 
 ```
-issue_refund requires lookup_order order_id
+write_file requires read_file resource_id
 ```
 
 ## Other
-Issue_refund requires a prior successful lookup_order for the same order_id.
+write_file requires a prior successful read_file for the same resource_id.
 """
 
 
@@ -40,11 +46,11 @@ def git(wt: Path, *args: str) -> str:
     return subprocess.run(["git", *args], cwd=wt, check=True, capture_output=True, text=True).stdout.strip()
 
 
-def make_rule(mode: str = "shadow", cid: str = "refund") -> RuleSpec:
-    c = LessonCluster(id=cid, fingerprint=Fingerprint(pin="p", oracle_rules=("refund.ineligible_order",)),
+def make_rule(mode: str = "shadow", cid: str = "change") -> RuleSpec:
+    c = LessonCluster(id=cid, fingerprint=Fingerprint(pin="p", oracle_rules=("harness.disallowed_write",)),
                       members=("a", "b"), families=("f1", "f2"), slices=("s1", "s2"), route="R2")
-    f = LessonFeatures(kind="prior_call", target_tool="issue_refund", prior_tool="lookup_order",
-                       subject_arg="order_id")
+    f = LessonFeatures(kind="prior_call", target_tool="write_file", prior_tool="read_file",
+                       subject_arg="resource_id")
     return synth_prior_call(c, f).model_copy(update={"mode": mode})
 
 
@@ -66,7 +72,7 @@ def repo(tmp_path: Path) -> tuple[Path, RuleSpec]:
 
 def decision(rule: RuleSpec, i: int, **kw: object) -> dict:
     return {"rule_id": rule.id, "rule_version": rule.version, "mode": "shadow", "action": "block",
-            "enforced": False, "step_index": 1, "target": "issue_refund", "attempt_digest": f"d{i}", **kw}
+            "enforced": False, "step_index": 1, "target": "write_file", "attempt_digest": f"d{i}", **kw}
 
 
 def write_jsonl(path: Path, rows: list[dict]) -> Path:
@@ -93,14 +99,14 @@ def test_promote_writes_patch_and_branch_without_touching_worktree(repo, tmp_pat
     wt, rule = repo
     dec, lab = evidence(tmp_path, rule)
     head = git(wt, "rev-parse", "HEAD")
-    res = promote(rule.id, dec, lab, repo=wt, branch="promote/refund")
+    res = promote(rule.id, dec, lab, repo=wt, branch="promote/change")
     assert res.verdict == "promote", res.reasons
     assert res.evidence["opportunities"] == 400 and res.evidence["fires"] == 20
     assert res.evidence["adjudicated_positives"] == 12 and res.evidence["stale_version_decisions"] == 1
     assert "-  mode: shadow" in res.patch and "+  mode: enforce" in res.patch and res.file == RULE_FILE
     assert git(wt, "rev-parse", "HEAD") == head and git(wt, "status", "--porcelain") == ""
     assert read_rule_file(wt / RULE_FILE).rules[0].mode == "shadow"
-    assert git(wt, "rev-parse", "promote/refund") == res.commit
+    assert git(wt, "rev-parse", "promote/change") == res.commit
     assert git(wt, "diff", "--name-only", head, res.commit) == RULE_FILE
     assert COMMIT_TRAILER in git(wt, "log", "-1", "--format=%B", res.commit)
     assert "mode: enforce" in git(wt, "show", f"{res.commit}:{RULE_FILE}")
@@ -125,9 +131,9 @@ def test_promote_fp_bound_and_intent_stratification(repo, tmp_path):
     res = promote(rule.id, dec, lab, repo=wt)
     assert res.verdict == "hold" and any("fp_ucb" in r for r in res.reasons)
     # stratified: aggregate passes but the sparse "exchange" stratum can't bound its FP rate
-    dec, lab = evidence(tmp_path, rule, opp=400, nights=4, intents=("refund", "refund", "refund", "exchange"))
+    dec, lab = evidence(tmp_path, rule, opp=400, nights=4, intents=("change", "change", "change", "exchange"))
     ev = gather_evidence(rule, dec, lab)
-    assert ev.stratified and set(ev.strata()) >= {"refund", "exchange"}
+    assert ev.stratified and set(ev.strata()) >= {"change", "exchange"}
     res = promote(rule.id, dec, lab, repo=wt)
     assert res.verdict == "hold" and any("stratum exchange" in r for r in res.reasons)
 
@@ -160,19 +166,19 @@ def test_prose_deletes_only_mechanically_redundant_sentences(repo):
     wt, _ = repo
     rule = make_rule("enforce")
     vocab = redundant_vocabulary([rule])
-    assert is_redundant("Issue_refund requires a prior successful lookup_order for the same order_id.", vocab)
-    assert not is_redundant("Refund requests need a reason.", vocab)
-    assert not is_redundant("If the lookup fails, escalate to a human agent.", vocab)
-    assert not is_redundant("You must always call lookup_order for this order_id before issue_refund.", vocab)
-    entry = LessonEntry(lesson_id="refund", rule_ids=[rule.id], status="enforced",
-                        prose_anchors=[f"{SKILL}#Order lookup", f"{SKILL}#Other"])
+    assert is_redundant("write_file requires a prior successful read_file for the same resource_id.", vocab)
+    assert not is_redundant("Edit requests need a reason.", vocab)
+    assert not is_redundant("If the inspection fails, escalate to a human agent.", vocab)
+    assert not is_redundant("You must always call read_file for this resource_id before write_file.", vocab)
+    entry = LessonEntry(lesson_id="change", rule_ids=[rule.id], status="enforced",
+                        prose_anchors=[f"{SKILL}#Resource inspection", f"{SKILL}#Other"])
     prop = propose_deletions(entry, [rule], root=wt)
-    assert [d.anchor for d in prop.deletions] == [f"{SKILL}#Order lookup"] * 2
+    assert [d.anchor for d in prop.deletions] == [f"{SKILL}#Resource inspection"] * 2
     new = prop.new_text[SKILL]
-    assert "Refund requests need a reason." in new and "escalate to a human agent" in new
-    assert "retry issue_refund" not in new and "issue_refund requires lookup_order order_id" in new  # code kept
+    assert "Edit requests need a reason." in new and "escalate to a human agent" in new
+    assert "retry write_file" not in new and "write_file requires read_file resource_id" in new  # code kept
     other = new.split("## Other", 1)[1]
-    assert "Issue_refund requires a prior successful" in other  # never empty a section
+    assert "write_file requires a prior successful" in other  # never empty a section
     assert prop.diff.startswith(f"--- a/{SKILL}")
     edit = apply_deletion(prop, wt)
     assert isinstance(edit, Edit) and edit.component == "skill" and edit.files == (SKILL,)
@@ -183,10 +189,10 @@ def test_prose_deletes_only_mechanically_redundant_sentences(repo):
 def test_prose_refuses_unenforced_lessons(repo):
     wt, rule = repo
     with pytest.raises(ProseError, match="only enforced"):
-        propose_deletions(LessonEntry(lesson_id="refund", rule_ids=[rule.id], status="shadow"), [rule], root=wt)
+        propose_deletions(LessonEntry(lesson_id="change", rule_ids=[rule.id], status="shadow"), [rule], root=wt)
     with pytest.raises(ProseError, match="shadow"):
-        propose_deletions(LessonEntry(lesson_id="refund", rule_ids=[rule.id], status="enforced"), [rule], root=wt)
-    entry = LessonEntry(lesson_id="refund", rule_ids=[rule.id], status="enforced", prose_anchors=["../x.md#h"])
+        propose_deletions(LessonEntry(lesson_id="change", rule_ids=[rule.id], status="enforced"), [rule], root=wt)
+    entry = LessonEntry(lesson_id="change", rule_ids=[rule.id], status="enforced", prose_anchors=["../x.md#h"])
     with pytest.raises(ProseError, match="escapes"):
         propose_deletions(entry, [make_rule("enforce")], root=wt)
 
@@ -194,10 +200,10 @@ def test_prose_refuses_unenforced_lessons(repo):
 def test_retirement_is_exposure_based_and_ablation_commits(repo, tmp_path):
     wt, rule = repo
     busy = make_rule("enforce", cid="busy")
-    rows = [{"kind": "opportunity", "target": "issue_refund", "n": 900},
+    rows = [{"kind": "opportunity", "target": "write_file", "n": 900},
             {"kind": "opportunity", "rule_id": "lsn.thin.prior", "n": 10}]
     rows += [decision(busy, i, action="block", enforced=True) for i in range(50)]
-    thin = make_rule(cid="thin").model_copy(update={"target": "cancel_order"})
+    thin = make_rule(cid="thin").model_copy(update={"target": "delete_file"})
     dec = write_jsonl(tmp_path / "d.jsonl", rows)
     ex = exposure([rule, busy, thin], [dec])
     assert ex[rule.id].opportunities == 900 and ex[busy.id].fires == 50 and ex[busy.id].blocks == 50

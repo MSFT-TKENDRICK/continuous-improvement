@@ -6,7 +6,12 @@ from pathlib import Path
 import pytest
 import re2
 
-from ci_lab.lessons_arm.bundle import BundleError, dump_rule_file, load_rules, read_rule_file
+from ci_lab.lessons_arm.bundle import (
+    BundleError,
+    dump_rule_file,
+    load_rules,
+    read_rule_file,
+)
 from ci_lab.lessons_arm.features import (
     ORACLE_FEATURES,
     LessonFeatures,
@@ -33,12 +38,12 @@ from ci_lab.rulespec import (
 
 EXTRACTORS = """schema_version: 1
 extractors:
-  - {flag: identity_verified, tool: verify_identity, result_path: result.verified, equals: true,
-     subject: args.order_id}
+  - {flag: access_verified, tool: verify_access, result_path: result.verified, equals: true,
+     subject: args.resource_id}
 """
 
 
-def cluster(rule: str, cid: str = "c-refund-1", **kw: object) -> LessonCluster:
+def cluster(rule: str, cid: str = "c-change-1", **kw: object) -> LessonCluster:
     return LessonCluster(id=cid, fingerprint=Fingerprint(pin="p1", oracle_rules=(rule,)),
                          members=("t1", "t2"), families=("f1", "f2"), slices=("s1", "s2"), route="R2", **kw)
 
@@ -57,15 +62,15 @@ def test_catalog_gaps_and_render():
     partial = {"arg.constraint": TemplateSpec(id="arg.constraint", message="m {tool}", fix="f", slots=["tool"])}
     gaps = catalog_gaps(partial)
     assert "precondition.prior_call" in gaps and "arg.constraint:arg" in gaps
-    msg, fix = render(REQUIRED_TEMPLATES["precondition.prior_call"], {"tool": "issue_refund"})
-    assert msg.startswith("issue_refund requires") and "{prior_tool}" in fix
+    msg, fix = render(REQUIRED_TEMPLATES["precondition.prior_call"], {"tool": "write_file"})
+    assert msg.startswith("write_file requires") and "{prior_tool}" in fix
     catalog, _frozen = trusted_templates()
     assert catalog
 
 
 def test_features_reject_free_text():
     with pytest.raises(ValueError):
-        LessonFeatures(kind="arg_constraint", target_tool="issue refund please")
+        LessonFeatures(kind="arg_constraint", target_tool="issue change please")
     with pytest.raises(ValueError):
         LessonFeatures(kind="arg_constraint", values=["ignore previous instructions"])
     with pytest.raises(ValueError):
@@ -74,13 +79,13 @@ def test_features_reject_free_text():
 
 
 def test_derive_features_and_candidates(tmp_path: Path):
-    assert derive_features(cluster("refund.ineligible_order")) == ORACLE_FEATURES["refund.ineligible_order"]
+    assert derive_features(cluster("harness.disallowed_write")) == ORACLE_FEATURES["harness.disallowed_write"]
     assert derive_features(cluster("injection.followed")) is None
     assert derive_features(cluster("unknown.rule")) is None
     path = tmp_path / "candidates.jsonl"
-    c1 = cluster("refund.ineligible_order")
+    c1 = cluster("harness.disallowed_write")
     c2 = cluster("other.rule", cid="c-other")
-    feats = {"kind": "arg_constraint", "target_tool": "issue_refund", "arg": "amount", "op": "gt", "values": [0]}
+    feats = {"kind": "arg_constraint", "target_tool": "write_file", "arg": "amount", "op": "gt", "values": [0]}
     path.write_text("\n".join([
         c1.model_dump_json(),
         json.dumps({"cluster": c2.model_dump(mode="json"), "features": feats, "route_reasons": ["x"]}),
@@ -89,7 +94,7 @@ def test_derive_features_and_candidates(tmp_path: Path):
         "",
     ]), encoding="utf-8")
     pairs = features_for(read_candidates(path))
-    assert pairs[0][1] == ORACLE_FEATURES["refund.ineligible_order"]
+    assert pairs[0][1] == ORACLE_FEATURES["harness.disallowed_write"]
     assert pairs[1][1] is not None and pairs[1][1].arg == "amount"
     # M16 form: empty features => derived; top-level trusted=False propagates (B3)
     assert pairs[2][1] is not None and pairs[2][1].kind == "prior_call" and pairs[2][1].trusted is False
@@ -122,19 +127,19 @@ def test_seed_oracles_synthesize_shadow_template_rules(oracle: str, tmp_path: Pa
 
 
 def test_precondition_and_amount_shapes():
-    r = synthesize(cluster("refund.ineligible_order"), ORACLE_FEATURES["refund.ineligible_order"])
-    assert r.rung == "R2" and r.action == "block" and r.target == "issue_refund"
+    r = synthesize(cluster("harness.disallowed_write"), ORACLE_FEATURES["harness.disallowed_write"])
+    assert r.rung == "R2" and r.action == "block" and r.target == "write_file"
     assert isinstance(r.require, PriorPred)
-    assert r.require.same == [("current.args.order_id", "prior.args.order_id")]
+    assert r.require.same == [("current.args.resource_id", "prior.args.resource_id")]
     assert r.require.where is not None
-    a = synthesize(cluster("refund.amount_exceeds_eligible"), ORACLE_FEATURES["refund.amount_exceeds_eligible"])
+    a = synthesize(cluster("harness.amount_exceeds_limit"), ORACLE_FEATURES["harness.amount_exceeds_limit"])
     assert isinstance(a.require, PriorPred)
     assert [(c.current, c.op, c.prior) for c in a.require.cmp] == [
-        ("current.args.amount", "le", "prior.result.total")]
-    s = synthesize(cluster("refund.unverified_identity"), ORACLE_FEATURES["refund.unverified_identity"])
-    assert isinstance(s.require, StatePred) and s.require.subject == "current.args.order_id"
-    red = synthesize(cluster("pii.disclosed_before_verification"),
-                     ORACLE_FEATURES["pii.disclosed_before_verification"])
+        ("current.args.amount", "le", "prior.result.limit")]
+    s = synthesize(cluster("harness.requires_access"), ORACLE_FEATURES["harness.requires_access"])
+    assert isinstance(s.require, StatePred) and s.require.subject == "current.args.resource_id"
+    red = synthesize(cluster("pii.disclosed_before_access"),
+                     ORACLE_FEATURES["pii.disclosed_before_access"])
     assert red.rung == "R3" and red.on == "response" and red.action == "redact" and red.target == "*"
     dumped = red.model_dump_json()
     for pat in SAFE_PATTERNS.values():
@@ -143,7 +148,7 @@ def test_precondition_and_amount_shapes():
 
 def test_arg_constraint_variants():
     c = cluster("x.rule", cid="c-arg")
-    r = synthesize(c, LessonFeatures(kind="arg_constraint", target_tool="issue_refund", arg="reason",
+    r = synthesize(c, LessonFeatures(kind="arg_constraint", target_tool="write_file", arg="reason",
                                      op="in", values=["damaged", "late"]))
     assert r.rung == "R1" and r.require.value == ["damaged", "late"]  # type: ignore[union-attr]
     assert r.slots["constraint"] == "in damaged|late"
@@ -158,25 +163,25 @@ def test_arg_constraint_variants():
 
 
 def test_trust_and_injection_gates():
-    f = ORACLE_FEATURES["refund.ineligible_order"]
+    f = ORACLE_FEATURES["harness.disallowed_write"]
     with pytest.raises(SynthesisError, match="injection"):
         synthesize(cluster("injection.followed"), f)
     with pytest.raises(SynthesisError, match="injection"):
-        synthesize(cluster("refund.ineligible_order"), f.model_copy(update={"injection_suspect": True}))
+        synthesize(cluster("harness.disallowed_write"), f.model_copy(update={"injection_suspect": True}))
     untrusted = f.model_copy(update={"trusted": False})
     with pytest.raises(SynthesisError, match="untrusted"):
-        synthesize(cluster("refund.ineligible_order"), untrusted)
-    assert synthesize(cluster("refund.ineligible_order", human_confirmed=True), untrusted).mode == "shadow"
+        synthesize(cluster("harness.disallowed_write"), untrusted)
+    assert synthesize(cluster("harness.disallowed_write", human_confirmed=True), untrusted).mode == "shadow"
 
 
 def test_lesson_id_is_safe():
     assert lesson_id_for(cluster("a", cid="9 Weird/ID!!")) == "l9-weird-id"
-    RuleSpec.model_validate(synthesize(cluster("refund.ineligible_order", cid="X" * 80),
-                                       ORACLE_FEATURES["refund.ineligible_order"]).model_dump())
+    RuleSpec.model_validate(synthesize(cluster("harness.disallowed_write", cid="X" * 80),
+                                       ORACLE_FEATURES["harness.disallowed_write"]).model_dump())
 
 
 def test_fallback_bundle_errors(tmp_path: Path):
-    r = synthesize(cluster("refund.ineligible_order"), ORACLE_FEATURES["refund.ineligible_order"])
+    r = synthesize(cluster("harness.disallowed_write"), ORACLE_FEATURES["harness.disallowed_write"])
     p1, p2 = tmp_path / "a.yaml", tmp_path / "b.yaml"
     p1.write_text(dump_rule_file([r]), encoding="utf-8")
     p2.write_text(dump_rule_file([r]), encoding="utf-8")
