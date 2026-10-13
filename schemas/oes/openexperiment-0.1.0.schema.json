@@ -1,0 +1,387 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openexperiment.org/schema/openexperiment-0.1.0.schema.json",
+  "title": "Open Experiment Standard",
+  "description": "OES v0.1.0 — a vendor-neutral, machine-readable standard for documenting, exchanging, archiving, and presenting online experiment designs, results, scorecards, decisions, and supporting artifacts.",
+  "type": "object",
+  "required": ["schemaVersion", "objectType", "experiment"],
+  "additionalProperties": true,
+  "properties": {
+    "schemaVersion": {
+      "type": "string",
+      "description": "Version of the OES standard the document conforms to.",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(-[0-9A-Za-z.-]+)?$"
+    },
+    "objectType": {
+      "type": "string",
+      "enum": ["experiment"],
+      "description": "Top-level object type. Reserved for future expansion."
+    },
+    "exportedAt": { "type": "string", "format": "date-time" },
+    "sourceSystem": { "type": "string" },
+    "sourceSystemVersion": { "type": "string" },
+    "canonicalUrl": { "type": "string", "format": "uri" },
+    "externalIds": {
+      "type": "object",
+      "additionalProperties": { "type": "string" }
+    },
+
+    "experiment": {
+      "type": "object",
+      "required": ["id", "title"],
+      "additionalProperties": true,
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "slug": { "type": "string" },
+        "title": { "type": "string", "minLength": 1 },
+        "summary": { "type": "string" },
+        "description": { "type": "string" },
+        "hypothesis": { "type": "string" },
+        "learningGoal": { "type": "string" },
+        "businessGoal": { "type": "string" },
+        "productArea": { "type": "string" },
+        "tags": { "type": "array", "items": { "type": "string" } },
+        "status": {
+          "type": "string",
+          "enum": [
+            "draft",
+            "planned",
+            "running",
+            "stopped",
+            "analyzed",
+            "decided",
+            "archived"
+          ]
+        },
+        "owner": { "type": "object" },
+        "stakeholders": { "type": "array", "items": { "type": "object" } },
+        "links": { "type": "array", "items": { "type": "object" } }
+      }
+    },
+
+    "design": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": [
+            "ab",
+            "abn",
+            "multivariate",
+            "factorial",
+            "holdout",
+            "switchback",
+            "bandit",
+            "quasi_experiment"
+          ]
+        },
+        "randomizationUnit": { "type": "string" },
+        "analysisUnit": { "type": "string" },
+        "assignmentMethod": { "type": "string" },
+        "hashAttribute": { "type": "string" },
+        "hashSalt": { "type": "string" },
+        "namespace": { "type": "string" },
+        "population": { "type": "string" },
+        "targetingRules": { "type": "array", "items": { "type": "object" } },
+        "exclusionRules": { "type": "array", "items": { "type": "object" } },
+        "trafficAllocation": { "type": "number", "minimum": 0, "maximum": 1 },
+        "variantAllocation": { "type": "object", "additionalProperties": { "type": "number" } },
+        "startDate": { "type": "string", "format": "date-time" },
+        "endDate": { "type": "string", "format": "date-time" },
+        "exposureDefinition": { "type": "string" },
+        "triggerDefinition": { "type": "string" },
+        "rampSchedule": { "type": "array", "items": { "type": "object" } },
+        "concurrentExperiments": { "type": "array", "items": { "type": "string" } },
+        "interferenceRisk": { "type": "object" },
+        "power": { "type": "number", "minimum": 0, "maximum": 1 },
+        "minimumDetectableEffect": { "type": "number" },
+        "alpha": { "type": "number", "minimum": 0, "maximum": 1 },
+        "multipleTestingPolicy": {
+          "type": "string",
+          "enum": ["none", "bonferroni", "fdr", "hierarchical", "metric_family", "benjamini_hochberg", "custom"]
+        },
+        "peekingPolicy": {
+          "type": "string",
+          "enum": ["fixed_horizon", "sequential", "always_valid", "bayesian_monitoring", "informal"]
+        },
+        "stoppingRule": { "type": "string" }
+      }
+    },
+
+    "variants": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "key"],
+        "additionalProperties": true,
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "key": { "type": "string", "minLength": 1 },
+          "name": { "type": "string" },
+          "role": { "type": "string", "enum": ["control", "treatment", "holdout", "baseline"] },
+          "description": { "type": "string" },
+          "allocation": { "type": "number", "minimum": 0, "maximum": 1 },
+          "featureFlagKeys": { "type": "array", "items": { "type": "string" } },
+          "config": { "type": "object" },
+          "screenshots": { "type": "array", "items": { "type": "object" } },
+          "urls": { "type": "array", "items": { "type": "object" } },
+          "codeReferences": { "type": "array", "items": { "type": "object" } }
+        }
+      }
+    },
+
+    "metrics": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "name"],
+        "additionalProperties": true,
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "name": { "type": "string", "minLength": 1 },
+          "description": { "type": "string" },
+          "role": {
+            "type": "string",
+            "enum": ["primary", "secondary", "guardrail", "diagnostic", "data_quality", "invariant"]
+          },
+          "direction": {
+            "type": "string",
+            "enum": ["increase_is_good", "decrease_is_good", "no_change_expected", "two_sided"]
+          },
+          "type": {
+            "type": "string",
+            "enum": ["conversion", "revenue", "count", "duration", "ratio", "retention", "percentile", "custom"]
+          },
+          "unit": { "type": "string" },
+          "numerator": { "type": "object" },
+          "denominator": { "type": "object" },
+          "aggregation": {
+            "type": "string",
+            "enum": ["mean", "sum", "ratio", "percentile", "capped_mean", "winsorized_mean"]
+          },
+          "analysisWindow": { "type": "object" },
+          "dataSource": { "type": "object" },
+          "sql": { "type": "string" },
+          "filters": { "type": "array", "items": { "type": "object" } },
+          "capping": { "type": "object" },
+          "covariates": { "type": "array", "items": { "type": "object" } },
+          "owner": { "type": "object" }
+        }
+      }
+    },
+
+    "analysis": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "method": {
+          "type": "string",
+          "enum": ["frequentist", "bayesian", "sequential", "cuped", "diff_in_diff", "custom"]
+        },
+        "model": { "type": "string" },
+        "varianceEstimator": {
+          "type": "string",
+          "enum": ["naive", "delta_method", "cluster_robust", "sandwich", "bootstrap"]
+        },
+        "confidenceLevel": { "type": "number", "minimum": 0, "maximum": 1 },
+        "alpha": { "type": "number", "minimum": 0, "maximum": 1 },
+        "prior": { "type": "object" },
+        "adjustmentMethod": { "type": "string" },
+        "multipleComparisonCorrection": { "type": "string" },
+        "segmentation": { "type": "array", "items": { "type": "string" } },
+        "dimensionBreakdowns": { "type": "array", "items": { "type": "string" } },
+        "missingDataHandling": { "type": "string" },
+        "outlierHandling": { "type": "string" },
+        "queryReferences": { "type": "array", "items": { "type": "object" } },
+        "generatedAt": { "type": "string", "format": "date-time" }
+      }
+    },
+
+    "results": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "sampleSizes": { "type": "object", "additionalProperties": { "type": "number" } },
+        "exposures": { "type": "object", "additionalProperties": { "type": "number" } },
+        "metricResults": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["metricId", "comparison"],
+            "additionalProperties": true,
+            "properties": {
+              "metricId": { "type": "string", "minLength": 1 },
+              "role": { "type": "string" },
+              "comparison": {
+                "type": "object",
+                "required": ["baselineVariantId", "variantId"],
+                "properties": {
+                  "baselineVariantId": { "type": "string" },
+                  "variantId": { "type": "string" }
+                }
+              },
+              "baselineValue": { "type": "number" },
+              "variantValue": { "type": "number" },
+              "absoluteDifference": { "type": "number" },
+              "relativeDifference": { "type": "number" },
+              "standardError": { "type": "number" },
+              "confidenceInterval": {
+                "type": "object",
+                "properties": {
+                  "level": { "type": "number", "minimum": 0, "maximum": 1 },
+                  "lower": { "type": "number" },
+                  "upper": { "type": "number" }
+                }
+              },
+              "credibleInterval": {
+                "type": "object",
+                "properties": {
+                  "level": { "type": "number", "minimum": 0, "maximum": 1 },
+                  "lower": { "type": "number" },
+                  "upper": { "type": "number" }
+                }
+              },
+              "pValue": { "type": "number", "minimum": 0, "maximum": 1 },
+              "qValue": { "type": "number", "minimum": 0, "maximum": 1 },
+              "probabilityOfImprovement": { "type": "number", "minimum": 0, "maximum": 1 },
+              "expectedLoss": { "type": "number" },
+              "statisticalPowerObserved": { "type": "number", "minimum": 0, "maximum": 1 },
+              "resultStatus": {
+                "type": "string",
+                "enum": ["positive", "negative", "neutral", "inconclusive", "invalid"]
+              },
+              "decisionImpact": {
+                "type": "string",
+                "enum": ["supports_ship", "blocks_ship", "needs_followup", "informational"]
+              }
+            }
+          }
+        },
+        "segmentResults": { "type": "array", "items": { "type": "object" } },
+        "timeSeriesResults": { "type": "array", "items": { "type": "object" } },
+        "variantComparisons": { "type": "array", "items": { "type": "object" } }
+      }
+    },
+
+    "scorecard": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "summary": { "type": "string" },
+        "primaryOutcome": { "type": "object" },
+        "guardrailOutcomes": { "type": "array", "items": { "type": "object" } },
+        "secondaryOutcomes": { "type": "array", "items": { "type": "object" } },
+        "qualityStatus": {
+          "type": "string",
+          "enum": ["valid", "warning", "invalid", "needs_review"]
+        },
+        "overallResult": {
+          "type": "string",
+          "enum": ["win", "loss", "neutral", "mixed", "inconclusive", "invalid"]
+        },
+        "recommendedAction": {
+          "type": "string",
+          "enum": ["ship", "do_not_ship", "iterate", "rerun", "continue_running", "roll_back"]
+        },
+        "keyFindings": { "type": "array", "items": { "type": "string" } },
+        "risks": { "type": "array", "items": { "type": "string" } },
+        "presentationNotes": { "type": "string" },
+        "charts": { "type": "array", "items": { "type": "object" } }
+      }
+    },
+
+    "decision": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "status": { "type": "string", "enum": ["pending", "decided", "superseded"] },
+        "outcome": {
+          "type": "string",
+          "enum": ["ship", "do_not_ship", "iterate", "rerun", "rollback", "partial_rollout"]
+        },
+        "rationale": { "type": "string" },
+        "decidedBy": { "type": "object" },
+        "decidedAt": { "type": "string", "format": "date-time" },
+        "followUps": { "type": "array", "items": { "type": "object" } },
+        "rolloutPlan": { "type": "object" },
+        "productChanges": { "type": "string" },
+        "businessImpactEstimate": { "type": "object" }
+      }
+    },
+
+    "qualityChecks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["checkType"],
+        "additionalProperties": true,
+        "properties": {
+          "checkType": { "type": "string", "minLength": 1 },
+          "status": { "type": "string", "enum": ["pass", "warn", "fail", "not_run"] },
+          "severity": { "type": "string", "enum": ["low", "medium", "high", "critical"] },
+          "observed": {},
+          "expected": {},
+          "pValue": { "type": "number", "minimum": 0, "maximum": 1 },
+          "message": { "type": "string" }
+        }
+      }
+    },
+
+    "artifacts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["type", "uri"],
+        "additionalProperties": true,
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "chart",
+              "screenshot",
+              "sql",
+              "notebook",
+              "csv",
+              "dashboard",
+              "slide",
+              "image",
+              "html_report"
+            ]
+          },
+          "title": { "type": "string" },
+          "description": { "type": "string" },
+          "uri": { "type": "string" },
+          "mimeType": { "type": "string" },
+          "generatedAt": { "type": "string", "format": "date-time" },
+          "source": { "type": "string" },
+          "hash": { "type": "string" }
+        }
+      }
+    },
+
+    "provenance": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "createdBy": { "type": "object" },
+        "exportedBy": { "type": "object" },
+        "analysisGeneratedBy": { "type": "string" },
+        "dataSources": { "type": "array", "items": { "type": "object" } },
+        "queryIds": { "type": "array", "items": { "type": "string" } },
+        "codeVersion": { "type": "string" },
+        "metricDefinitionVersion": { "type": "string" },
+        "assignmentSource": { "type": "object" },
+        "exposureSource": { "type": "object" },
+        "resultHash": { "type": "string" },
+        "attachmentsHash": { "type": "string" }
+      }
+    },
+
+    "extensions": {
+      "type": "object",
+      "description": "Namespaced vendor-specific fields. Importers MUST safely ignore unknown extensions.",
+      "additionalProperties": true
+    }
+  }
+}
