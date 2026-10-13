@@ -6,7 +6,7 @@ from __future__ import annotations
 from typing import Any
 
 DOMAIN_CHOICES = ("order_support", "harness")
-DEFAULT_DOMAIN = "order_support"
+DEFAULT_DOMAIN = "harness"
 
 
 def get_domain(name: str = DEFAULT_DOMAIN, **kwargs: Any) -> Any:

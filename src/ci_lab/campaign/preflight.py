@@ -7,8 +7,10 @@ spend budget if a model the campaign will use is not available.
 * the lesson synthesizer when the ``guard`` strategy is enabled;
 * the optimizer LM (``CI_LAB_OPTIMIZER_MODEL``) for GEPA/SkillOpt/AGL. AGL uses the Copilot
   chat-client factory directly; GEPA/SkillOpt also check their copilot-serve endpoint;
-* the order agent's model when ``ORDER_AGENT_PROFILE=copilot`` (``model.id`` of the incumbent
-  harness ``agent.yaml``), or ``ORDER_AGENT_MODEL`` at ``OPENAI_API_BASE`` otherwise;
+* for the self-hosted harness, the pinned target model in ``CI_LAB_TARGET_MODEL``;
+* for the legacy order-support domain, the order agent's model when
+  ``ORDER_AGENT_PROFILE=copilot`` (``model.id`` of the incumbent harness ``agent.yaml``),
+  or ``ORDER_AGENT_MODEL`` at ``OPENAI_API_BASE`` otherwise;
 * the ASSERT tester (``CI_ASSERT_MODEL`` or each suite's ``default_model``) at ``OPENAI_API_BASE``.
 
 Copilot-routed ids are checked against the Copilot SDK's ``list_models()``; OpenAI-compatible
@@ -48,6 +50,7 @@ SERVE_HINT = ("point CI_COPILOT_SERVE_URL/CI_COPILOT_SERVE_KEY_FILE at a copilot
 ORDER_HINT = "the incumbent harness agent.yaml model.id (a committed harness change)"
 ORDER_OFFLINE_HINT = "ORDER_AGENT_MODEL=openai/<served id>"
 TESTER_HINT = "CI_ASSERT_MODEL=openai/<served id>"
+TARGET_HINT = "CI_LAB_TARGET_MODEL=<copilot model id>"
 OFFLINE_BASE_ENVS = ("OPENAI_API_BASE", "OPENAI_BASE_URL")
 
 
@@ -118,9 +121,9 @@ def _offline_endpoint(env: Mapping[str, str]) -> tuple[str, str] | None:
 
 def campaign_model_plan(hyper: Mapping[str, Any], *, env: Mapping[str, str] | None = None,
                         harness_dir: Path | None = None, evals_dir: Path | None = None,
-                        tester_model: str | None = None, meta_harness_dir: Path | None = None) -> ModelPlan:
+                        tester_model: str | None = None, meta_harness_dir: Path | None = None,
+                        domain_name: str = "harness") -> ModelPlan:
     """Every model a ``copilot``-profile campaign with ``hyper`` will use (see module doc)."""
-    from ci_lab.domain.order_support import ASSERT_MODEL_ENV, HARNESS_ROOT, REPO_ROOT
     from ci_lab.optim import lm
 
     env = os.environ if env is None else env
@@ -140,6 +143,23 @@ def campaign_model_plan(hyper: Mapping[str, Any], *, env: Mapping[str, str] | No
                                           f"{SERVE_HINT}") from exc
             served_users = "optimizer LM (" + "/".join(sorted(served_optimizers)) + ")"
             plan.serve(base, key, ModelUse(model, served_users, f"{OPTIMIZER_HINT}, or {SERVE_HINT}"))
+    if domain_name == "harness":
+        from ci_lab.domain.harness import JUDGE_MODEL_ENV, S1_URL_ENV, TARGET_MODEL_ENV
+
+        target = env.get(TARGET_MODEL_ENV, "").strip()
+        judge = env.get(JUDGE_MODEL_ENV, "").strip()
+        judge_url = env.get(S1_URL_ENV, "").strip()
+        missing = [name for name, value in ((TARGET_MODEL_ENV, target), (JUDGE_MODEL_ENV, judge),
+                                            (S1_URL_ENV, judge_url)) if not value]
+        if missing:
+            raise ModelPreflightError(
+                "live harness campaigns require pinned target and System-1 judge settings: "
+                + ", ".join(missing)
+            )
+        plan.copilot.append(ModelUse(target, "self-hosted harness target", TARGET_HINT))
+        return plan
+    from ci_lab.domain.order_support import ASSERT_MODEL_ENV, HARNESS_ROOT, REPO_ROOT
+
     offline = _offline_endpoint(env)
     if (env.get("ORDER_AGENT_PROFILE", "").strip().lower() or "offline") == "copilot":
         harness = Path(harness_dir) if harness_dir is not None else REPO_ROOT / HARNESS_ROOT
@@ -160,7 +180,7 @@ def campaign_model_plan(hyper: Mapping[str, Any], *, env: Mapping[str, str] | No
 def make_preflight(profile: Profile | str, *, harness_dir: Path | None = None, evals_dir: Path | None = None,
                    tester_model: str | None = None, env: Mapping[str, str] | None = None,
                    list_models: ListModels | None = None, fetch: ServedModels | None = None,
-                   meta_harness_dir: Path | None = None) -> Preflight | None:
+                   meta_harness_dir: Path | None = None, domain_name: str = "harness") -> Preflight | None:
     """The campaign preflight for ``profile``: ``None`` for ``fake``/``offline`` (no Copilot models).
 
     ``env`` is read when the preflight runs (default ``os.environ``); ``list_models``/``fetch``
@@ -170,7 +190,8 @@ def make_preflight(profile: Profile | str, *, harness_dir: Path | None = None, e
 
     async def preflight(hyper: Mapping[str, Any]) -> None:
         plan = campaign_model_plan(hyper, env=env, harness_dir=harness_dir, evals_dir=evals_dir,
-                                   tester_model=tester_model, meta_harness_dir=meta_harness_dir)
+                                   tester_model=tester_model, meta_harness_dir=meta_harness_dir,
+                                   domain_name=domain_name)
         await check_copilot_models(plan.copilot, list_models=list_models)
         for base, key, uses in plan.served:
             await asyncio.to_thread(check_served_models, base, key, uses, fetch=fetch)

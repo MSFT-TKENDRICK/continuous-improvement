@@ -383,7 +383,7 @@ def wired_deps(profile: Profile | str, *, run_root: Path, ledger_dir: Path | Non
                repo: str = "example/harness", dry_run_publish: bool = False, repo_root: Path | None = None,
                domain: Domain | None = None, client_factory: ClientFactory | None = None,
                wt_root: Path | None = None, incumbent_ref: str = "HEAD", leak_corpus: LeakCorpus | None = None,
-               meta_harness_dir: Path | None = None, domain_name: str = "order_support",
+               meta_harness_dir: Path | None = None, domain_name: str = "harness",
                **overrides: Any) -> CampaignDeps:
     """:class:`CampaignDeps` for ``copilot``/``offline`` (``fake`` lives in :mod:`.fakes`).
 
@@ -440,6 +440,6 @@ def wired_deps(profile: Profile | str, *, run_root: Path, ledger_dir: Path | Non
         kwargs["preflight"] = make_preflight(
             profile, harness_dir=gitops.repo / harness_root(domain), evals_dir=getattr(inner, "evals_dir", None),
             tester_model=getattr(getattr(inner, "runner", None), "tester_model", None),
-            meta_harness_dir=meta_harness_dir)
+            meta_harness_dir=meta_harness_dir, domain_name=domain_name)
     kwargs.update(overrides)
     return CampaignDeps(**kwargs)

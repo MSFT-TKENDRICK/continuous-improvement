@@ -35,7 +35,7 @@ from ci_lab.contracts import (
 )
 from ci_lab.oes.validate import validate_envelope
 from ci_lab.rrsi import stats
-from ci_lab.rrsi.params import Hyperparams
+from ci_lab.rrsi.params import HARNESS_STRATEGIES, Hyperparams
 
 PIN = EvaluatorPin("5eedc0de", "stub-judge", "fake")
 CASES = tuple(f"c{i:02d}" for i in range(12))
@@ -80,14 +80,14 @@ def test_hyperparams_maps_campaign_keys() -> None:
     hp = rrsi_wiring.hyperparams(merge_hyper({"arms": 3, "max_rounds": 5, "k": 2, "seed": 7}), delta=0.1)
     assert isinstance(hp, Hyperparams)
     assert (hp.n_arms, hp.T, hp.k, hp.seed, hp.delta) == (3, 5, 2, 7, 0.1)
-    assert hp.strategies == STRATEGIES  # all strategies (incl. guard) by default; floor stays feasible
+    assert hp.strategies == HARNESS_STRATEGIES
     assert "agl" in defaults.DEFAULT_HYPER["strategies"]
     assert len(hp.strategies) <= hp.n_arms * hp.strategy_floor_every
     assert hp.b_max > hp.b_min  # no fixed budget -> RRSI anneals b_max -> b_min
     fixed = rrsi_wiring.hyperparams(merge_hyper({"budget": 2, "rrsi": {"n_bootstrap": 500}}))
     assert (fixed.b_min, fixed.b_max, fixed.n_bootstrap) == (2, 2, 500)
     one = rrsi_wiring.hyperparams(merge_hyper({"arms": 1}))
-    assert one.strategy_floor_every == len(STRATEGIES)
+    assert one.strategy_floor_every == len(HARNESS_STRATEGIES)
 
 
 def test_old_history_rows_parse_with_defaults() -> None:
@@ -131,22 +131,22 @@ def test_schedule_thompson_allocates_all_strategies_with_floor() -> None:
         directives = rrsi_wiring.schedule(round_no, hyper(round_no, history=history), history)
         assert [d["arm"] for d in directives] == ["v1", "v2"]
         for d in directives:
-            assert d["strategy"] in STRATEGIES and d["budget"] >= 1
+            assert d["strategy"] in HARNESS_STRATEGIES and d["budget"] >= 1
             assert d["strategy_reason"] in ("floor", "thompson")
-            assert (d["component"] == "guard") == (d["strategy"] == "guard")
+            assert d["component"] != "guard"
             assert {"explore", "avoid", "stalled", "focus"} <= set(d)
         per_round.append([d["strategy"] for d in directives])
         winner = next((d["arm"] for d in directives if d["strategy"] == "gepa"), None)
         history.append(_row(round_no, directives, inc, winner))
         inc = history[-1]["score_next"]
     used = {s for r in per_round for s in r}
-    assert used == set(STRATEGIES)
+    assert used == set(HARNESS_STRATEGIES)
     first_floor = [s for round_strategies in per_round[:3] for s in round_strategies]
-    assert set(first_floor) == set(STRATEGIES)  # never-run strategies are floored first
+    assert set(first_floor) == set(HARNESS_STRATEGIES)  # never-run harness strategies are floored first
     hp = rrsi_wiring.hyperparams(merge_hyper({}))
     k = hp.strategy_floor_every
     for i in range(len(per_round) - k + 1):  # every strategy gets >= 1 arm in any K consecutive rounds
-        assert {s for r in per_round[i:i + k] for s in r} == set(STRATEGIES), per_round
+        assert {s for r in per_round[i:i + k] for s in r} == set(HARNESS_STRATEGIES), per_round
     # Budget anneals from b_max to b_min over T rounds.
     first = rrsi_wiring.schedule(1, hyper(1), [])[0]["budget"]
     last = rrsi_wiring.schedule(8, hyper(8, history=history), history)[0]["budget"]
@@ -165,7 +165,7 @@ def test_schedule_respects_strategy_subset_and_fixed_budget() -> None:
 def test_select_ships_clearly_better_arm() -> None:
     inc = ev(0.2)
     arms = {"v1": arm("v1", 0.9), "v2": arm("v2", 0.25)}
-    v = rrsi_wiring.select(inc, arms, 0.05, hyper())
+    v = rrsi_wiring.select(inc, arms, 0.05, hyper(rrsi_profile="local"))
     assert v["decision"] == "ship" and v["winner"] == "v1"
     assert v["score_next"] == pytest.approx(0.9) and v["incumbent_score"] == pytest.approx(0.2)
     t1 = next(t for t in v["trace"] if t["arm"] == "v1")
@@ -221,8 +221,9 @@ def test_select_excludes_sre_vetoed_strategy_without_changing_math() -> None:
     inc = ev(0.2)
     arms = {"v1": arm("v1", 0.95, strategy="gepa"), "v2": arm("v2", 0.9), "v3": arm("v3", 0.25)}
     rows = _failed_rows("gepa", 3)  # gepa error budget (3 failures) exhausted -> circuit break
-    v = rrsi_wiring.select(inc, arms, 0.05, hyper(4, history=rows))
-    subset = rrsi_wiring.select(inc, {k: a for k, a in arms.items() if k != "v1"}, 0.05, hyper(4, history=rows))
+    v = rrsi_wiring.select(inc, arms, 0.05, hyper(4, history=rows, rrsi_profile="local"))
+    subset = rrsi_wiring.select(inc, {k: a for k, a in arms.items() if k != "v1"}, 0.05,
+                                hyper(4, history=rows, rrsi_profile="local"))
     assert v["sre_vetoed"] == ["v1"] and v["winner"] == "v2" == subset["winner"]
     assert {k: v[k] for k in ("decision", "score_next", "s_star", "rrsi")} == \
         {k: subset[k] for k in ("decision", "score_next", "s_star", "rrsi")}
@@ -230,7 +231,8 @@ def test_select_excludes_sre_vetoed_strategy_without_changing_math() -> None:
     assert v["trace"][-1] == {"arm": "v1", "admissible": False, "evaluated": False, "reason": "sre_vetoed",
                               "reasons": ["sre_vetoed"]}
     # Two failures: budget not yet exhausted -> output identical to the pre-governance selection.
-    plain = rrsi_wiring.select(inc, arms, 0.05, hyper(3, history=_failed_rows("gepa", 2)))
+    plain = rrsi_wiring.select(inc, arms, 0.05,
+                               hyper(3, history=_failed_rows("gepa", 2), rrsi_profile="local"))
     assert "sre_vetoed" not in plain and plain["winner"] == "v1"
     # Every arm vetoed: no crash, nothing ships.
     v_all = rrsi_wiring.select(inc, {"v1": arms["v1"]}, 0.05, hyper(4, history=rows))
@@ -291,7 +293,7 @@ def _incumbent(score: float) -> ArmResult:
 def test_round_envelope_validates_and_merges_extensions() -> None:
     arms = {"v1": arm("v1", 0.9), "v2": arm("v2", 0.25)}
     inc = _incumbent(0.2)
-    sel = rrsi_wiring.select(inc.eval, arms, 0.05, hyper())  # type: ignore[arg-type]
+    sel = rrsi_wiring.select(inc.eval, arms, 0.05, hyper(rrsi_profile="local"))  # type: ignore[arg-type]
     rec = _round_record(sel, arms, inc)
     ext = {"com.example.note": {"note": "extra evidence"}}
     doc = rrsi_wiring.build_envelope("round", {**rec, "extensions": ext})
@@ -359,7 +361,7 @@ def test_wired_deps_offline_uses_rrsi_adapters_and_agl_journal(tmp_path: Path, n
     from ci_lab.agl.journal import FileRolloutJournal
 
     deps = wired_deps("offline", run_root=tmp_path / "runs", ledger_dir=tmp_path / "experiments",
-                      client_factory=_no_client, wt_root=tmp_path / "wt")
+                      client_factory=_no_client, wt_root=tmp_path / "wt", domain_name="order_support")
     assert deps.schedule is rrsi_wiring.schedule and deps.select is rrsi_wiring.select
     assert deps.calibrate_delta is rrsi_wiring.calibrate_delta and deps.confirm_test is rrsi_wiring.confirm_test
     assert deps.build_envelope is rrsi_wiring.build_envelope
@@ -395,6 +397,8 @@ def test_campaign_round_through_rrsi_adapters_writes_valid_envelopes(tmp_path: P
                      calibrate_delta=rrsi_wiring.calibrate_delta, confirm_test=rrsi_wiring.confirm_test,
                      build_envelope=rrsi_wiring.build_envelope)
     camp = Campaign.new(CID, "fake", {"arms": 2, "aa_repeats": 5, "max_rounds": 4,
+                                      "rrsi_profile": "local",
+                                      "strategies": list(STRATEGIES),
                                       "rrsi": {"n_bootstrap": 500}},
                         deps=deps, run_root=tmp_path / "runs")
     assert asyncio.run(camp.calibrate()) == pytest.approx(0.25)
