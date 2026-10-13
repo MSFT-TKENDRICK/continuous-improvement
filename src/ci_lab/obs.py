@@ -130,7 +130,9 @@ def carrier() -> dict[str, str]:
 @contextmanager
 def use_carrier(headers: Mapping[str, str] | None) -> Iterator[None]:
     """Serve one request/work item inside the caller's trace context; always detaches."""
-    token = otel_context.attach(propagate.extract(dict(headers or {})))
+    token = otel_context.attach(
+        propagate.extract(dict(headers or {}), context=otel_context.Context())
+    )
     try:
         yield
     finally:
