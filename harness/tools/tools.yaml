@@ -1,0 +1,18 @@
+# Per-agent tool exposure (format ci_lab.harness.tools.v1), evolvable. Listing an agent exposes only
+# the listed tools, each of which its agents/<name>.yaml must already bind (no new capabilities);
+# the terminal submit_* tool must stay. A description replaces the bound function's own; null keeps it.
+format: ci_lab.harness.tools.v1
+agents:
+  analyst: {read_brief: null, list_documents: null, read_history: null, submit_analysis: null}
+  proposer:
+    read_brief: null
+    list_documents: null
+    read_history: null
+    list_files: null
+    read_file: null
+    write_file: null
+    commit_edit: null
+    submit_proposal_done: null
+  reflector: {read_brief: null, list_documents: null, read_history: null, submit_reflection: null}
+  failure_analyst: {read_brief: null, list_documents: null, read_history: null, list_files: null, read_file: null}
+  student: {list_files: null, read_file: null, write_file: null, submit_output: null}

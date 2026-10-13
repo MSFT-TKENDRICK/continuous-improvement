@@ -1,0 +1,16 @@
+# Target-agent execution knobs (format ci_lab.harness.loops.v1), evolvable. Values above the frozen
+# caps in harness.yaml (caps.agents / caps.code_mode) fail `ci-lab harness validate` and are clamped
+# at load. Campaign retries, critic attempts and taskgraph/bus voters are frozen in src/.
+#   max_nudges      re-prompts when a run ends without the terminal submit_* call
+#   max_tool_calls  tool calls per run (the terminal submit_* tool is not counted)
+#   max_turns       model calls per run, nudges included
+format: ci_lab.harness.loops.v1
+agents:
+  analyst: {max_nudges: 2, max_tool_calls: 40, max_turns: 20}
+  proposer: {max_nudges: 2, max_tool_calls: 80, max_turns: 40}
+  reflector: {max_nudges: 2, max_tool_calls: 40, max_turns: 20}
+  failure_analyst: {max_tool_calls: 40, max_turns: 20}
+  student: {max_nudges: 2, max_tool_calls: 40, max_turns: 20}
+# Code-mode sandbox runs per agent run (read by the code-mode tool; see docs/harness-tree.md).
+code_mode:
+  max_runs: 8

@@ -36,6 +36,7 @@ manifest's ``allowed_models`` and builds with :func:`harness_builder`
 
 from __future__ import annotations
 
+import copy
 import inspect
 import warnings
 from collections.abc import Callable, Mapping, Sequence
@@ -44,7 +45,14 @@ from pathlib import Path
 from typing import Any, Protocol
 
 import yaml
-from agent_framework import FunctionMiddleware, MiddlewareTermination
+from agent_framework import (
+    ChatMiddleware,
+    ChatResponse,
+    FunctionMiddleware,
+    Message,
+    MiddlewareFailure,
+    MiddlewareTermination,
+)
 
 __all__ = [
     "SPECS_DIR",
@@ -53,12 +61,15 @@ __all__ = [
     "MetaAgentSpec",
     "SpecError",
     "TerminalSubmitMiddleware",
+    "ToolBudgetMiddleware",
+    "TurnLimitMiddleware",
     "default_builder",
     "evolvable_agents",
     "harness_builder",
     "load_manifest",
     "load_spec",
     "loader_builder",
+    "loop_limit_middleware",
     "manifest_allowed_models",
     "subagent_specs",
     "validated_harness_builder",
@@ -100,6 +111,11 @@ class MetaAgentSpec:
     subagents: tuple[MetaAgentSpec, ...] = ()
     subagent_instructions: str | None = None
     harness_root: Path | None = None  # the harness tree an evolvable spec was loaded from
+    # From the tree's loops/loops.yaml (clamped to the frozen caps; None = no limit) and
+    # tools/tools.yaml (descriptions replacing the bound functions' own).
+    max_tool_calls: int | None = None
+    max_turns: int | None = None
+    tool_descriptions: Mapping[str, str] = field(default_factory=dict)
 
 def subagent_specs(spec: MetaAgentSpec) -> list[MetaAgentSpec]:
     """Every subagent below ``spec`` (depth-first, each key once)."""
@@ -286,6 +302,14 @@ def _load(key: str, path: Path, entry: Mapping[str, Any], manifest: Mapping[str,
         if entry.get("terminal_tool") and entry["terminal_tool"] != terminal:
             raise SpecError(f"{path.name}: terminal_tool disagrees with manifest")
 
+    loop, descriptions = _tree_overlays(tree, path) if tree is not None else ({}, None)
+    if descriptions is not None:
+        if unbound := [t for t in descriptions if t not in tools]:
+            raise SpecError(f"{path.name}: tools/tools.yaml names tool(s) {', '.join(unbound)} the spec does not bind")
+        if terminal and terminal not in descriptions:
+            raise SpecError(f"{path.name}: tools/tools.yaml must keep the terminal tool {terminal!r}")
+        tools = [t for t in tools if t in descriptions]
+
     parts = [str(spec.get("instructions") or "").strip()]
     base, where = (tree, "the harness dir") if tree is not None else (path.parent.resolve(), "the spec dir")
     for rel in xci.get("instructions_files") or []:
@@ -312,6 +336,7 @@ def _load(key: str, path: Path, entry: Mapping[str, Any], manifest: Mapping[str,
 
     harness = {**HARNESS_DEFAULTS, **(manifest.get("harness") or {}), **(xci.get("harness") or {})}
     nudges = int(harness.pop("max_nudges", 2))
+    nudges = int(loop.get("max_nudges", nudges))
     return MetaAgentSpec(
         key=key, path=path, name=str(spec.get("name")), description=str(spec.get("description") or ""),
         instructions="\n\n".join(p for p in parts if p), model=model_id,
@@ -320,7 +345,20 @@ def _load(key: str, path: Path, entry: Mapping[str, Any], manifest: Mapping[str,
         skills_paths=skills, harness=harness, runtime=str(entry.get("runtime") or manifest.get("runtime") or "harness"),
         max_nudges=nudges, role=role, subagents=children,
         subagent_instructions=sub_instructions.strip() if isinstance(sub_instructions, str) else None,
-        harness_root=tree)
+        harness_root=tree, max_tool_calls=loop.get("max_tool_calls"), max_turns=loop.get("max_turns"),
+        tool_descriptions={t: d for t, d in (descriptions or {}).items() if d})
+
+
+def _tree_overlays(tree: Path, path: Path) -> tuple[dict[str, int], dict[str, str | None] | None]:
+    """Agent ``path.stem``'s ``loops/loops.yaml`` knobs (clamped to the frozen caps) and its
+    ``tools/tools.yaml`` entry (``None`` = all bound tools, own descriptions)."""
+    from ci_lab.harness_tree import HarnessTree, HarnessTreeError
+
+    t = HarnessTree(tree)
+    try:
+        return t.agent_loop(path.stem), t.agent_tools(path.stem)
+    except HarnessTreeError as exc:
+        raise SpecError(f"{path.name}: {exc}") from exc
 
 
 # ---------------------------------------------------------------- building
@@ -349,6 +387,65 @@ class TerminalSubmitMiddleware(FunctionMiddleware):
             return
         self.submitted = True
         raise MiddlewareTermination(result=context.result)
+
+
+class ToolBudgetMiddleware(FunctionMiddleware):
+    """``max_tool_calls``: past the budget a tool call is not run and returns an ERROR asking for
+    the final answer. The terminal ``submit_*`` tool is never counted or blocked."""
+
+    def __init__(self, max_calls: int, terminal_tool: str = "") -> None:
+        self.max_calls, self.terminal_tool, self.calls = max_calls, terminal_tool, 0
+
+    async def process(self, context: Any, call_next: Callable[[], Any]) -> None:
+        if not self.terminal_tool or getattr(context.function, "name", None) != self.terminal_tool:
+            if self.calls >= self.max_calls:
+                then = f"call {self.terminal_tool} now" if self.terminal_tool else "answer now"
+                context.result = f"ERROR: tool-call budget ({self.max_calls}) exhausted; {then}"
+                return
+            self.calls += 1
+        await call_next()
+
+
+class TurnLimitMiddleware(ChatMiddleware):
+    """``max_turns``: model calls per agent run (all nudges included). Past the limit the model
+    is not called; a fixed assistant reply with no tool calls ends the turn instead (a streaming
+    call fails closed with ``MiddlewareFailure``)."""
+
+    def __init__(self, max_turns: int) -> None:
+        self.max_turns, self.turns, self.tripped = max_turns, 0, False
+
+    async def process(self, context: Any, call_next: Callable[[], Any]) -> None:
+        if self.turns >= self.max_turns:
+            self.tripped = True
+            text = f"Stopped: the turn limit (max_turns={self.max_turns}) is reached."
+            if getattr(context, "stream", False):
+                raise MiddlewareFailure(text)
+            context.result = ChatResponse(messages=[Message("assistant", [text])], finish_reason="stop")
+            return
+        self.turns += 1
+        await call_next()
+
+
+def loop_limit_middleware(spec: MetaAgentSpec) -> list[Any]:
+    """Fresh middleware enforcing ``spec.max_tool_calls``/``spec.max_turns`` for one run."""
+    out: list[Any] = []
+    if spec.max_tool_calls is not None:
+        out.append(ToolBudgetMiddleware(spec.max_tool_calls, spec.terminal_tool))
+    if spec.max_turns is not None:
+        out.append(TurnLimitMiddleware(spec.max_turns))
+    return out
+
+
+def _described(fn: Any, name: str, description: str | None) -> Any:
+    if not description:
+        return fn
+    from agent_framework import FunctionTool, tool
+
+    if isinstance(fn, FunctionTool):
+        out = copy.copy(fn)
+        out.description = description
+        return out
+    return tool(fn, name=name, description=description)
 
 
 class AgentBuilder(Protocol):
@@ -384,7 +481,9 @@ def harness_builder(spec: MetaAgentSpec, *, client: Any, bindings: Mapping[str, 
                     middleware: Sequence[Any] = (), loop_should_continue: Callable[..., Any] | None = None,
                     loop_next_message: Callable[..., Any] | None = None,
                     subagent_bindings: Mapping[str, Mapping[str, Callable[..., Any]]] | None = None) -> Any:
-    """Local runtime=harness build: ``create_harness_agent`` with the spec's tools bound in order.
+    """Local runtime=harness build: ``create_harness_agent`` with the spec's tools bound in order
+    (``spec.tool_descriptions`` replace their descriptions) and :func:`loop_limit_middleware`
+    appended to ``middleware``.
 
     Each subagent is built the same way on the same ``client`` with only its own read-only
     bindings and handed to MAF as ``background_agents`` (the parent gets MAF's
@@ -414,7 +513,9 @@ def harness_builder(spec: MetaAgentSpec, *, client: Any, bindings: Mapping[str, 
         warnings.simplefilter("ignore")  # MAF harness APIs emit ExperimentalWarning
         return governed_harness_agent(client, name=spec.name, description=spec.description,
                                       agent_instructions=spec.instructions,
-                                      tools=[bindings[t] for t in spec.tools], middleware=list(middleware),
+                                      tools=[_described(bindings[t], t, spec.tool_descriptions.get(t))
+                                             for t in spec.tools],
+                                      middleware=[*middleware, *loop_limit_middleware(spec)],
                                       governance={"agent_name": spec.name, "model": spec.model}, **kwargs)
 
 
@@ -469,7 +570,11 @@ def loader_builder(build_agent: Callable[..., Any], *,
         if file_model and str(file_model) != spec.model:
             raise SpecError(f"{spec.path.name}: the loader would build model {file_model!r}, not the selected "
                             f"{spec.model!r} (CI_META_MODEL); use validated_harness_builder")
-        extra = {"middleware": list(middleware), "loop_should_continue": loop_should_continue,
+        file_doc = yaml.safe_load(spec.path.read_text(encoding="utf-8")) or {}
+        file_tools = [t.get("name") for t in file_doc.get("tools") or []]
+        if spec.tool_descriptions or list(spec.tools) != file_tools:
+            raise SpecError(f"{spec.path.name}: the loader cannot apply tools/tools.yaml; use validated_harness_builder")
+        extra = {"middleware": [*middleware, *loop_limit_middleware(spec)], "loop_should_continue": loop_should_continue,
                  "loop_next_message": loop_next_message, "subagent_bindings": subagent_bindings,
                  "allowed_models": models if models is not None else manifest_allowed_models(),
                  "allowed_providers": (spec.provider,) if spec.provider else None}
@@ -495,6 +600,9 @@ def validated_harness_builder(*, allowed_models: Sequence[str] | None = None) ->
         doc = yaml.safe_load(spec.path.read_text(encoding="utf-8")) or {}
         doc.pop("x-ci", None)
         doc["instructions"] = spec.instructions
+        # Validate and hash the tools that will actually be exposed (tools/tools.yaml overlay).
+        doc["tools"] = [{**t, "description": spec.tool_descriptions.get(t.get("name"), t.get("description"))}
+                        for t in doc.get("tools") or [] if t.get("name") in spec.tools]
         # Validate and hash the model that will actually run (spec default, or CI_META_MODEL).
         doc["model"] = {**(doc.get("model") or {}), "id": spec.model}
         try:
