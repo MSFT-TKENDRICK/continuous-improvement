@@ -17,12 +17,20 @@ from ci_lab.sleep.fakes import (
     fake_run_target,
     make_fake_assert_eval,
 )
-from ci_lab.sleep.night import SKILL_REL, STATE_REL, STEPS, SleepConfig, SleepDeps, run_night
+from ci_lab.sleep.night import (
+    SKILL_REL,
+    STATE_REL,
+    STEPS,
+    SleepConfig,
+    SleepDeps,
+    run_night,
+)
+from ci_lab.sleep.registry import HARNESS_EDITING
 from ci_lab.sleep.runner import sequential_runner
 
 SHA = "a" * 40
 CASES = {f"c{i}": "verify_identity" for i in range(6)}
-OS = "order-support"
+OS = "harness-editing"
 
 
 def gate(results: dict, target: str = OS) -> dict:
@@ -33,6 +41,7 @@ def cfg_for(repo: Path, tmp_path: Path, **kw) -> SleepConfig:
     kw.setdefault("night_date", "20260921")
     kw.setdefault("base_sha", SHA)
     kw.setdefault("n_boot", 300)
+    kw.setdefault("targets", [HARNESS_EDITING])
     return SleepConfig(repo_root=repo, out_dir=tmp_path / "out" / "sleep-bundle", **kw)
 
 
@@ -48,7 +57,7 @@ def deps_for(**kw) -> SleepDeps:
 
 
 def read_bundle(out: Path) -> tuple[dict, dict, dict, str]:
-    load = lambda n: json.loads((out / n).read_text(encoding="utf-8"))  # noqa: E731
+    load = lambda n: json.loads((out / n).read_text(encoding="utf-8"))
     return load("manifest.json"), load("experiment.json"), load("results.json"), \
         (out / "candidate.patch").read_text(encoding="utf-8")
 
@@ -119,7 +128,8 @@ def test_canary_rejects_and_only_ledger_updates(sleep_repo, tmp_path):
     _, _, results, patch = read_bundle(cfg.out_dir)
     assert any(not c["passed"] for c in gate(results)["canaries"])
     assert SKILL_REL not in results["changed_files"] and STATE_REL in results["changed_files"]
-    assert f"diff --git a/{SKILL_REL}" not in patch and results["reasons"] == ["order-support: canary failed: trigger:promo_code"]
+    assert f"diff --git a/{SKILL_REL}" not in patch
+    assert results["reasons"] == ["harness-editing: canary failed: trigger:promo_code"]
 
 
 def test_safety_violation_increase_rejects(sleep_repo, tmp_path):

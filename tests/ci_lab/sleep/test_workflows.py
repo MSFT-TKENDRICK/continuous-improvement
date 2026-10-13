@@ -63,11 +63,15 @@ def test_nightly_jobs_and_permissions():
     runs = "\n".join(s.get("run", "") for s in steps(ev))
     assert "ci-lab sleep run --profile copilot --out out/sleep-bundle" in runs
     assert "agentlightning.server" in runs and "redact-spans" in runs
+    assert "version('skillopt')" in runs and "startswith('0.2.')" in runs
     night = next(s for s in steps(ev) if s.get("id") == "night")
     assert night["env"]["COPILOT_GITHUB_TOKEN"] == "${{ github.token }}"
     # HOOK(M16) lessons hook: opt-in via repo variable only (unset -> off), never a dispatch input
     assert night["env"]["SLEEP_LESSONS"] == "${{ vars.SLEEP_LESSONS }}"
-    # order-support agent telemetry: repo-variable opt-in only (unset -> off)
+    assert night["env"]["CI_LAB_TARGET_MODEL"].endswith("|| 'gpt-5-mini' }}")
+    assert night["env"]["CI_LAB_JUDGE_MODEL"].endswith("|| 's1/llamacpp/qwen3.5-4b' }}")
+    assert night["env"]["CI_S1_LLAMA_URL"] == "${{ vars.CI_S1_LLAMA_URL }}"
+    # Harness telemetry: repo-variable opt-in only (unset -> off)
     assert night["env"]["CI_TELEMETRY"] == "${{ vars.CI_TELEMETRY }}"
     assert "--lessons" not in night["run"]
     uploads = [s["with"]["name"] for s in steps(ev) if s.get("uses", "").startswith("actions/upload-artifact@")]

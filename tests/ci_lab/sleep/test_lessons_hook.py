@@ -28,9 +28,10 @@ from ci_lab.sleep.lessons_hook import (
     trajectories_from_rollouts,
 )
 from ci_lab.sleep.night import SleepConfig, SleepDeps, run_night
+from ci_lab.sleep.registry import HARNESS_EDITING
 from ci_lab.sleep.runner import sequential_runner
 
-OS = "order-support"
+OS = "harness-editing"
 CASES = {f"c{i}": "verify_identity" for i in range(6)}
 
 
@@ -38,6 +39,7 @@ def cfg_for(repo: Path, tmp_path: Path, **kw) -> SleepConfig:
     kw.setdefault("night_date", "20260921")
     kw.setdefault("base_sha", "a" * 40)
     kw.setdefault("n_boot", 300)
+    kw.setdefault("targets", [HARNESS_EDITING])
     return SleepConfig(repo_root=repo, out_dir=tmp_path / "out" / "sleep-bundle", **kw)
 
 

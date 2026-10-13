@@ -47,23 +47,28 @@ from ci_lab.contracts import (
     EvaluatorPin,
     SafetyOracle,
 )
-from ci_lab.sleep.backend import OrderSupportSleepBackend, Reflector, RunTarget, Scorer
+from ci_lab.sleep.backend import Reflector, RunTarget, Scorer, SleepBackend
 from ci_lab.sleep.budget import Budget, BudgetExceeded, BudgetLimits
 from ci_lab.sleep.bundle import FileChange, make_patch, write_bundle
 from ci_lab.sleep.gate import CanaryResult, GateDecision, decide, static_canaries
 from ci_lab.sleep.harvest import HarvestResult, from_agl_exports, harvest, reviewed_ids
-from ci_lab.sleep.registry import ORDER_SUPPORT, SkillTarget, load_targets, validate_targets
+from ci_lab.sleep.registry import (
+    HARNESS_EDITING,
+    SkillTarget,
+    load_targets,
+    validate_targets,
+)
 from ci_lab.sleep.runner import RunWorkflow, default_runner
 
 if TYPE_CHECKING:
     from ci_lab.sleep.lessons_hook import LessonsReport, LessonsRequest
 
 WORKFLOW_PATH = Path(__file__).with_name("sleep.yaml")
-SKILL_REL = ORDER_SUPPORT.skill_path
-MEMORY_REL = ORDER_SUPPORT.memory_path
+SKILL_REL = HARNESS_EDITING.skill_path
+MEMORY_REL = HARNESS_EDITING.memory_path
 STATE_REL = "experiments/sleep/state.json"
 ENVELOPES_REL = "experiments/sleep/envelopes"
-TASKS_REL = ORDER_SUPPORT.tasks_file
+TASKS_REL = HARNESS_EDITING.tasks_file
 STATE_FORMAT = "ci_lab.sleep.state.v1"
 STEPS = ("harvest", "consolidate", "assert_gate", "record", "bundle")
 HISTORY_KEEP = 60
@@ -164,7 +169,7 @@ class _TargetRun:
     memory_exists: bool = False
     reviewed_ids: list[str] = field(default_factory=list)
     harvest: HarvestResult | None = None
-    backend: OrderSupportSleepBackend | None = None
+    backend: SleepBackend | None = None
     consolidation: Any = None
     candidate_skill: str = ""
     candidate_memory: str = ""
@@ -459,8 +464,8 @@ def _consolidate(night: _Night, gate_mode: str) -> dict[str, Any]:
         assert run.harvest is not None
         d = run.deps
         with _target_span(night, run, "consolidate"):
-            run.backend = OrderSupportSleepBackend(run_target=d.run_target, oracle=d.oracle,
-                                                   reflector=d.reflector, scorer=d.scorer, budget=night.budget)
+            run.backend = SleepBackend(run_target=d.run_target, oracle=d.oracle,
+                                       reflector=d.reflector, scorer=d.scorer, budget=night.budget)
             tasks: list[TaskRecord] = run.harvest.tasks
             with obs.span(SPAN_OPTIMIZER, {ATTR_STRATEGY: "skillopt", ATTR_COMPONENT: run.name,
                                            ATTR_TARGET: run.name, ATTR_NIGHT: night.night_no}) as s:
@@ -683,7 +688,7 @@ def _setup(night: _Night) -> None:
         night.state_text = _read(cfg.repo_root / STATE_REL)
         night.state = json.loads(night.state_text) if night.state_text else default_state()
         if not isinstance(night.state.get("night", 0), int):
-            raise ValueError("state.json night counter must be an int")
+            raise TypeError("state.json night counter must be an int")
         assert cfg.targets is not None
         for target in cfg.targets:
             tdeps = deps.per_target(target) if deps.per_target is not None else deps

@@ -10,7 +10,13 @@ import yaml
 
 from ci_lab.sleep.bundle import FileChange, make_patch, verify_bundle, write_bundle
 from ci_lab.sleep.night import STEPS, WORKFLOW_PATH
-from ci_lab.sleep.runner import WorkflowError, default_runner, load_actions, maf_runner, sequential_runner
+from ci_lab.sleep.runner import (
+    WorkflowError,
+    default_runner,
+    load_actions,
+    maf_runner,
+    sequential_runner,
+)
 
 # ------------------------------------------------------------------ sleep.yaml
 
@@ -200,14 +206,14 @@ def test_default_runner_uses_maf_when_available(monkeypatch):
 
 def test_patch_roundtrip_with_git_apply(tmp_path, h):
     repo = tmp_path / "r"
-    skill = repo / "src/order_support/harness/skills/order-support/SKILL.md"
+    skill = repo / "harness/skills/harness-editing/SKILL.md"
     skill.parent.mkdir(parents=True)
     skill.write_bytes(b"line1\r\nline2\r\n")
     (repo / "experiments/sleep").mkdir(parents=True)
     (repo / "experiments/sleep/state.json").write_bytes(b'{"night": 0}')  # no trailing newline
     h.init_repo(repo)
     patch = make_patch([
-        FileChange("src/order_support/harness/skills/order-support/SKILL.md", "line1\r\nline2\r\n",
+        FileChange("harness/skills/harness-editing/SKILL.md", "line1\r\nline2\r\n",
                    "line1\r\nline2\r\nline3\r\n"),
         FileChange("experiments/sleep/state.json", '{"night": 0}', '{"night": 1}\n'),
         FileChange("experiments/sleep/envelopes/n1.json", None, "{}\n"),

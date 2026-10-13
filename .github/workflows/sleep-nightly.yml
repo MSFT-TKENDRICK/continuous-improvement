@@ -83,6 +83,10 @@ jobs:
       # uv.lock is intentionally not committed (it is generated against an internal package proxy),
       # so `uv sync` resolves from pyproject.toml and cannot use --frozen/--locked.
       - run: uv sync
+      - name: Verify SkillOpt-Sleep v0.2.x
+        run: >-
+          uv run python -c "from importlib.metadata import version;
+          v=version('skillopt'); assert v.startswith('0.2.'), v"
       - name: Start agl-server (loopback, random key)
         run: |
           key="$(openssl rand -hex 24)"
@@ -103,12 +107,16 @@ jobs:
         name: Run one SkillOpt-Sleep night
         env:
           COPILOT_GITHUB_TOKEN: ${{ github.token }}
+          CI_LAB_SLEEP_TARGET_MODEL: ${{ vars.CI_LAB_SLEEP_TARGET_MODEL || 'gpt-5-mini' }}
+          CI_LAB_SLEEP_REFLECTOR_MODEL: ${{ vars.CI_LAB_SLEEP_REFLECTOR_MODEL || 'gpt-5-mini' }}
+          CI_LAB_TARGET_MODEL: ${{ vars.CI_LAB_TARGET_MODEL || 'gpt-5-mini' }}
+          CI_LAB_JUDGE_MODEL: ${{ vars.CI_LAB_JUDGE_MODEL || 's1/llamacpp/qwen3.5-4b' }}
+          CI_S1_LLAMA_URL: ${{ vars.CI_S1_LLAMA_URL }}
           # HOOK(M16) lessons mining: OFF unless the repo variable SLEEP_LESSONS is 1/true. Candidates
           # land in the bundle as experiments/sleep/lessons/<night>.json proposals (draft PR only);
           # they are never adopted or enforced automatically (design §13.3, B8).
           SLEEP_LESSONS: ${{ vars.SLEEP_LESSONS }}
-          # Order-support agent OTel opt-in (auto|1|true|on) for the ASSERT evaluate subprocess, which
-          # runs order_support.agent on the materialized harness. Unset/empty -> off (default).
+          # Harness target OTel opt-in (auto|1|true|on) for candidate replay/evaluation.
           CI_TELEMETRY: ${{ vars.CI_TELEMETRY }}
         run: uv run ci-lab sleep run --profile copilot --out out/sleep-bundle --run-dir "$CI_RUN_DIR" --max-minutes 60
       - name: Redact night spans (replay with `ci-lab telemetry import`)

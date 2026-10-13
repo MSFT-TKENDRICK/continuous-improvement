@@ -21,8 +21,9 @@ import pytest
 
 from ci_lab.oes import validate_envelope
 from ci_lab.sleep.fakes import RULE_TEXT, make_fake_assert_eval
-from ci_lab.sleep.night import SKILL_REL, SleepConfig, SleepDeps, run_night
+from ci_lab.sleep.night import SleepConfig, SleepDeps, run_night
 from ci_lab.sleep.reflector import make_maf_reflector
+from ci_lab.sleep.registry import ORDER_SUPPORT
 from ci_lab.sleep.target import make_maf_run_target
 from ci_lab.sleep.wiring import find_oracle
 from ci_lab.testing import Call, FakeChatClient
@@ -34,6 +35,7 @@ HARNESS = REPO / "src" / "order_support" / "harness"
 RULE = RULE_TEXT["verify_identity"]
 CASES = {f"c{i}": "verify_identity" for i in range(6)}
 ENVELOPE = "experiments/sleep/envelopes/sleep-20260921-1.json"
+LEGACY_SKILL = ORDER_SUPPORT.skill_path
 
 
 def _text(messages, options) -> str:
@@ -76,7 +78,7 @@ def _night(repo: Path, tmp_path: Path, proposals: list[str]):
 
     clients = Clients(proposals)
     cfg = SleepConfig(repo_root=repo, out_dir=tmp_path / "out" / "bundle", night_date="20260921",
-                      base_sha="a" * 40, n_boot=300)
+                      base_sha="a" * 40, n_boot=300, targets=[ORDER_SUPPORT])
     deps = SleepDeps(
         run_target=make_maf_run_target(clients.make_target, harness_root=tmp_path / "th", base_harness=HARNESS),
         oracle=find_oracle(), reflector=make_maf_reflector(clients.make_reflector),
@@ -105,7 +107,7 @@ def test_production_agents_through_real_dream_consolidate_accept_and_record_vali
     patch = (cfg.out_dir / "candidate.patch").read_text(encoding="utf-8")
     (tmp_path / "p.patch").write_text(patch, encoding="utf-8", newline="\n")
     h.git(sleep_repo, "apply", str(tmp_path / "p.patch"))
-    assert RULE in (sleep_repo / SKILL_REL).read_text(encoding="utf-8")
+    assert RULE in (sleep_repo / LEGACY_SKILL).read_text(encoding="utf-8")
     env = _envelope(sleep_repo)
     assert validate_envelope(env) == []
     assert env["decision"]["outcome"] == "ship"
@@ -130,7 +132,7 @@ def test_useless_proposal_is_rejected_by_the_real_skillopt_gate(sleep_repo, tmp_
     results = json.loads((cfg.out_dir / "results.json").read_text(encoding="utf-8"))
     target = results["targets"]["order-support"]
     assert target["reasons"] == ["SkillOpt pre-filter produced no candidate"] and target["gate"] is None
-    assert SKILL_REL not in results["changed_files"]
+    assert LEGACY_SKILL not in results["changed_files"]
 
 
 def test_gated_rejection_records_valid_oes_without_shipping(sleep_repo, tmp_path, h):
@@ -139,7 +141,7 @@ def test_gated_rejection_records_valid_oes_without_shipping(sleep_repo, tmp_path
     assert res.status == "rejected"
     results = json.loads((cfg.out_dir / "results.json").read_text(encoding="utf-8"))
     assert any(not c["passed"] for c in results["targets"]["order-support"]["gate"]["canaries"])
-    assert ENVELOPE in results["changed_files"] and SKILL_REL not in results["changed_files"]
+    assert ENVELOPE in results["changed_files"] and LEGACY_SKILL not in results["changed_files"]
     (tmp_path / "p.patch").write_text((cfg.out_dir / "candidate.patch").read_text(encoding="utf-8"),
                                       encoding="utf-8", newline="\n")
     h.git(sleep_repo, "apply", str(tmp_path / "p.patch"))

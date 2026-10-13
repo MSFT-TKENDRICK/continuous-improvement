@@ -9,7 +9,11 @@ from skillopt_sleep.types import TaskRecord
 from ci_lab.contracts import FailureRecord, Transcript
 from ci_lab.sleep.backend import ReflectRequest
 from ci_lab.sleep.reflector import make_maf_reflector, render_request
-from ci_lab.sleep.target import compose_instructions, make_maf_run_target, materialize_harness
+from ci_lab.sleep.target import (
+    compose_instructions,
+    make_maf_run_target,
+    materialize_harness,
+)
 from ci_lab.sleep.wiring import PolicyOracle
 from ci_lab.testing import Call, FakeChatClient
 
@@ -176,7 +180,9 @@ def test_cli_fake_run_and_dry_run(sleep_repo, tmp_path, monkeypatch, capsys, h):
     manifest = json.loads((out / "manifest.json").read_text(encoding="utf-8"))
     assert manifest["base_sha"] == h.git(sleep_repo, "rev-parse", "HEAD")
     assert cli.main(["sleep", "dry-run", "--repo", str(sleep_repo)]) == 0
-    assert json.loads(capsys.readouterr().out)["order-support"]["n_tasks"] == 6
+    out_doc = json.loads(capsys.readouterr().out)
+    assert out_doc["harness-editing"]["n_tasks"] == 6
+    assert out_doc["trace-triage"]["n_tasks"] == 6
 
 
 def test_cli_dry_run_rejects_heldout_export(sleep_repo, tmp_path):

@@ -19,6 +19,7 @@ from ci_lab.sleep.fakes import (
     make_fake_assert_eval,
 )
 from ci_lab.sleep.night import SKILL_REL, SleepConfig, SleepDeps, run_night
+from ci_lab.sleep.registry import HARNESS_EDITING
 from ci_lab.sleep.runner import sequential_runner
 
 SHA = "a" * 40
@@ -28,7 +29,7 @@ ENVELOPE = "experiments/sleep/envelopes/sleep-20260921-1.json"
 
 def _cfg(repo: Path, tmp_path: Path, **kw) -> SleepConfig:
     return SleepConfig(repo_root=repo, out_dir=tmp_path / "out" / "sleep-bundle", night_date="20260921",
-                       base_sha=SHA, n_boot=300, **kw)
+                       base_sha=SHA, n_boot=300, targets=[HARNESS_EDITING], **kw)
 
 
 def _deps(**kw) -> SleepDeps:
@@ -116,7 +117,7 @@ def test_budget_exceeded_before_gate_records_valid_rerun_envelope(sleep_repo, tm
 
 
 def test_no_tasks_night_records_valid_envelope(sleep_repo, tmp_path, h):
-    h.write_tasks(sleep_repo / "experiments/sleep/tasks.jsonl", [])
+    h.write_tasks(sleep_repo / HARNESS_EDITING.tasks_file, [])
     h.git(sleep_repo, "commit", "-qam", "no tasks")
     cfg = _cfg(sleep_repo, tmp_path)
     res = run_night(cfg, _deps())
