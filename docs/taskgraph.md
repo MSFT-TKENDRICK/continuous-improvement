@@ -10,15 +10,15 @@ after a rejection, a sanitized correction.
 ## Model (`model.py`)
 
 ```yaml
-id: order-escalation-review          # TaskGraph{id, goal, deliverables}
-goal: Review the escalated orders and summarize facts and risks.
+id: harness-change-review            # TaskGraph{id, goal, deliverables}
+goal: Review a proposed harness change and summarize components and risks.
 deliverables:
-  - id: facts                        # task id
-    title: Order facts
+  - id: inventory                    # task id
+    title: Component inventory
     depends_on: [brief]
     context: [{kind: deliverable, ref: brief}]     # kinds: file | deliverable | text
-    output: {kind: json, path: out/facts.json}     # kinds: file | text | json | patch (+ schema for json)
-    rubric_commitment: 906e3ee2…                   # sha256 of the sealed rubric
+    output: {kind: json, path: out/inventory.json} # kinds: file | text | json | patch (+ schema for json)
+    rubric_commitment: 15429bd6…                   # sha256 of the sealed rubric
     budget: {max_attempts: 2, timeout_s: 120}      # defaults: 3 attempts, 600 s, weight {llm: 1.0}
     instructions: |
       …
@@ -26,9 +26,11 @@ deliverables:
 
 - A `Rubric` has `id`, `version`, `deliverable`, `criteria`, `pass_score` and `canary`.
   `version_id` is `<id>@v<version>`. `commitment` is the sha256 of the rubric's canonical JSON.
-- A `Criterion` has `id`, `description`, `measure` (`deterministic | assert | s1 | llm`), `check`,
-  `threshold`, `weight` (default 1) and `required`. `deterministic` and `assert` criteria are
-  **oracles**.
+- A `Criterion` has `id`, `description`, `measure`
+  (`deterministic | assert | metric | s1 | llm`), `check`, `threshold`, `weight` (default 1),
+  `required`, and `role` (`quality | resource`). `deterministic`, `assert`, and `metric` criteria
+  are **oracles**. Metric criteria are always resources: they are reported separately and never
+  folded into the quality score.
 - `StudentSpec.of(deliverable)` is the only view a student gets. It has the instructions, output,
   context, budget and commitment, but no rubric.
 - `topo_order()` is a Kahn order with ties broken by declaration order. `load_graph` reads YAML or

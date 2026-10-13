@@ -19,6 +19,9 @@ only the keyword arguments its constructor accepts.
   import fails, `get_strategy("guard")` raises `UnknownStrategy`. `available()` lists the
   names that resolve. `gepa` is the DSPy-based strategy (`ci_lab.optim`); there is no
   separate `dspy` name.
+- `agl` is provided by `ci_lab.agl.algorithm`. It uses typed rollout digests, Copilot SDK
+  credit assignment, and one bounded structural edit. It is not an RL trainer and does not
+  own prompts or skills.
 - Text strategies treat `**/harness/guards/**` and the domain's guards dir as frozen (§13 B2),
   so only the `guard` strategy can write guard rule bundles. The campaign enforces this before
   evaluation with `strategies.base.edit_scope_violations(strategy, files, guards_dir)` over both
@@ -35,6 +38,11 @@ Importing the package does not import dspy, gepa or skillopt_sleep (C26).
 | `gepa` | `GepaStrategy` | `domain` or `scorer`; optional `lm`, `config: GepaConfig`, `committer`, `evolve_cases`, `k`, glob overrides | `prompt` |
 | `skillopt` | `SkillOptStrategy` | as gepa, `config: SkillOptConfig` | `skill` (+ sibling `memory.md` if `memory` is in focus) |
 | `guard` | `ci_lab.lessons_arm.strategy.GuardStrategy` | optional `synthesizer` or `client_factory`, `committer`, `replay`, `candidates_path`, `registry_path`, `write_mode` (`shadow` default), `domain`/`guards_dir` | guard rule bundles under the guards dir (see [lessons-arm.md](lessons-arm.md)) |
+| `agl` | `ci_lab.agl.algorithm.LlmResourceAlgorithm` | `client_factory`, rollout journal/store, optional committer | `agent`, `loop`, `workflow`, `mcp`, `client_tool`, `config`, `context_mgmt`, `memory` |
+
+The general `agent` strategy may edit any text component except `guard`. This does not change
+dedicated ownership: `gepa` owns `prompt`, `skillopt` owns `skill`, `guard` owns `guard`, and `agl`
+owns the structural components listed above.
 
 ## Common behaviour
 

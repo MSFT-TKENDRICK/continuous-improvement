@@ -1,11 +1,25 @@
 # `ci_lab.optim` — DSPy LM, GEPA and SkillOpt over harness text
 
-Design: `docs/design/self-improving-harness.md` §11 (C17–C26). `import ci_lab.optim`
-(and all submodules) never imports `dspy`, `gepa`, `skillopt_sleep` or `litellm` (C26);
-they load on first use.
+`import ci_lab.optim` (and all submodules) never imports `dspy`, `gepa`, `skillopt_sleep`
+or `litellm`; they load on first use.
 
 DSPy is the programmable-prompt layer. ax-llm (the DSPy-style TypeScript library) is not used,
 because the harness is Python only.
+
+## Ownership
+
+The authoritative table is `ci_lab.contracts.COMPONENT_OWNERS`:
+
+| Component | Dedicated owner |
+|---|---|
+| `prompt` | `gepa` |
+| `skill` | `skillopt` |
+| `guard` | `guard` |
+| `agent`, `loop`, `workflow`, `mcp`, `client_tool`, `config`, `context_mgmt`, `memory` | `agl` |
+
+`strategy_may_edit("agent", component)` also permits the general MAF proposer to edit any text
+component except `guard`. That broad proposal permission does not transfer dedicated optimization
+ownership. In particular, AGL refuses prompts and skills.
 
 ## `ci_lab.optim.lm`
 
@@ -83,7 +97,8 @@ config=GepaConfig(), incumbent_failures=()) -> TextOptimization`
 `optimize_skill((skill_id, text), scorer, evolve_cases, *, reflection_lm, memory=None,
 edit_budget=1, budget_tokens=None, config=SkillOptConfig(), incumbent_failures=())`
 
-- Runs one SkillOpt-Sleep `dream_consolidate(gate_mode="on")` epoch.
+- Runs one SkillOpt-Sleep `dream_consolidate(gate_mode="on")` epoch. The dependency and nightly
+  workflow are restricted to SkillOpt 0.2.x (`skillopt>=0.2.0,<0.3`).
 - Uses a `CliBackend` subclass:
   - `attempt` and `judge` go to the guarded evolve scorer;
   - reflection goes to our LM;

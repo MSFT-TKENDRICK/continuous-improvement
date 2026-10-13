@@ -9,7 +9,7 @@ them like any other harness. Library code takes an explicit `harness_dir`. `None
 | `harness.yaml` | frozen | byte-identical copy of `src/ci_lab/harness_tree/manifest.yaml` |
 | `agents/*.yaml` | agent (agl) | evolvable specs: analyst, proposer, reflector, failure_analyst, student |
 | `prompts/**/*.md` | prompt (gepa) | their instruction files (`common.md` + one per agent) |
-| `loops/loops.yaml` | loop (rrsi) | per-agent execution knobs, clamped to the frozen caps |
+| `loops/loops.yaml` | loop (agl) | per-agent execution knobs, clamped to the frozen caps |
 | `tools/tools.yaml` | client_tool (agl) | per-agent tool exposure subsets and descriptions |
 | `mcp/exposure.yaml` | mcp (agl) | MCP exposure (see `ci_lab.mcp`) |
 | `workflows/*.yaml` | workflow (agl) | target-agent MAF declarative workflows: `triage`, `propose` |
@@ -26,9 +26,10 @@ them like any other harness. Library code takes an explicit `harness_dir`. `None
 - required agents;
 - caps.
 
-`HarnessTree(root).validate()` fails when `harness/harness.yaml` differs from it (newlines normalized), so a
-candidate tree cannot widen its writable surface or relax a cap. `config`, `memory` and `context_mgmt` have
-no file surface yet and map to no globs.
+`HarnessTree(root).validate()` hashes and compares `harness/harness.yaml` with the frozen copy
+(CRLF/LF differences are normalized). A candidate tree therefore cannot widen its writable surface,
+change ownership, remove a required agent, or relax a cap. `config`, `memory` and `context_mgmt`
+have no file surface yet and map to no globs.
 
 ## Loops and tools overlays
 
