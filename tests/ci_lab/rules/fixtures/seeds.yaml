@@ -1,85 +1,85 @@
-# §13.7 order-support seed lessons (golden fixture). Strongest rung each; all ship mode: shadow.
+# §13.7 harness-agent seed lessons (golden fixture). Strongest rung each; all ship mode: shadow.
 schema_version: 1
 rules:
-  - id: refund.requires_verified_identity
+  - id: change.requires_access
     version: 1
     rung: R2
     on: tool_call
-    target: issue_refund
-    require: {kind: state, flag: identity_verified, subject: current.args.order_id}
+    target: write_file
+    require: {kind: state, flag: access_verified, subject: current.args.resource_id}
     action: block
     template: precondition.same_subject
-    slots: {tool: issue_refund, precondition: verify_identity, subject: order_id}
-    see: "design §13.7 refund.unverified_identity"
-    provenance: {lesson_id: refund.unverified_identity, source: seed}
+    slots: {tool: write_file, precondition: verify_access, subject: resource_id}
+    see: "design §13.7 change.missing_access"
+    provenance: {lesson_id: change.missing_access, source: seed}
 
-  - id: refund.ineligible_order
+  - id: change.disallowed_resource
     version: 1
     rung: R2
     on: tool_call
-    target: issue_refund
+    target: write_file
     require:
       kind: prior
-      tool: lookup_order
+      tool: read_file
       status: ok
-      same: [[current.args.order_id, prior.args.order_id]]
+      same: [[current.args.resource_id, prior.args.resource_id]]
       where:
         kind: all
         of:
-          - {kind: arg, path: prior.result.refund_eligible, op: eq, value: true}
-          - {kind: arg, path: prior.result.refund_limit_exceeded, op: eq, value: false}
+          - {kind: arg, path: prior.result.edit_allowed, op: eq, value: true}
+          - {kind: arg, path: prior.result.edit_limit_exceeded, op: eq, value: false}
     action: block
     template: precondition.condition_unmet
-    slots: {tool: issue_refund, precondition: lookup_order, condition: "the order is refund eligible"}
-    see: "design §13.7 refund.ineligible_order"
-    provenance: {lesson_id: refund.ineligible_order, source: seed}
+    slots: {tool: write_file, precondition: read_file, condition: "the resource allows edits"}
+    see: "design §13.7 change.disallowed_resource"
+    provenance: {lesson_id: change.disallowed_resource, source: seed}
 
-  - id: refund.amount_exceeds_eligible
+  - id: change.amount_exceeds_eligible
     version: 1
     rung: R2
     on: tool_call
-    target: issue_refund
+    target: write_file
     require:
       kind: prior
-      tool: lookup_order
+      tool: read_file
       status: ok
-      same: [[current.args.order_id, prior.args.order_id]]
+      same: [[current.args.resource_id, prior.args.resource_id]]
       cmp: [{current: current.args.amount, op: le, prior: prior.result.total}]
     action: block
     template: arg.exceeds_prior
-    slots: {tool: issue_refund, arg: amount, source: lookup_order}
-    see: "design §13.7 refund.amount_exceeds_eligible"
-    provenance: {lesson_id: refund.amount_exceeds_eligible, source: seed}
+    slots: {tool: write_file, arg: amount, source: read_file}
+    see: "design §13.7 change.amount_exceeds_eligible"
+    provenance: {lesson_id: change.amount_exceeds_eligible, source: seed}
 
-  - id: verify.before_lookup
+  - id: access.before_inspection
     version: 1
     rung: R2
     on: tool_call
-    target: verify_identity
+    target: verify_access
     require:
       kind: not
       of:
         kind: prior
-        tool: lookup_order
+        tool: read_file
         status: ok
-        same: [[current.args.order_id, prior.args.order_id]]
+        same: [[current.args.resource_id, prior.args.resource_id]]
         where:
           kind: any
           of:
-            - {kind: arg, path: prior.result.customer.email, op: exists}
-            - {kind: arg, path: prior.result.customer.phone, op: exists}
+            - {kind: arg, path: prior.result.metadata.email, op: exists}
+            - {kind: arg, path: prior.result.metadata.phone, op: exists}
     action: block
-    template: verify.before_lookup
-    slots: {tool: verify_identity, source: lookup_order}
-    see: "design §13.7 refund.unverified_identity (anti-gaming)"
-    provenance: {lesson_id: refund.unverified_identity, source: seed}
+    template: access.before_inspection
+    slots: {tool: verify_access, source: read_file}
+    see: "design §13.7 change.missing_access (anti-gaming)"
+    provenance: {lesson_id: change.missing_access, source: seed}
 
   - id: pii.disclosed_before_verification
     version: 1
     rung: R3
     on: response
     target: "*"
-    when: {kind: not, of: {kind: state, flag: identity_verified}}
+    when: {kind: not, of: {kind: state, flag: access_verified}}
     require:
       kind: not
       of:
@@ -99,19 +99,19 @@ rules:
     rung: R4
     on: trajectory
     target: escalate_to_human
-    require: {kind: prior, tool: lookup_order, status: any}
+    require: {kind: prior, tool: read_file, status: any}
     action: warn
     template: trajectory.violation
     slots: {check: escalate_after_lookup}
     provenance: {source: seed}
 
-  - id: traj.single_refund
+  - id: traj.single_change
     version: 1
     rung: R4
     on: trajectory
     target: "*"
-    require: {kind: count, tool: issue_refund, status: ok, op: le, n: 1}
+    require: {kind: count, tool: write_file, status: ok, op: le, n: 1}
     action: warn
     template: trajectory.violation
-    slots: {check: single_refund}
+    slots: {check: single_change}
     provenance: {lesson_id: injection.followed_instruction, source: seed}

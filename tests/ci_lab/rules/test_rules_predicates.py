@@ -76,13 +76,13 @@ OPS = [
 def test_arg_ops(mk, fires, tb, op, value, args, expected):
     b = mk({"require": {"kind": "not", "of": {"kind": "arg", "path": "current.args.x", "op": op, "value": value}}})
     # require = NOT pred  =>  rule fires exactly when pred holds
-    assert bool(fires(b, [], tb.pending("issue_refund", **args))) is expected
+    assert bool(fires(b, [], tb.pending("write_file", **args))) is expected
 
 
 def test_nested_paths_and_indexes(mk, fires, tb):
     b = mk({"require": {"kind": "arg", "path": "current.args.items[1].sku", "op": "eq", "value": "S2"}})
-    assert fires(b, [], tb.pending("issue_refund", items=[{"sku": "S1"}, {"sku": "S2"}])) == []
-    assert fires(b, [], tb.pending("issue_refund", items=[{"sku": "S1"}])) == ["t.rule0"]  # missing => fires
+    assert fires(b, [], tb.pending("write_file", items=[{"sku": "S1"}, {"sku": "S2"}])) == []
+    assert fires(b, [], tb.pending("write_file", items=[{"sku": "S1"}])) == ["t.rule0"]  # missing => fires
 
 
 def test_nested_all_any_not(mk, fires, tb):
@@ -91,17 +91,17 @@ def test_nested_all_any_not(mk, fires, tb):
                                {"kind": "not", "of": {"kind": "arg", "path": "current.args.b", "op": "exists"}}]},
         {"kind": "arg", "path": "current.args.c", "op": "in", "value": ["x", "y"]}]}
     b = mk({"require": pred})
-    assert fires(b, [], tb.pending("issue_refund", a=1)) == []
-    assert fires(b, [], tb.pending("issue_refund", a=1, b=0)) == ["t.rule0"]
-    assert fires(b, [], tb.pending("issue_refund", a=1, b=0, c="y")) == []
-    assert fires(b, [], tb.pending("issue_refund")) == ["t.rule0"]
+    assert fires(b, [], tb.pending("write_file", a=1)) == []
+    assert fires(b, [], tb.pending("write_file", a=1, b=0)) == ["t.rule0"]
+    assert fires(b, [], tb.pending("write_file", a=1, b=0, c="y")) == []
+    assert fires(b, [], tb.pending("write_file")) == ["t.rule0"]
 
 
 def test_when_gates_firing_and_target_filter(mk, fires, tb):
     b = mk({"when": {"kind": "arg", "path": "current.args.amount", "op": "gt", "value": 100},
             "require": {"kind": "arg", "path": "current.args.approved", "op": "eq", "value": True}},
            {"target": "*", "action": "warn", "require": {"kind": "arg", "path": "current.args.ok", "op": "exists"}})
-    assert fires(b, [], tb.pending("issue_refund", amount=50)) == ["t.rule1"]
-    assert fires(b, [], tb.pending("issue_refund", amount=500)) == ["t.rule0", "t.rule1"]
-    assert fires(b, [], tb.pending("issue_refund", amount=500, approved=True, ok=1)) == []
-    assert fires(b, [], tb.pending("lookup_order", amount=500)) == ["t.rule1"]  # target filter
+    assert fires(b, [], tb.pending("write_file", amount=50)) == ["t.rule1"]
+    assert fires(b, [], tb.pending("write_file", amount=500)) == ["t.rule0", "t.rule1"]
+    assert fires(b, [], tb.pending("write_file", amount=500, approved=True, ok=1)) == []
+    assert fires(b, [], tb.pending("read_file", amount=500)) == ["t.rule1"]  # target filter

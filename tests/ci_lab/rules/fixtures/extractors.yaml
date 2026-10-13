@@ -1,8 +1,8 @@
 schema_version: 1
 extractors:
-  - flag: identity_verified
-    tool: verify_identity
+  - flag: access_verified
+    tool: verify_access
     result_path: result.verified
     equals: true
-    subject: args.order_id
+    subject: args.resource_id
     ttl_steps: 6

@@ -1,4 +1,4 @@
-"""Shared fixtures for ``ci_lab.rules`` golden tests (order-support tool names, §13.7)."""
+"""Shared fixtures for ``ci_lab.rules`` golden tests (harness-agent tool names, §13.7)."""
 
 from __future__ import annotations
 
@@ -51,17 +51,17 @@ class TB:
     def pending_response(self, text: str) -> TrajectoryStep:
         return TrajectoryStep(i=len(self.steps), kind="response", text=text)
 
-    def lookup(self, order_id: str, total: float = 50.0, eligible: bool = True, exceeded: bool = False,
+    def inspect(self, resource_id: str, total: float = 50.0, eligible: bool = True, exceeded: bool = False,
                status: str = "delivered", pii: bool = False) -> TrajectoryStep:
-        res: dict[str, Any] = {"order_id": order_id, "status": status, "total": total,
-                               "refund_eligible": eligible, "refund_limit_exceeded": exceeded}
+        res: dict[str, Any] = {"resource_id": resource_id, "status": status, "total": total,
+                               "edit_allowed": eligible, "edit_limit_exceeded": exceeded}
         if pii:
-            res["customer"] = {"email": "jo@example.com", "phone": "+1 555 010 0000"}
-        return self.ok("lookup_order", res, order_id=order_id)
+            res["metadata"] = {"email": "jo@example.com", "phone": "+1 555 010 0000"}
+        return self.ok("read_file", res, resource_id=resource_id)
 
-    def verify(self, order_id: str, verified: bool = True) -> TrajectoryStep:
-        return self.ok("verify_identity", {"verified": verified, "order_id": order_id},
-                       order_id=order_id, full_name="Jo Doe", email_or_phone="x")
+    def authorize(self, resource_id: str, verified: bool = True) -> TrajectoryStep:
+        return self.ok("verify_access", {"verified": verified, "resource_id": resource_id},
+                       resource_id=resource_id, full_name="Jo Doe", email_or_phone="x")
 
 
 @pytest.fixture
@@ -76,8 +76,8 @@ def seeds():
     return load_bundle([SEEDS], [EXTRACTORS])
 
 
-IDV = {"flag": "identity_verified", "tool": "verify_identity", "result_path": "result.verified",
-       "subject": "args.order_id"}
+IDV = {"flag": "access_verified", "tool": "verify_access", "result_path": "result.verified",
+       "subject": "args.resource_id"}
 _ON = {"R1": "tool_call", "R2": "tool_call", "R3": "response", "R4": "trajectory"}
 
 
@@ -85,16 +85,16 @@ def make_rule(**kw: Any):
     from ci_lab.rulespec import RuleSpec
 
     rung = kw.get("rung", "R2")
-    base: dict[str, Any] = {"id": "t.rule", "version": 1, "rung": rung, "on": _ON[rung], "target": "issue_refund",
+    base: dict[str, Any] = {"id": "t.rule", "version": 1, "rung": rung, "on": _ON[rung], "target": "write_file",
                             "action": "block" if rung == "R2" else "warn", "template": "count.exceeded",
-                            "slots": {"tool": "issue_refund"}}
+                            "slots": {"tool": "write_file"}}
     base.update(kw)
     return RuleSpec.model_validate(base)
 
 
 @pytest.fixture
 def mk():
-    """``mk(rule_kwargs..., extractors=[...])`` -> compiled Bundle (default extractor: identity_verified)."""
+    """``mk(rule_kwargs..., extractors=[...])`` -> compiled Bundle (default extractor: access_verified)."""
     from ci_lab.rules import build_bundle
     from ci_lab.rulespec import ExtractorSpec
 

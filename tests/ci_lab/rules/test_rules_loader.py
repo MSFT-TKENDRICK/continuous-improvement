@@ -22,14 +22,14 @@ RULE = """
   version: 1
   rung: R2
   on: tool_call
-  target: issue_refund
+  target: write_file
   require: {require}
   action: {action}
   template: {template}
   slots: {slots}
 """
 ARG_EQ = "{{kind: arg, path: current.args.currency, op: eq, value: {v}}}"
-SLOTS = "{tool: issue_refund}"
+SLOTS = "{tool: write_file}"
 USD = ARG_EQ.format(v="USD")
 
 
@@ -57,7 +57,7 @@ def test_seed_bundle_digest_matches_contract(seeds):
 def test_template_catalog_is_complete_and_data_free():
     t = default_templates()
     need = {"precondition.missing", "precondition.same_subject", "arg.out_of_range", "arg.not_allowed",
-            "arg.exceeds_prior", "sequence.required", "verify.before_lookup", "pii.redacted",
+            "arg.exceeds_prior", "sequence.required", "access.before_inspection", "pii.redacted",
             "response.blocked", "guard.terminal",
             # M17 synthesizer ids (exact slot names)
             "precondition.prior_call", "precondition.state_flag", "arg.constraint",
@@ -99,7 +99,7 @@ def test_unknown_template_and_slot_mismatch(tmp_path):
               rule(id="t.a", template="no.such.template"),
               rule(id="t.b", require=ARG_EQ.format(v="EUR"), slots="{}"),
               rule(id="t.c", require="{kind: arg, path: current.args.x, op: exists}",
-                   slots="{tool: issue_refund, extra: y}"))
+                   slots="{tool: write_file, extra: y}"))
     msg = problems(lambda: load_bundle([p]))
     assert "unknown template id 'no.such.template'" in msg
     assert "missing ['tool']" in msg and "unexpected ['extra']" in msg
@@ -134,8 +134,8 @@ def test_conflicts_detected(tmp_path):
 
 def test_state_conflict_and_unknown_flag(mk):
     with pytest.raises(RuleLoadError, match="required both"):
-        mk({"require": {"kind": "state", "flag": "identity_verified"}},
-           {"require": {"kind": "state", "flag": "identity_verified", "value": False}})
+        mk({"require": {"kind": "state", "flag": "access_verified"}},
+           {"require": {"kind": "state", "flag": "access_verified", "value": False}})
     with pytest.raises(RuleLoadError, match="no extractor"):
         mk({"require": {"kind": "state", "flag": "made_up"}})
 
@@ -149,7 +149,7 @@ def test_re2_rejects_unsupported_patterns(mk, pattern):
 def test_redact_rule_needs_text_in_require(mk):
     with pytest.raises(RuleLoadError, match="no text predicate"):
         mk({"rung": "R3", "target": "*", "action": "redact", "template": "pii.redacted", "slots": {},
-            "require": {"kind": "state", "flag": "identity_verified"}})
+            "require": {"kind": "state", "flag": "access_verified"}})
 
 
 def test_exists_value_must_be_bool(mk):
