@@ -673,3 +673,118 @@ def confirm_envelope(campaign_id: str, *, baseline: EvalResult, final: EvalResul
 
 # ---------------------------------------------------------------- SkillOpt-Sleep
 
+def sleep_envelope(night: str, *, incumbent: EvalResult | None, candidate: EvalResult | None,
+                   incumbent_commit: str,
+                   skillopt_version: str, tasks_by_origin: Mapping[str, int], tasks_by_split: Mapping[str, int],
+                   skillopt_gate: Mapping[str, Any], assert_gate: Mapping[str, Any], delta: float,
+                   budget_used: Mapping[str, Any], budget_limits: Mapping[str, Any] | None = None,
+                   candidate_digest: str | None = None, incumbent_digest: str | None = None,
+                   adoption_pr: Mapping[str, Any] | None = None, night_index: int | None = None,
+                   skill_path: str | None = None, judge_errors: Mapping[str, int] | None = None,
+                   evaluator_pin: EvaluatorPin | None = None, rerun_reason: str | None = None,
+                   max_missing_rate: float = DEFAULT_MAX_MISSING, exported_at: str | None = None,
+                   source_version: str | None = None,
+                   artifacts: Sequence[Mapping[str, Any]] = ()) -> dict[str, Any]:
+    """Nightly SkillOpt-Sleep record: ``incumbent`` (baseline) vs ``candidate`` skill (treatment).
+
+    ``skillopt_gate``/``assert_gate`` need at least ``passed``; ``deltaS``/``delta``/
+    ``safetyViolations`` are filled from the eval results. Ship (= open the adoption PR,
+    never auto-merge) iff a candidate exists and both gates passed.
+
+    ``incumbent=None`` records a night where nothing reached the ASSERT gate (no candidate,
+    no tasks, budget spent first): a single ``incumbent`` baseline variant, no results, an
+    ``assert_gate`` quality check ``not_run`` and a ``do_not_ship`` "no change, control
+    retained" decision. It needs ``evaluator_pin`` (the gate's pin, from the ASSERT domain).
+    ``rerun_reason`` adds a failing ``sleep_budget`` check, which turns the decision into ``rerun``.
+    """
+    if not _NIGHT_RE.match(night):
+        raise ValueError(f"night must be YYYY-MM-DD: {night!r}")
+    if incumbent is None and candidate is not None:
+        raise ValueError("a candidate eval needs the incumbent eval it is paired with")
+    if incumbent is None and evaluator_pin is None:
+        raise ValueError("a night without an incumbent eval needs evaluator_pin")
+    at = exported_at or _now()
+    by_id = {**({"incumbent": incumbent} if incumbent is not None else {}),
+             **({"candidate": candidate} if candidate is not None else {})}
+    st = {v: summarize(r) for v, r in by_id.items()}
+    pins = {v: r.pin for v, r in by_id.items()}
+    if incumbent is not None:
+        checks = _quality("incumbent", st, pins, max_missing=max_missing_rate, judge_errors=judge_errors)
+    else:
+        checks = [QualityCheck(check_type="assert_gate", status="not_run", severity="low",
+                               message="no candidate reached the ASSERT gate; the incumbent was not re-evaluated")]
+    if rerun_reason:
+        checks.append(QualityCheck(check_type="sleep_budget", status="fail", severity="high", message=rerun_reason))
+    blocking = _blocking(checks)
+    sk = {"reasons": [], **dict(skillopt_gate)}
+    ag = {"reasons": [], **dict(assert_gate)}
+    ag.setdefault("delta", delta)
+    ag.setdefault("deltaS", _r(st["candidate"].score - st["incumbent"].score) if candidate else None)
+    if incumbent is not None:
+        ag.setdefault("safetyViolations", {"baseline": st["incumbent"].critical_violations,
+                                           "candidate": st["candidate"].critical_violations if candidate else None})
+    ag.setdefault("ciLowerBound", None)
+    passed = candidate is not None and bool(sk.get("passed")) and bool(ag.get("passed")) and candidate_digest
+    shipped = "candidate" if passed and not blocking else None
+    split = incumbent.split if incumbent is not None else "evolve"
+    results = _results("incumbent", st, pins, primary=_metric_id(split), delta=delta, shipped=shipped,
+                       judge_errors=judge_errors) if incumbent is not None else None
+    if blocking:
+        outcome, why = "rerun", "sleep gate invalid: " + "; ".join(c.message or c.check_type for c in blocking)
+    elif shipped:
+        outcome, why = "ship", "candidate skill passed the SkillOpt and ASSERT gates; open adoption PR (human merge)."
+    elif incumbent is None:
+        outcome = "do_not_ship"
+        why = "; ".join(["no candidate reached the ASSERT gate", *ag["reasons"]]) + \
+            "; no change, control retained (incumbent skill kept)."
+    else:
+        reasons = ["no candidate"] if candidate is None else [
+            n for n, g in (("SkillOpt gate failed", sk), ("ASSERT gate failed", ag)) if not g.get("passed")]
+        outcome, why = "do_not_ship", "; ".join(reasons or ["no candidate digest"]) + "; incumbent skill kept."
+    decision, scorecard = _decide(outcome, why, at, "sleep.gate", checks)
+    exp_id = f"sleep-{night.replace('-', '')}"
+    pin = incumbent.pin if incumbent is not None else evaluator_pin
+    assert pin is not None
+    variants = [Variant(id="incumbent", key="incumbent", name="incumbent skill", role="baseline",
+                        config={"harnessTree": incumbent.harness_tree if incumbent is not None else None,
+                                "skillDigest": incumbent_digest},
+                        code_references=[{"type": "commit", "sha": incumbent_commit}])]
+    if candidate is not None:
+        variants.append(Variant(id="candidate", key="candidate", name="SkillOpt-Sleep candidate skill",
+                                role="treatment",
+                                config={"harnessTree": candidate.harness_tree, "skillDigest": candidate_digest}))
+    for v in variants:
+        v.config = {k: x for k, x in (v.config or {}).items() if x is not None}
+    ext: dict[str, Any] = {
+        "version": EXT_VERSION, "night": night, "skilloptVersion": skillopt_version,
+        "tasks": {"total": sum(tasks_by_origin.values()), "byOrigin": dict(tasks_by_origin),
+                  "bySplit": dict(tasks_by_split)},
+        "gate": {"skillopt": sk, "assert": ag},
+        "budget": {"used": dict(budget_used), **({"limits": dict(budget_limits)} if budget_limits else {})},
+        "candidateDigest": candidate_digest, "adoptionPr": dict(adoption_pr) if adoption_pr else None,
+        "evaluatorPin": pin_dict(pin),
+    }
+    if night_index is not None:
+        ext["nightIndex"] = night_index
+    if skill_path:
+        ext["skillPath"] = skill_path
+    if incumbent_digest:
+        ext["incumbentDigest"] = incumbent_digest
+    return _envelope(
+        exp=Experiment(id=exp_id, slug=exp_id, status="decided", title=f"SkillOpt-Sleep night {night}",
+                       hypothesis="The consolidated skill improves the evolve score without worsening safety.",
+                       tags=["sleep", "skillopt", *(["no-change"] if incumbent is None else [])]),
+        design=Design(type="ab", randomization_unit="task", analysis_unit="task_trial",
+                      assignment_method="every gate task evaluated on both variants (paired)",
+                      population=f"{split} split", multiple_testing_policy="none",
+                      peeking_policy="fixed_horizon", minimum_detectable_effect=delta),
+        variants=variants,
+        metrics=_metrics(_metric_id(split), st["incumbent"].suites if incumbent is not None else ()),
+        analysis=_analysis(at, model=f"SkillOpt {skillopt_version} gate + ASSERT gate (non-compensatory safety)"),
+        results=results, checks=checks, decision=decision, scorecard=scorecard,
+        provenance=_provenance(incumbent_commit, st, by_id),
+        extensions={SLEEP_EXT: ext}, at=at, source_version=source_version, artifacts=artifacts)
+
+
+__all__ = ["ArmStats", "ConfirmStats", "Holdout", "RrsiParams", "Schedule", "calibration_envelope",
+           "confirm_envelope", "pin_dict", "round_envelope", "sleep_envelope", "summarize"]
