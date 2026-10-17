@@ -1,8 +1,64 @@
 {
   "accepted_total": 0,
   "format": "ci_lab.sleep.state.v1",
-  "history": [],
-  "last_night_id": null,
-  "last_status": null,
-  "night": 0
+  "history": [
+    {
+      "night": 1,
+      "night_id": "sleep-20261017-1",
+      "status": "rejected",
+      "targets": {
+        "harness-editing": {
+          "delta_lcb": null,
+          "n_tasks": 8,
+          "status": "rejected"
+        },
+        "trace-triage": {
+          "delta_lcb": null,
+          "n_tasks": 7,
+          "status": "rejected"
+        }
+      }
+    }
+  ],
+  "last_base_sha": "5bd76d0198154226d7691b980466bf78d9dbc8e2",
+  "last_date": "20261017",
+  "last_night_id": "sleep-20261017-1",
+  "last_status": "rejected",
+  "night": 1,
+  "targets": {
+    "harness-editing": {
+      "accepted_total": 0,
+      "last_status": "rejected"
+    },
+    "trace-triage": {
+      "accepted_total": 0,
+      "last_status": "rejected"
+    }
+  },
+  "watermark": {
+    "at": "2026-10-17T11:44:45Z",
+    "task_ids": {
+      "harness-editing": [
+        "harness-edit-agent",
+        "harness-edit-context",
+        "harness-edit-frozen",
+        "harness-edit-loop",
+        "harness-edit-mcp",
+        "harness-edit-prompt",
+        "harness-edit-skill",
+        "harness-edit-tools",
+        "harness-edit-workflow"
+      ],
+      "trace-triage": [
+        "trace-earliest-turn",
+        "trace-group-category",
+        "trace-map-loop",
+        "trace-map-prompt",
+        "trace-map-skill",
+        "trace-map-tool",
+        "trace-no-copy",
+        "trace-untrusted"
+      ]
+    }
+  }
 }
