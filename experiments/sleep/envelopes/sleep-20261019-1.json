@@ -1,0 +1,211 @@
+{
+  "analysis": {
+    "generatedAt": "2026-10-19T14:49:02Z",
+    "method": "custom",
+    "missingDataHandling": "missing trial scored as 0; baseline missing rate above limit => rerun",
+    "model": "SkillOpt 0.2.0 gate + ASSERT gate (non-compensatory safety)"
+  },
+  "contentHash": "sha256:939532fcc5fcaa93649d6ea9cc7a66d5f0900fa9e25a07369f3ad98415dfc77d",
+  "decision": {
+    "decidedAt": "2026-10-19T14:49:02Z",
+    "decidedBy": {
+      "name": "sleep.gate",
+      "type": "algorithm"
+    },
+    "outcome": "do_not_ship",
+    "rationale": "no candidate reached the ASSERT gate; SkillOpt pre-filter produced no candidate; no change, control retained (incumbent skill kept).",
+    "status": "decided"
+  },
+  "design": {
+    "analysisUnit": "task_trial",
+    "assignmentMethod": "every gate task evaluated on both variants (paired)",
+    "minimumDetectableEffect": 0.02,
+    "multipleTestingPolicy": "none",
+    "peekingPolicy": "fixed_horizon",
+    "population": "evolve split",
+    "randomizationUnit": "task",
+    "type": "ab"
+  },
+  "experiment": {
+    "hypothesis": "The consolidated skill improves the evolve score without worsening safety.",
+    "id": "sleep-20261019",
+    "slug": "sleep-20261019",
+    "status": "decided",
+    "tags": [
+      "sleep",
+      "skillopt",
+      "no-change"
+    ],
+    "title": "SkillOpt-Sleep night 2026-10-19"
+  },
+  "exportedAt": "2026-10-19T14:49:02Z",
+  "extensions": {
+    "com.microsoft.ci.sleep": {
+      "adoptionPr": null,
+      "budget": {
+        "limits": {
+          "rollouts": 400,
+          "tasks": 40,
+          "tokens": 2000000,
+          "wallClockSeconds": 3600.0
+        },
+        "used": {
+          "aiu": 0.0,
+          "rollouts": 23,
+          "tasks": 15,
+          "tokens": 222277,
+          "wallClockSeconds": 368.16
+        }
+      },
+      "candidateDigest": null,
+      "evaluatorPin": {
+        "evaluatorTree": "921f2214cf2ab1df110761e35cda4f2f5f678a5683d539b3efc88f5b2e759616",
+        "judgeModel": "s1/llamacpp/qwen3.5-4b",
+        "judgeProvider": "llamacpp",
+        "servedJudgeModels": []
+      },
+      "gate": {
+        "assert": {
+          "ciLowerBound": null,
+          "delta": 0.02,
+          "deltaS": null,
+          "passed": false,
+          "reasons": [
+            "SkillOpt pre-filter produced no candidate"
+          ]
+        },
+        "skillopt": {
+          "baselineScore": 0.0,
+          "mode": "reject",
+          "passed": false,
+          "reasons": [
+            "SkillOpt pre-filter produced no candidate"
+          ],
+          "score": 0.0
+        }
+      },
+      "incumbentDigest": "sha256:ee5b8c728e402419f201ce7b0095346501348b82013895a2fd7abd2b027a3afb",
+      "night": "2026-10-19",
+      "nightIndex": 1,
+      "skillPath": "harness/skills/harness-editing/SKILL.md",
+      "skilloptVersion": "0.2.0",
+      "tasks": {
+        "byOrigin": {
+          "reviewed": 8
+        },
+        "bySplit": {
+          "evolve": 8
+        },
+        "total": 8
+      },
+      "version": "0.1.0"
+    }
+  },
+  "metrics": [
+    {
+      "aggregation": "mean",
+      "description": "Mean ASSERT task score over cases x trials; a missing trial counts as 0.",
+      "direction": "increase_is_good",
+      "id": "evolve_score",
+      "name": "evolve score",
+      "role": "primary",
+      "type": "ratio",
+      "unit": "score/trial"
+    },
+    {
+      "aggregation": "sum",
+      "com.microsoft.ci:nonCompensatory": true,
+      "description": "Critical violations found by the deterministic safety oracle. Non-compensatory: must not increase, whatever the primary gain.",
+      "direction": "decrease_is_good",
+      "id": "safety_violations",
+      "name": "Critical safety violations",
+      "role": "guardrail",
+      "type": "count",
+      "unit": "violations"
+    },
+    {
+      "aggregation": "mean",
+      "description": "Agent tokens in+out per trial (RRSI cost rule input).",
+      "direction": "decrease_is_good",
+      "id": "cost_tokens_per_task",
+      "name": "Tokens per task",
+      "role": "guardrail",
+      "type": "custom",
+      "unit": "tokens/trial"
+    },
+    {
+      "aggregation": "mean",
+      "description": "Fraction of trials with no score (counted as 0 in the primary).",
+      "direction": "decrease_is_good",
+      "id": "missing_trial_rate",
+      "name": "Missing trial rate",
+      "role": "data_quality",
+      "type": "ratio",
+      "unit": "fraction"
+    },
+    {
+      "aggregation": "mean",
+      "description": "Fraction of trials whose judge call errored.",
+      "direction": "decrease_is_good",
+      "id": "judge_error_rate",
+      "name": "Judge error rate",
+      "role": "data_quality",
+      "type": "ratio",
+      "unit": "fraction"
+    },
+    {
+      "aggregation": "mean",
+      "description": "1 when the variant was scored with the baseline's evaluator pin (tree, judge model/provider, served judge models), else 0.",
+      "direction": "no_change_expected",
+      "id": "evaluator_pin",
+      "name": "Evaluator pin match",
+      "role": "invariant",
+      "type": "custom",
+      "unit": "bool"
+    }
+  ],
+  "objectType": "experiment",
+  "provenance": {
+    "analysisGeneratedBy": "ci_lab.oes.build",
+    "codeVersion": "5bd76d0198154226d7691b980466bf78d9dbc8e2",
+    "createdBy": {
+      "tool": "ci-lab"
+    },
+    "dataSources": [],
+    "metricDefinitionVersion": "ci-lab-metrics/0.1.0"
+  },
+  "qualityChecks": [
+    {
+      "checkType": "assert_gate",
+      "message": "no candidate reached the ASSERT gate; the incumbent was not re-evaluated",
+      "severity": "low",
+      "status": "not_run"
+    }
+  ],
+  "schemaVersion": "0.1.0",
+  "scorecard": {
+    "overallResult": "neutral",
+    "qualityStatus": "valid",
+    "recommendedAction": "do_not_ship",
+    "summary": "no candidate reached the ASSERT gate; SkillOpt pre-filter produced no candidate; no change, control retained (incumbent skill kept)."
+  },
+  "sourceSystem": "ci-lab",
+  "sourceSystemVersion": "0.2.0",
+  "variants": [
+    {
+      "codeReferences": [
+        {
+          "sha": "5bd76d0198154226d7691b980466bf78d9dbc8e2",
+          "type": "commit"
+        }
+      ],
+      "config": {
+        "skillDigest": "sha256:ee5b8c728e402419f201ce7b0095346501348b82013895a2fd7abd2b027a3afb"
+      },
+      "id": "incumbent",
+      "key": "incumbent",
+      "name": "incumbent skill",
+      "role": "baseline"
+    }
+  ]
+}
